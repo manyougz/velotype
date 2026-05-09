@@ -28,7 +28,7 @@ jobs:
       matrix:
         include:
           - name: Windows x86_64
-            os: windows-latest
+            os: windows-2025
             artifact: velotype-windows-x86_64
             archive_suffix: windows-x86_64.zip
           - name: Windows ARM64
@@ -44,17 +44,17 @@ jobs:
             artifact: velotype-linux-aarch64
             archive_suffix: linux-aarch64.tar.gz
           - name: macOS x86_64
-            os: macos-13
+            os: macos-15-intel
             artifact: velotype-macos-x86_64
             archive_suffix: macos-x86_64.zip
           - name: macOS aarch64
-            os: macos-14
+            os: macos-15
             artifact: velotype-macos-aarch64
             archive_suffix: macos-aarch64.zip
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Install Rust stable
         shell: bash
@@ -123,7 +123,7 @@ jobs:
           ditto -c -k --sequesterRsrc --keepParent "dist/Velotype.app" "dist/$archive"
 
       - name: Upload build artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.artifact }}
           path: dist/velotype-${{ inputs.release_tag }}-${{ matrix.archive_suffix }}
@@ -138,7 +138,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
@@ -175,7 +175,7 @@ jobs:
           fi
 
       - name: Download build artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           path: dist
           merge-multiple: true
