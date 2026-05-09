@@ -1,0 +1,198 @@
+name: Build and Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Release tag to create or publish, for example v0.1.0"
+        required: true
+        type: string
+      release_title:
+        description: "Optional release title. Defaults to Velotype <release_tag>."
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: Build ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Windows x86_64
+            os: windows-latest
+            artifact: velotype-windows-x86_64
+            archive_suffix: windows-x86_64.zip
+          - name: Windows ARM64
+            os: windows-11-arm
+            artifact: velotype-windows-aarch64
+            archive_suffix: windows-aarch64.zip
+          - name: Linux x86_64
+            os: ubuntu-22.04
+            artifact: velotype-linux-x86_64
+            archive_suffix: linux-x86_64.tar.gz
+          - name: Linux ARM64
+            os: ubuntu-22.04-arm
+            artifact: velotype-linux-aarch64
+            archive_suffix: linux-aarch64.tar.gz
+          - name: macOS x86_64
+            os: macos-13
+            artifact: velotype-macos-x86_64
+            archive_suffix: macos-x86_64.zip
+          - name: macOS aarch64
+            os: macos-14
+            artifact: velotype-macos-aarch64
+            archive_suffix: macos-aarch64.zip
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust stable
+        shell: bash
+        run: |
+          rustup update stable
+          rustup default stable
+
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential pkg-config cmake clang libssl-dev \
+            libfontconfig1-dev libfreetype6-dev \
+            libx11-dev libxcb1-dev libxrandr-dev libxi-dev \
+            libxcursor-dev libxdamage-dev libxfixes-dev libxrender-dev \
+            libxkbcommon-dev libxkbcommon-x11-dev libwayland-dev \
+            libgl1-mesa-dev libvulkan-dev
+
+      - name: Build release binary
+        run: cargo build --release --locked
+
+      - name: Package Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          New-Item -ItemType Directory -Force dist/package | Out-Null
+          Copy-Item target/release/velotype.exe dist/package/velotype.exe
+          Copy-Item README.md dist/package/README.md
+          Copy-Item LICENSE-APACHE dist/package/LICENSE-APACHE
+          $archive = "velotype-${env:RELEASE_TAG}-${{ matrix.archive_suffix }}"
+          Compress-Archive -Path dist/package/* -DestinationPath "dist/$archive" -Force
+
+      - name: Package Linux
+        if: runner.os == 'Linux'
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          mkdir -p dist/package/share/applications
+          mkdir -p dist/package/share/icons/hicolor/256x256/apps
+          mkdir -p dist/package/share/icons/hicolor/512x512/apps
+          cp target/release/velotype dist/package/velotype
+          cp README.md LICENSE-APACHE dist/package/
+          cp resources/linux/com.manyougz.Velotype.desktop dist/package/share/applications/
+          cp resources/linux/icons/hicolor/256x256/apps/com.manyougz.Velotype.png dist/package/share/icons/hicolor/256x256/apps/
+          cp resources/linux/icons/hicolor/512x512/apps/com.manyougz.Velotype.png dist/package/share/icons/hicolor/512x512/apps/
+          archive="velotype-${RELEASE_TAG}-${{ matrix.archive_suffix }}"
+          tar -C dist/package -czf "dist/$archive" .
+
+      - name: Package macOS app bundle
+        if: runner.os == 'macOS'
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          mkdir -p "dist/Velotype.app/Contents/MacOS"
+          mkdir -p "dist/Velotype.app/Contents/Resources"
+          cp target/release/velotype "dist/Velotype.app/Contents/MacOS/velotype"
+          cp resources/macos/Info.plist "dist/Velotype.app/Contents/Info.plist"
+          cp resources/macos/velotype.icns "dist/Velotype.app/Contents/Resources/velotype.icns"
+          chmod +x "dist/Velotype.app/Contents/MacOS/velotype"
+          archive="velotype-${RELEASE_TAG}-${{ matrix.archive_suffix }}"
+          ditto -c -k --sequesterRsrc --keepParent "dist/Velotype.app" "dist/$archive"
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: dist/velotype-${{ inputs.release_tag }}-${{ matrix.archive_suffix }}
+          if-no-files-found: error
+
+  release:
+    name: Publish GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Validate and create release tag
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          RELEASE_TITLE: ${{ inputs.release_title }}
+        run: |
+          set -euo pipefail
+
+          if [[ ! "$RELEASE_TAG" =~ ^v.+ ]]; then
+            echo "release_tag must start with v, for example v0.1.0"
+            exit 1
+          fi
+
+          git fetch --tags --force origin
+
+          current_commit="$(git rev-parse HEAD)"
+          if git rev-parse -q --verify "refs/tags/$RELEASE_TAG" >/dev/null; then
+            tag_commit="$(git rev-list -n 1 "$RELEASE_TAG")"
+            if [[ "$tag_commit" != "$current_commit" ]]; then
+              echo "Tag $RELEASE_TAG already points to $tag_commit, not current commit $current_commit"
+              exit 1
+            fi
+            echo "Tag $RELEASE_TAG already exists and points to the current commit."
+          else
+            if [[ -z "$RELEASE_TITLE" ]]; then
+              RELEASE_TITLE="Velotype $RELEASE_TAG"
+            fi
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git tag -a "$RELEASE_TAG" -m "$RELEASE_TITLE" "$current_commit"
+            git push origin "$RELEASE_TAG"
+          fi
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          RELEASE_TITLE: ${{ inputs.release_title }}
+        run: |
+          set -euo pipefail
+
+          if [[ -z "$RELEASE_TITLE" ]]; then
+            RELEASE_TITLE="Velotype $RELEASE_TAG"
+          fi
+
+          gh release create "$RELEASE_TAG" dist/* \
+            --title "$RELEASE_TITLE" \
+            --generate-notes \
+            --verify-tag

@@ -4,7 +4,7 @@
 
 ![Velotype banner](./assets/icon/velotype-banner.png)
 
-**A Rust + GPUI native Markdown editor with WYSIWYG and source editing modes.**
+**A Rust + GPUI native Markdown editor with WYSIWYG and source editing modes.** [Editor Showcase](./assets/showcase/showcase.md)
 
 [English](README.md) | [中文](assets/README.zh-CN.md)
 

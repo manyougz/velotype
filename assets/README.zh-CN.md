@@ -4,7 +4,7 @@
 
 ![Velotype banner](../assets/icon/velotype-banner.png)
 
-**使用 Rust 与 GPUI 构建的原生 Markdown 即时渲染编辑器。**
+**使用 Rust 与 GPUI 构建的原生 Markdown 即时渲染编辑器。** [Editor Showcase](./showcase/showcase.md)
 
 [English](../README.md) | [中文](README.zh-CN.md)
 
