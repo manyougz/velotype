@@ -1,0 +1,24 @@
+//! Shared UI components and Markdown editing primitives.
+
+mod actions;
+mod block;
+pub(crate) mod markdown;
+
+pub use crate::editor::Editor;
+#[allow(unused_imports)]
+pub(crate) use crate::editor::InfoDialogKind;
+pub use actions::*;
+pub use block::*;
+#[allow(unused_imports)]
+pub(crate) use markdown::code_highlight::*;
+#[allow(unused_imports)]
+pub(crate) use markdown::footnote::*;
+#[allow(unused_imports)]
+pub(crate) use markdown::html::*;
+#[allow(unused_imports)]
+pub(crate) use markdown::image::*;
+#[allow(unused_imports)]
+pub use markdown::inline::*;
+#[allow(unused_imports)]
+pub(crate) use markdown::link::*;
+pub use markdown::table::*;

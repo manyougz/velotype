@@ -1,0 +1,469 @@
+// Velotype custom theme pack example.
+//
+// Save a copy as .json or .jsonc, fill only the fields you want to customize,
+// then import it from Theme -> Add Theme Config. Empty strings and null values
+// are ignored when Velotype normalizes the file. Missing theme fields fall back
+// to the built-in Velotype theme. Color values use the same serialized format
+// produced by Theme::to_json().
+{
+  // Required. This is the theme name used in the Theme menu.
+  "name": "",
+  // Required. The Theme menu displays custom themes as "<name> - <creator>".
+  "creator": "",
+  // Optional short description for theme galleries, release notes, or sharing.
+  "description": "",
+  // Optional version string controlled by the theme author.
+  "version": "",
+  // Optional project, author, or theme homepage URL.
+  "homepage": "",
+  // Optional license identifier or license URL for the theme pack.
+  "license": "",
+  // Optional visual tokens. Leave any value null or empty to inherit Velotype.
+  "theme": {
+    // Colors use the serialized GPUI color format emitted by Theme::to_json().
+    // Most fields affect rendered mode, editor chrome, dialogs, or menus.
+    "colors": {
+      // Background of the editor scroll area behind all blocks.
+      "editor_background": null,
+      // Background of a focused raw/source-like block.
+      "source_mode_block_bg": null,
+      // Background used for visible Markdown comment blocks.
+      "comment_bg": null,
+      // Default body text color for paragraphs and regular inline content.
+      "text_default": null,
+      // Link text color in rendered Markdown and safe HTML content.
+      "text_link": null,
+      // Placeholder text color for empty focused blocks and inputs.
+      "text_placeholder": null,
+      // H1 heading text color.
+      "text_h1": null,
+      // H2 heading text color.
+      "text_h2": null,
+      // H3 heading text color.
+      "text_h3": null,
+      // H4 heading text color.
+      "text_h4": null,
+      // H5 heading text color.
+      "text_h5": null,
+      // H6 heading text color.
+      "text_h6": null,
+      // H1 bottom-border color.
+      "border_h1": null,
+      // H2 bottom-border color.
+      "border_h2": null,
+      // Text color for quote blocks.
+      "text_quote": null,
+      // Left-border color for quote blocks.
+      "border_quote": null,
+      // Background color for NOTE callout blocks.
+      "callout_note_bg": null,
+      // Accent border and icon color for NOTE callout blocks.
+      "callout_note_border": null,
+      // Background color for TIP callout blocks.
+      "callout_tip_bg": null,
+      // Accent border and icon color for TIP callout blocks.
+      "callout_tip_border": null,
+      // Background color for IMPORTANT callout blocks.
+      "callout_important_bg": null,
+      // Accent border and icon color for IMPORTANT callout blocks.
+      "callout_important_border": null,
+      // Background color for WARNING callout blocks.
+      "callout_warning_bg": null,
+      // Accent border and icon color for WARNING callout blocks.
+      "callout_warning_border": null,
+      // Background color for CAUTION callout blocks.
+      "callout_caution_bg": null,
+      // Accent border and icon color for CAUTION callout blocks.
+      "callout_caution_border": null,
+      // Background of footnote definition grouping shells.
+      "footnote_bg": null,
+      // Border color of footnote definition grouping shells.
+      "footnote_border": null,
+      // Background of the footnote ordinal badge.
+      "footnote_badge_bg": null,
+      // Text color of the footnote ordinal badge.
+      "footnote_badge_text": null,
+      // Back-reference link color inside footnote headers.
+      "footnote_backref": null,
+      // Border color of interactive task-list checkboxes.
+      "task_checkbox_border": null,
+      // Background of unchecked task-list checkboxes.
+      "task_checkbox_bg": null,
+      // Background of checked task-list checkboxes.
+      "task_checkbox_checked_bg": null,
+      // Checkmark color inside checked task-list checkboxes.
+      "task_checkbox_check": null,
+      // Color of separator block lines.
+      "separator_color": null,
+      // Background of inline code spans and fenced code-block panels.
+      "code_bg": null,
+      // Text color inside code blocks when no syntax color overrides it.
+      "code_text": null,
+      // Background of the focused code-block language input.
+      "code_language_input_bg": null,
+      // Border color of the focused code-block language input.
+      "code_language_input_border": null,
+      // Text color inside the focused code-block language input.
+      "code_language_input_text": null,
+      // Placeholder color inside the code-block language input.
+      "code_language_input_placeholder": null,
+      // Syntax color for comments inside highlighted code blocks.
+      "code_syntax_comment": null,
+      // Syntax color for keywords inside highlighted code blocks.
+      "code_syntax_keyword": null,
+      // Syntax color for strings inside highlighted code blocks.
+      "code_syntax_string": null,
+      // Syntax color for numbers inside highlighted code blocks.
+      "code_syntax_number": null,
+      // Syntax color for types, classes, structs, and modules.
+      "code_syntax_type": null,
+      // Syntax color for functions, methods, and constructors.
+      "code_syntax_function": null,
+      // Syntax color for constants and enum-like values.
+      "code_syntax_constant": null,
+      // Syntax color for variables and parameters.
+      "code_syntax_variable": null,
+      // Syntax color for properties, fields, and attributes.
+      "code_syntax_property": null,
+      // Syntax color for operators.
+      "code_syntax_operator": null,
+      // Syntax color for punctuation.
+      "code_syntax_punctuation": null,
+      // Border color of native table cells.
+      "table_border": null,
+      // Background color of native table header cells.
+      "table_header_bg": null,
+      // Background color of native table body cells.
+      "table_cell_bg": null,
+      // Outline color of the active native table cell.
+      "table_cell_active_outline": null,
+      // Preview highlight color for row or column table-axis hover bands.
+      "table_axis_preview_bg": null,
+      // Selected highlight color for row or column table-axis selections.
+      "table_axis_selected_bg": null,
+      // Background of rendered-mode native table append controls.
+      "table_append_button_bg": null,
+      // Hover background of rendered-mode native table append controls.
+      "table_append_button_hover": null,
+      // Text color of rendered-mode native table append controls.
+      "table_append_button_text": null,
+      // Background of image placeholders in rendered mode.
+      "image_placeholder_bg": null,
+      // Border color of image placeholders in rendered mode.
+      "image_placeholder_border": null,
+      // Text color of image placeholders in rendered mode.
+      "image_placeholder_text": null,
+      // Caption text color shown below rendered images.
+      "image_caption_text": null,
+      // Scrollbar thumb color for the editor overlay scrollbar.
+      "scrollbar_thumb": null,
+      // Text-editing cursor color.
+      "cursor": null,
+      // Text-selection highlight color.
+      "selection": null,
+      // Semi-transparent backdrop behind modal dialogs.
+      "dialog_backdrop": null,
+      // Surface background of modal dialogs.
+      "dialog_surface": null,
+      // Border color of modal dialogs.
+      "dialog_border": null,
+      // Title text color in modal dialogs.
+      "dialog_title": null,
+      // Body text color in modal dialogs.
+      "dialog_body": null,
+      // Muted hint text color in modal dialogs.
+      "dialog_muted": null,
+      // Background of primary dialog buttons.
+      "dialog_primary_button_bg": null,
+      // Hover background of primary dialog buttons.
+      "dialog_primary_button_hover": null,
+      // Text color of primary dialog buttons.
+      "dialog_primary_button_text": null,
+      // Background of secondary dialog buttons.
+      "dialog_secondary_button_bg": null,
+      // Hover background of secondary dialog buttons.
+      "dialog_secondary_button_hover": null,
+      // Text color of secondary dialog buttons.
+      "dialog_secondary_button_text": null,
+      // Background of destructive dialog buttons.
+      "dialog_danger_button_bg": null,
+      // Hover background of destructive dialog buttons.
+      "dialog_danger_button_hover": null,
+      // Text color of destructive dialog buttons.
+      "dialog_danger_button_text": null
+    },
+    // Dimensions are logical pixels unless a comment explicitly says ratio.
+    // Set null to inherit Velotype and avoid storing the field after import.
+    "dimensions": {
+      // Padding around the editor content area.
+      "editor_padding": null,
+      // Vertical gap between adjacent blocks.
+      "block_gap": null,
+      // Minimum height of each editable block.
+      "block_min_height": null,
+      // Vertical padding inside each block.
+      "block_padding_y": null,
+      // Horizontal padding inside each block.
+      "block_padding_x": null,
+      // Extra horizontal indent added per nested block level.
+      "nested_block_indent": null,
+      // Gap between a list marker and its text.
+      "list_marker_gap": null,
+      // Minimum width of the bullet list marker column.
+      "list_marker_width": null,
+      // Minimum width of the ordered-list marker column.
+      "ordered_list_marker_width": null,
+      // Width and height of interactive task-list checkboxes.
+      "task_checkbox_size": null,
+      // Corner radius of task-list checkboxes.
+      "task_checkbox_radius": null,
+      // Border width of task-list checkboxes.
+      "task_checkbox_border_width": null,
+      // Checkmark font size inside task-list checkboxes.
+      "task_checkbox_check_size": null,
+      // Extra padding below H1 text before the border.
+      "h1_padding_bottom": null,
+      // Margin below the H1 bottom border.
+      "h1_margin_bottom": null,
+      // Width of the text-editing caret.
+      "cursor_width": null,
+      // Thickness of underline text decoration.
+      "underline_thickness": null,
+      // H1 bottom-border thickness.
+      "h1_border_width": null,
+      // Quote block left-border thickness.
+      "quote_border_width": null,
+      // Extra left padding between a quote border and its text.
+      "quote_padding_left": null,
+      // Horizontal padding inside callout shells.
+      "callout_padding_x": null,
+      // Vertical padding inside callout shells.
+      "callout_padding_y": null,
+      // Vertical gap between callout body rows.
+      "callout_body_gap": null,
+      // Corner radius of callout shells.
+      "callout_radius": null,
+      // Accent border width of callout shells.
+      "callout_border_width": null,
+      // Gap between callout icon and header text.
+      "callout_header_gap": null,
+      // Margin between a callout header and its first body row.
+      "callout_header_margin_bottom": null,
+      // Horizontal padding inside footnote grouping shells.
+      "footnote_padding_x": null,
+      // Vertical padding inside footnote grouping shells.
+      "footnote_padding_y": null,
+      // Corner radius of footnote grouping shells.
+      "footnote_radius": null,
+      // Horizontal padding inside footnote ordinal badges.
+      "footnote_badge_padding_x": null,
+      // Vertical padding inside footnote ordinal badges.
+      "footnote_badge_padding_y": null,
+      // Thickness of separator block lines.
+      "separator_thickness": null,
+      // Horizontal inset applied to separator block lines.
+      "separator_inset_x": null,
+      // Vertical margin around separator blocks.
+      "separator_margin_y": null,
+      // Vertical padding inside fenced code blocks.
+      "code_block_padding_y": null,
+      // Horizontal padding inside fenced code blocks.
+      "code_block_padding_x": null,
+      // Horizontal padding around inline code background quads.
+      "code_bg_pad_x": null,
+      // Vertical padding around inline code background quads.
+      "code_bg_pad_y": null,
+      // Corner radius of inline code background quads.
+      "code_bg_radius": null,
+      // Width of the code-block language input.
+      "code_language_input_width": null,
+      // Text layout height inside the code-block language input.
+      "code_language_input_height": null,
+      // Horizontal padding inside the code-block language input.
+      "code_language_input_padding_x": null,
+      // Vertical padding inside the code-block language input.
+      "code_language_input_padding_y": null,
+      // Corner radius of the code-block language input.
+      "code_language_input_radius": null,
+      // Border width of the code-block language input.
+      "code_language_input_border_width": null,
+      // Gap between code block content and the language input.
+      "code_language_input_gap": null,
+      // Horizontal padding inside native table cells.
+      "table_cell_padding_x": null,
+      // Vertical padding inside native table cells.
+      "table_cell_padding_y": null,
+      // Minimum height of native table cells.
+      "table_cell_min_height": null,
+      // Size of table append controls.
+      "table_append_button_extent": null,
+      // Inset padding around table append controls.
+      "table_append_button_inset": null,
+      // Invisible activation band that keeps append controls easy to hover.
+      "table_append_activation_band": null,
+      // Corner radius of rendered images and image placeholders.
+      "image_radius": null,
+      // Maximum height of rendered root-level images.
+      "image_root_max_height": null,
+      // Maximum height of rendered table-cell images.
+      "image_cell_max_height": null,
+      // Placeholder height for root-level images while loading or missing.
+      "image_root_placeholder_height": null,
+      // Placeholder height for table-cell images while loading or missing.
+      "image_cell_placeholder_height": null,
+      // Vertical gap between a rendered image and its caption.
+      "image_caption_gap": null,
+      // Width of the custom scrollbar thumb.
+      "scrollbar_width": null,
+      // Distance of the scrollbar thumb from the right edge.
+      "scrollbar_right": null,
+      // Viewport width where the centered content column starts shrinking.
+      "centered_shrink_start": null,
+      // Viewport width where the centered content column reaches minimum width.
+      "centered_shrink_end": null,
+      // Minimum content-column width as a fraction of available width.
+      "centered_min_ratio": null,
+      // Width of modal dialogs.
+      "dialog_width": null,
+      // Padding inside modal dialogs.
+      "dialog_padding": null,
+      // Gap between sections inside modal dialogs.
+      "dialog_gap": null,
+      // Corner radius of modal dialogs.
+      "dialog_radius": null,
+      // Border width of modal dialogs.
+      "dialog_border_width": null,
+      // Height of modal dialog action buttons.
+      "dialog_button_height": null,
+      // Gap between modal dialog action buttons.
+      "dialog_button_gap": null,
+      // Horizontal padding inside modal dialog action buttons.
+      "dialog_button_padding_x": null,
+      // Height reserved for the Windows fallback menu bar.
+      "menu_bar_height": null,
+      // Horizontal padding inside the Windows fallback menu bar.
+      "menu_bar_padding_x": null,
+      // Vertical padding inside the Windows fallback menu bar.
+      "menu_bar_padding_y": null,
+      // Gap between top-level menu buttons.
+      "menu_bar_gap": null,
+      // Minimum width of each top-level menu button.
+      "menu_bar_button_width": null,
+      // Height of each top-level menu button.
+      "menu_bar_button_height": null,
+      // Horizontal padding inside top-level menu buttons.
+      "menu_bar_button_padding_x": null,
+      // Corner radius of top-level menu buttons.
+      "menu_bar_button_radius": null,
+      // Text size used by menu labels.
+      "menu_text_size": null,
+      // Top position of the Windows fallback floating menu panel.
+      "menu_panel_top": null,
+      // Width of the Windows fallback floating menu panel.
+      "menu_panel_width": null,
+      // Padding inside floating menu panels.
+      "menu_panel_padding": null,
+      // Gap between items inside floating menu panels.
+      "menu_panel_gap": null,
+      // Corner radius of floating menu panels.
+      "menu_panel_radius": null,
+      // Height of each floating menu item.
+      "menu_item_height": null,
+      // Horizontal padding inside floating menu items.
+      "menu_item_padding_x": null,
+      // Corner radius of floating menu items.
+      "menu_item_radius": null,
+      // Horizontal margin around menu separators.
+      "menu_separator_margin_x": null,
+      // Vertical margin around menu separators.
+      "menu_separator_margin_y": null,
+      // Height of menu separators.
+      "menu_separator_height": null,
+      // Width of the root insert context menu panel.
+      "context_menu_panel_width": null,
+      // Width of insert-submenu panels.
+      "context_menu_submenu_width": null,
+      // Gap between a context menu and its submenu.
+      "context_menu_submenu_gap": null,
+      // Width of table-axis context menu panels.
+      "context_menu_axis_panel_width": null,
+      // Maximum width of the table-insert dialog.
+      "table_insert_dialog_width": null,
+      // Gap between table-insert stepper labels and controls.
+      "table_insert_stepper_gap": null,
+      // Size of table-insert stepper buttons.
+      "table_insert_stepper_button_size": null,
+      // Minimum width of the table-insert stepper value pill.
+      "table_insert_stepper_value_min_width": null,
+      // Horizontal padding inside the table-insert stepper value pill.
+      "table_insert_stepper_value_padding_x": null,
+      // Corner radius of table-insert stepper controls.
+      "table_insert_stepper_radius": null,
+      // Left inset of the view-mode toggle.
+      "view_mode_toggle_left": null,
+      // Bottom inset of the view-mode toggle.
+      "view_mode_toggle_bottom": null,
+      // Horizontal padding inside the view-mode toggle.
+      "view_mode_toggle_padding_x": null,
+      // Vertical padding inside the view-mode toggle.
+      "view_mode_toggle_padding_y": null,
+      // Corner radius of the view-mode toggle.
+      "view_mode_toggle_radius": null,
+      // Border width of the view-mode toggle.
+      "view_mode_toggle_border_width": null,
+      // Text size of the view-mode toggle.
+      "view_mode_toggle_text_size": null
+    },
+    // Typography values use logical pixels for sizes and a ratio for line height.
+    // Weight values allow thin, light, normal, medium, semibold, bold, extrabold, or black.
+    "typography": {
+      // Default body text font size.
+      "text_size": null,
+      // Default body text line height as a ratio of font size.
+      "text_line_height": null,
+      // H1 heading font size.
+      "h1_size": null,
+      // H1 heading font weight.
+      "h1_weight": "",
+      // H2 heading font size.
+      "h2_size": null,
+      // H2 heading font weight.
+      "h2_weight": "",
+      // H3 heading font size.
+      "h3_size": null,
+      // H3 heading font weight.
+      "h3_weight": "",
+      // H4 heading font size.
+      "h4_size": null,
+      // H4 heading font weight.
+      "h4_weight": "",
+      // H5 heading font size.
+      "h5_size": null,
+      // H5 heading font weight.
+      "h5_weight": "",
+      // H6 heading font size.
+      "h6_size": null,
+      // H6 heading font weight.
+      "h6_weight": "",
+      // Code-block text font size.
+      "code_size": null,
+      // Modal dialog title font size.
+      "dialog_title_size": null,
+      // Modal dialog title font weight.
+      "dialog_title_weight": "",
+      // Modal dialog body font size.
+      "dialog_body_size": null,
+      // Modal dialog body font weight.
+      "dialog_body_weight": "",
+      // Modal dialog button font size.
+      "dialog_button_size": null,
+      // Modal dialog button font weight.
+      "dialog_button_weight": ""
+    },
+    // Placeholder strings customize empty editing surfaces.
+    "placeholders": {
+      // Text shown in an empty focused block. Empty string inherits Velotype.
+      "empty_editing": ""
+    }
+  }
+}

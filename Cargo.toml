@@ -1,0 +1,83 @@
+[package]
+name = "velotype"
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+
+[features]
+default = ["code-highlight-core", "code-highlight-official", "code-highlight-config", "html-native"]
+code-highlight-core = ["dep:tree-sitter", "dep:tree-sitter-highlight"]
+html-native = ["dep:tree-sitter", "dep:tree-sitter-html"]
+code-highlight-official = [
+    "code-highlight-core",
+    "dep:tree-sitter-rust",
+    "dep:tree-sitter-javascript",
+    "dep:tree-sitter-typescript",
+    "dep:tree-sitter-json",
+    "dep:tree-sitter-md",
+    "dep:tree-sitter-bash",
+    "dep:tree-sitter-c",
+    "dep:tree-sitter-cpp",
+    "dep:tree-sitter-c-sharp",
+    "dep:tree-sitter-css",
+    "dep:tree-sitter-go",
+    "dep:tree-sitter-html",
+    "dep:tree-sitter-java",
+    "dep:tree-sitter-php",
+    "dep:tree-sitter-python",
+    "dep:tree-sitter-ruby",
+]
+code-highlight-config = [
+    "code-highlight-core",
+    "dep:tree-sitter-yaml",
+    "dep:tree-sitter-toml",
+]
+
+[dependencies]
+anyhow = "1"
+uuid = "1.23"
+gpui = "0.2"
+unicode-segmentation = "1.13"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+schemars = "1"
+futures = "0.3"
+ironpress = "1.4"
+pulldown-cmark = "0.13"
+cssparser = "0.37"
+directories = "6"
+reqwest = { version = "0.13", default-features = false, features = ["blocking", "default-tls"] }
+sys-locale = "0.3"
+tree-sitter = { version = "0.26.8", optional = true }
+tree-sitter-highlight = { version = "0.26.8", optional = true }
+tree-sitter-rust = { version = "0.24", optional = true }
+tree-sitter-javascript = { version = "0.25", optional = true }
+tree-sitter-typescript = { version = "0.23", optional = true }
+tree-sitter-json = { version = "0.24", optional = true }
+tree-sitter-md = { version = "0.5", optional = true }
+tree-sitter-bash = { version = "0.25", optional = true }
+tree-sitter-c = { version = "0.24", optional = true }
+tree-sitter-cpp = { version = "0.23", optional = true }
+tree-sitter-c-sharp = { version = "0.23", optional = true }
+tree-sitter-css = { version = "0.25", optional = true }
+tree-sitter-go = { version = "0.25", optional = true }
+tree-sitter-html = { version = "0.23", optional = true }
+tree-sitter-java = { version = "0.23", optional = true }
+tree-sitter-php = { version = "0.24", optional = true }
+tree-sitter-python = { version = "0.25", optional = true }
+tree-sitter-ruby = { version = "0.23", optional = true }
+tree-sitter-yaml = { version = "0.7", optional = true }
+tree-sitter-toml = { package = "adot-tree-sitter-toml", version = "0.1", optional = true }
+
+[dev-dependencies]
+gpui = { version = "0.2", features = ["test-support"] }
+
+[build-dependencies]
+embed-resource = "3"
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+panic = "abort"
+strip = true
