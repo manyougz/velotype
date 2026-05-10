@@ -67,7 +67,10 @@ impl EditMode {
             Self::CodeBlockRaw
         } else if matches!(
             kind,
-            BlockKind::RawMarkdown | BlockKind::Comment | BlockKind::HtmlBlock
+            BlockKind::RawMarkdown
+                | BlockKind::Comment
+                | BlockKind::HtmlBlock
+                | BlockKind::MathBlock
         ) {
             Self::SourceRaw
         } else {
@@ -132,6 +135,7 @@ pub struct Block {
     /// Cached projection used to show editable inline delimiters for the
     /// currently touched inline span(s).
     pub(crate) projection: Option<ExpandedInlineProjection>,
+    inline_math_source_edit_original: Option<InlineTextTree>,
     collapsed_caret_affinity: CollapsedCaretAffinity,
     /// When true, block-level shortcuts and inline formatting are
     /// suppressed; the block stores raw text for source-mode editing.
@@ -226,6 +230,7 @@ impl Block {
             vertical_motion_x: None,
             cursor_blink_task: None,
             projection: None,
+            inline_math_source_edit_original: None,
             collapsed_caret_affinity: CollapsedCaretAffinity::Default,
             edit_mode,
             table_runtime: None,
@@ -324,6 +329,13 @@ impl Block {
         self.current_cache().visible_text()
     }
 
+    pub(crate) fn inline_tree_from_markdown_with_context(&self, markdown: &str) -> InlineTextTree {
+        InlineTextTree::from_markdown_with_link_references(
+            markdown,
+            &self.link_reference_definitions,
+        )
+    }
+
     pub fn inline_spans(&self) -> &[InlineSpan] {
         self.current_cache().spans()
     }
@@ -350,6 +362,68 @@ impl Block {
 
     pub(crate) fn inline_footnote_hit_at(&self, offset: usize) -> Option<&InlineFootnoteHit> {
         self.current_cache().footnote_hit_at(offset)
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn inline_math_at(&self, offset: usize) -> Option<&crate::components::InlineMath> {
+        self.current_cache().inline_math_at(offset)
+    }
+
+    pub(crate) fn has_inline_math(&self) -> bool {
+        self.record.title.has_inline_math()
+    }
+
+    pub(crate) fn inline_math_source_editing(&self) -> bool {
+        self.inline_math_source_edit_original.is_some()
+    }
+
+    pub(crate) fn sync_inline_math_source_edit_for_focus(&mut self, focused: bool) -> bool {
+        if focused
+            && self.inline_math_source_edit_original.is_none()
+            && self.edit_mode == EditMode::RenderedRich
+            && self.record.title.has_inline_math()
+        {
+            let clean_selection = self.selected_range.clone();
+            let clean_marked = self.marked_range.clone();
+            let markdown_map = self.record.title.markdown_offset_map();
+            let markdown_selection = markdown_map.visible_to_markdown_range(clean_selection);
+            let markdown_marked =
+                clean_marked.map(|range| markdown_map.visible_to_markdown_range(range));
+            let original = self.record.title.clone();
+            let raw_markdown = original.serialize_markdown();
+            self.inline_math_source_edit_original = Some(original);
+            self.clear_inline_projection();
+            self.record.title = InlineTextTree::plain(raw_markdown);
+            self.edit_mode = EditMode::SourceRaw;
+            self.sync_render_cache();
+            let len = self.visible_len();
+            self.selected_range =
+                markdown_selection.start.min(len)..markdown_selection.end.min(len);
+            self.marked_range =
+                markdown_marked.map(|range| range.start.min(len)..range.end.min(len));
+            self.collapsed_caret_affinity = CollapsedCaretAffinity::Default;
+            return true;
+        }
+
+        if !focused && let Some(_original) = self.inline_math_source_edit_original.take() {
+            let raw_markdown = self.record.title.visible_text().to_string();
+            let parsed = InlineTextTree::from_markdown_with_link_references(
+                &raw_markdown,
+                &self.link_reference_definitions,
+            );
+            let markdown_selection = self.selected_range.clone();
+            let markdown_marked = self.marked_range.clone();
+            let map = parsed.markdown_offset_map();
+            self.record.set_title(parsed);
+            self.edit_mode = EditMode::for_kind(&self.record.kind);
+            self.sync_render_cache();
+            self.selected_range = map.markdown_to_visible_range(markdown_selection);
+            self.marked_range = markdown_marked.map(|range| map.markdown_to_visible_range(range));
+            self.collapsed_caret_affinity = CollapsedCaretAffinity::Default;
+            return true;
+        }
+
+        false
     }
 
     pub(crate) fn footnote_definition_id(&self) -> Option<String> {
@@ -1265,6 +1339,7 @@ impl Block {
                         html_style: fragment.html_style,
                         link: fragment.link.clone(),
                         footnote: fragment.footnote.clone(),
+                        math: None,
                     };
                 }
                 ExpandedInlineSegmentKind::OpeningDelimiter(_)
@@ -1276,6 +1351,7 @@ impl Block {
                         html_style: fragment.html_style,
                         link: fragment.link.clone(),
                         footnote: fragment.footnote.clone(),
+                        math: None,
                     };
                 }
                 ExpandedInlineSegmentKind::ClosingDelimiter(_)
@@ -1287,6 +1363,7 @@ impl Block {
                         html_style: fragment.html_style,
                         link: fragment.link.clone(),
                         footnote: fragment.footnote.clone(),
+                        math: None,
                     };
                 }
                 ExpandedInlineSegmentKind::LinkTargetText => {
@@ -1316,6 +1393,7 @@ impl Block {
             html_style: fragment.html_style,
             link: fragment.link.clone(),
             footnote: fragment.footnote.clone(),
+            math: None,
         }
     }
 

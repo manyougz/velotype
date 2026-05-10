@@ -50,8 +50,24 @@ pub struct I18nStrings {
     pub info_dialog_ok: String,
     /// Title of the placeholder update-check dialog.
     pub help_check_updates_title: String,
-    /// Body text of the placeholder update-check dialog.
+    /// Body text shown while an update check is running.
     pub help_check_updates_message: String,
+    /// Title shown when a newer version is available.
+    pub update_available_title: String,
+    /// Message template for newer-version prompts. Supports `{current}` and `{latest}`.
+    pub update_available_message_template: String,
+    /// Title shown when the running app is already current.
+    pub update_up_to_date_title: String,
+    /// Message template for up-to-date prompts. Supports `{current}` and `{latest}`.
+    pub update_up_to_date_message_template: String,
+    /// Title shown when an update check fails.
+    pub update_failed_title: String,
+    /// Message template for update-check failures. Supports `{error}`.
+    pub update_failed_message_template: String,
+    /// Button label for opening the GitHub Releases page.
+    pub update_open_release: String,
+    /// Button label for dismissing an available-update prompt.
+    pub update_later: String,
     /// Title of the About dialog.
     pub help_about_title: String,
     /// Supplemental About dialog text shown below the app name and version.
@@ -184,6 +200,14 @@ struct I18nStringsDe {
     info_dialog_ok: Option<String>,
     help_check_updates_title: Option<String>,
     help_check_updates_message: Option<String>,
+    update_available_title: Option<String>,
+    update_available_message_template: Option<String>,
+    update_up_to_date_title: Option<String>,
+    update_up_to_date_message_template: Option<String>,
+    update_failed_title: Option<String>,
+    update_failed_message_template: Option<String>,
+    update_open_release: Option<String>,
+    update_later: Option<String>,
     help_about_title: Option<String>,
     help_about_message: Option<String>,
     help_about_github_label: Option<String>,
@@ -259,6 +283,14 @@ const I18N_STRING_KEYS: &[&str] = &[
     "info_dialog_ok",
     "help_check_updates_title",
     "help_check_updates_message",
+    "update_available_title",
+    "update_available_message_template",
+    "update_up_to_date_title",
+    "update_up_to_date_message_template",
+    "update_failed_title",
+    "update_failed_message_template",
+    "update_open_release",
+    "update_later",
     "help_about_title",
     "help_about_message",
     "help_about_github_label",
@@ -366,6 +398,28 @@ impl I18nStringsDe {
             help_check_updates_message: self
                 .help_check_updates_message
                 .unwrap_or(defaults.help_check_updates_message),
+            update_available_title: self
+                .update_available_title
+                .unwrap_or(defaults.update_available_title),
+            update_available_message_template: self
+                .update_available_message_template
+                .unwrap_or(defaults.update_available_message_template),
+            update_up_to_date_title: self
+                .update_up_to_date_title
+                .unwrap_or(defaults.update_up_to_date_title),
+            update_up_to_date_message_template: self
+                .update_up_to_date_message_template
+                .unwrap_or(defaults.update_up_to_date_message_template),
+            update_failed_title: self
+                .update_failed_title
+                .unwrap_or(defaults.update_failed_title),
+            update_failed_message_template: self
+                .update_failed_message_template
+                .unwrap_or(defaults.update_failed_message_template),
+            update_open_release: self
+                .update_open_release
+                .unwrap_or(defaults.update_open_release),
+            update_later: self.update_later.unwrap_or(defaults.update_later),
             help_about_title: self.help_about_title.unwrap_or(defaults.help_about_title),
             help_about_message: self
                 .help_about_message
@@ -524,7 +578,16 @@ impl I18nStrings {
                 "请拖入 Markdown 文件（.md 或 .markdown）以在当前窗口打开。".into(),
             info_dialog_ok: "确定".into(),
             help_check_updates_title: "检查更新".into(),
-            help_check_updates_message: "此构建尚未接入更新检查。".into(),
+            help_check_updates_message: "正在检查 Velotype 的最新版本...".into(),
+            update_available_title: "发现新版本".into(),
+            update_available_message_template:
+                "当前版本：{current}\n最新版本：{latest}\n是否前往 GitHub Releases 下载？".into(),
+            update_up_to_date_title: "已是最新版本".into(),
+            update_up_to_date_message_template: "当前版本：{current}\n远程版本：{latest}".into(),
+            update_failed_title: "检查更新失败".into(),
+            update_failed_message_template: "无法完成在线更新检查：{error}".into(),
+            update_open_release: "前往下载".into(),
+            update_later: "稍后".into(),
             help_about_title: "关于 Velotype".into(),
             help_about_message: "作者：manyougz".into(),
             help_about_github_label: "GitHub".into(),
@@ -610,7 +673,19 @@ impl I18nStrings {
                 "Drop a Markdown file (.md or .markdown) to open it in this window.".into(),
             info_dialog_ok: "OK".into(),
             help_check_updates_title: "Check for Updates".into(),
-            help_check_updates_message: "Update checks are not wired yet in this build.".into(),
+            help_check_updates_message: "Checking the latest Velotype version...".into(),
+            update_available_title: "Update Available".into(),
+            update_available_message_template:
+                "Current version: {current}\nLatest version: {latest}\nOpen GitHub Releases to download it?"
+                    .into(),
+            update_up_to_date_title: "You're Up to Date".into(),
+            update_up_to_date_message_template:
+                "Current version: {current}\nRemote version: {latest}".into(),
+            update_failed_title: "Update Check Failed".into(),
+            update_failed_message_template: "Unable to complete the online update check: {error}"
+                .into(),
+            update_open_release: "Open Releases".into(),
+            update_later: "Later".into(),
             help_about_title: "About Velotype".into(),
             help_about_message: "Author: manyougz".into(),
             help_about_github_label: "GitHub".into(),
@@ -1063,6 +1138,11 @@ mod tests {
         assert_eq!(strings.context_menu_insert, "插入");
         assert_eq!(strings.table_insert_title, "插入表格");
         assert_eq!(strings.image_loading_without_alt, "正在加载图片...");
+        assert_eq!(
+            strings.help_check_updates_message,
+            "正在检查 Velotype 的最新版本..."
+        );
+        assert_eq!(strings.update_open_release, "前往下载");
         assert_eq!(strings.help_about_github_label, "GitHub");
         assert_eq!(
             strings.help_about_star_message,
@@ -1230,6 +1310,7 @@ mod tests {
         assert_eq!(pack.strings.menu_file, "文件菜单");
         assert_eq!(pack.strings.menu_export, "导出");
         assert_eq!(pack.strings.info_dialog_ok, "确定");
+        assert_eq!(pack.strings.update_open_release, "前往下载");
         assert_eq!(pack.strings.help_about_github_label, "GitHub");
         assert_eq!(
             pack.strings.help_about_star_message,
@@ -1254,6 +1335,7 @@ mod tests {
         assert_eq!(pack.strings.menu_file, "Fichier");
         assert_eq!(pack.strings.menu_export, "Export");
         assert_eq!(pack.strings.info_dialog_ok, "OK");
+        assert_eq!(pack.strings.update_open_release, "Open Releases");
         assert_eq!(pack.strings.help_about_github_label, "GitHub");
         assert_eq!(
             pack.strings.help_about_star_message,

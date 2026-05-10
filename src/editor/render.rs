@@ -8,8 +8,8 @@ use gpui::*;
 
 use super::{Editor, InfoDialogKind};
 use crate::app_menu::dispatch_menu_action_for_editor;
-use crate::components::Block;
 use crate::components::CalloutVariant;
+use crate::components::{Block, BlockKind};
 use crate::i18n::{I18nManager, I18nStrings};
 use crate::theme::{Theme, ThemeDimensions, ThemeManager};
 
@@ -255,6 +255,9 @@ impl Editor {
         let Some(focused_block) = self.document.block_entity_by_id(focused_id) else {
             return true;
         };
+        if focused_block.read_with(cx, |block, _cx| block.kind() == BlockKind::MathBlock) {
+            return false;
+        }
 
         let Some(block_bounds) = focused_block.read_with(cx, |block, _cx| block.last_bounds) else {
             return true;

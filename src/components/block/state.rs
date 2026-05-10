@@ -128,6 +128,8 @@ pub enum BlockKind {
     Comment,
     /// Safe raw HTML rendered through native GPUI semantic elements.
     HtmlBlock,
+    /// Display math block rendered with the LaTeX pipeline.
+    MathBlock,
     /// Raw Markdown fallback for syntax outside the native runtime subset.
     RawMarkdown,
 }
@@ -208,6 +210,7 @@ impl BlockKind {
                     | Self::CodeBlock { .. }
                     | Self::Comment
                     | Self::HtmlBlock
+                    | Self::MathBlock
                     | Self::RawMarkdown
             )
     }
@@ -480,6 +483,13 @@ impl BlockRecord {
         record
     }
 
+    pub fn math(markdown: impl Into<String>) -> Self {
+        let markdown = markdown.into();
+        let mut record = Self::with_plain_text(BlockKind::MathBlock, markdown.clone());
+        record.raw_fallback = Some(markdown);
+        record
+    }
+
     pub fn table(table: TableData) -> Self {
         let mut record = Self::new(BlockKind::Table, InlineTextTree::plain(String::new()));
         record.table = Some(table);
@@ -502,7 +512,10 @@ impl BlockRecord {
     pub fn kind_uses_raw_fallback(&self) -> bool {
         matches!(
             self.kind,
-            BlockKind::RawMarkdown | BlockKind::Comment | BlockKind::HtmlBlock
+            BlockKind::RawMarkdown
+                | BlockKind::Comment
+                | BlockKind::HtmlBlock
+                | BlockKind::MathBlock
         )
     }
 
@@ -553,7 +566,10 @@ impl BlockRecord {
             }
             BlockKind::Table => String::new(),
             BlockKind::CodeBlock { .. } => title_markdown,
-            BlockKind::RawMarkdown | BlockKind::Comment | BlockKind::HtmlBlock => {
+            BlockKind::RawMarkdown
+            | BlockKind::Comment
+            | BlockKind::HtmlBlock
+            | BlockKind::MathBlock => {
                 if depth == 0 {
                     self.raw_fallback.clone().unwrap_or(title_markdown)
                 } else {

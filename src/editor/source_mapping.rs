@@ -402,6 +402,7 @@ impl Editor {
                     | BlockKind::CodeBlock { .. }
                     | BlockKind::Comment
                     | BlockKind::HtmlBlock
+                    | BlockKind::MathBlock
                     | BlockKind::RawMarkdown
                     | BlockKind::Separator
             ))
@@ -426,7 +427,10 @@ impl Editor {
             BlockKind::CodeBlock { .. } => {
                 self.push_code_block_mapping(block, quote_depth, absolute_start, mappings, cx)
             }
-            BlockKind::RawMarkdown | BlockKind::Comment | BlockKind::HtmlBlock => {
+            BlockKind::RawMarkdown
+            | BlockKind::Comment
+            | BlockKind::HtmlBlock
+            | BlockKind::MathBlock => {
                 self.push_raw_block_mapping(block, quote_depth, absolute_start, mappings, cx)
             }
             BlockKind::Separator => {

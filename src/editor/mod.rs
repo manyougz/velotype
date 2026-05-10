@@ -39,6 +39,7 @@ mod table_edit;
 #[cfg(test)]
 mod tests;
 mod tree;
+mod update;
 mod window_state;
 
 /// Link navigation request deferred until a `Window` is available.
@@ -86,6 +87,8 @@ pub struct Editor {
     drop_replace_restore_focus: Option<EntityId>,
     /// Optional informational dialog shown from the Help menu.
     info_dialog: Option<InfoDialogKind>,
+    /// True while an online update check is running in the background.
+    update_check_in_progress: bool,
     context_menu: Option<ContextMenuState>,
     table_insert_dialog: Option<TableInsertDialogState>,
     context_menu_submenu_close_task: Option<Task<()>>,
@@ -262,6 +265,7 @@ impl Editor {
             pending_drop_replace_after_save: false,
             drop_replace_restore_focus: None,
             info_dialog: None,
+            update_check_in_progress: false,
             context_menu: None,
             table_insert_dialog: None,
             context_menu_submenu_close_task: None,

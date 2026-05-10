@@ -11,6 +11,10 @@ on:
         description: "Optional release title. Defaults to Velotype <release_tag>."
         required: false
         type: string
+      release_notes:
+        description: "Optional Markdown release notes. They are prepended to generated notes."
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -185,6 +189,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ inputs.release_tag }}
           RELEASE_TITLE: ${{ inputs.release_title }}
+          RELEASE_NOTES: ${{ inputs.release_notes }}
         run: |
           set -euo pipefail
 
@@ -192,7 +197,17 @@ jobs:
             RELEASE_TITLE="Velotype $RELEASE_TAG"
           fi
 
-          gh release create "$RELEASE_TAG" dist/* \
-            --title "$RELEASE_TITLE" \
-            --generate-notes \
-            --verify-tag
+          if [[ -n "$RELEASE_NOTES" ]]; then
+            notes_file="$(mktemp)"
+            printf '%s\n' "$RELEASE_NOTES" > "$notes_file"
+            gh release create "$RELEASE_TAG" dist/* \
+              --title "$RELEASE_TITLE" \
+              --notes-file "$notes_file" \
+              --generate-notes \
+              --verify-tag
+          else
+            gh release create "$RELEASE_TAG" dist/* \
+              --title "$RELEASE_TITLE" \
+              --generate-notes \
+              --verify-tag
+          fi

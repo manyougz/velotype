@@ -33,6 +33,7 @@ fn expanded_code_cursor_offset_stays_before_closing_backtick() {
         html_style: None,
         link: None,
         footnote: None,
+        math: None,
     }];
 
     assert_eq!(expanded_display_offset_for_clean(&fragments, 0), 1);
@@ -50,6 +51,7 @@ fn expanded_code_cursor_offset_keeps_plain_text_boundaries() {
             html_style: None,
             link: None,
             footnote: None,
+            math: None,
         },
         InlineFragment {
             text: "bc".to_string(),
@@ -60,6 +62,7 @@ fn expanded_code_cursor_offset_keeps_plain_text_boundaries() {
             html_style: None,
             link: None,
             footnote: None,
+            math: None,
         },
     ];
 
@@ -84,6 +87,7 @@ fn typing_inside_manual_backticks_keeps_cursor_inside_code_span() {
             html_style: None,
             link: None,
             footnote: None,
+            math: None,
         }]
     );
 
@@ -133,6 +137,31 @@ async fn enter_inside_multiline_inline_code_inserts_hard_line_without_splitting(
                 .iter()
                 .any(|span| { span.style.code && span.range == (0..text.len()) })
         );
+    });
+}
+
+#[gpui::test]
+async fn inline_math_focus_uses_markdown_source_then_reparses_on_blur(cx: &mut TestAppContext) {
+    let cx = cx.add_empty_window();
+    let block = cx.new(|cx| {
+        Block::with_record(
+            cx,
+            BlockRecord::new(
+                BlockKind::Paragraph,
+                InlineTextTree::from_markdown("**bold** $x^2$"),
+            ),
+        )
+    });
+
+    block.update(cx, |block, _cx| {
+        assert_eq!(block.display_text(), "bold $x^2$");
+        assert!(block.sync_inline_math_source_edit_for_focus(true));
+        assert!(block.uses_raw_text_editing());
+        assert_eq!(block.display_text(), "**bold** $x^2$");
+        assert!(block.sync_inline_math_source_edit_for_focus(false));
+        assert!(!block.uses_raw_text_editing());
+        assert_eq!(block.display_text(), "bold $x^2$");
+        assert_eq!(block.record.title.serialize_markdown(), "**bold** $x^2$");
     });
 }
 

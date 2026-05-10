@@ -79,6 +79,27 @@ pub struct InlineFragment {
     pub html_style: Option<HtmlInlineStyle>,
     pub link: Option<InlineLink>,
     pub footnote: Option<InlineFootnoteReference>,
+    pub math: Option<InlineMath>,
+}
+
+/// Source-preserving inline LaTeX math metadata.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct InlineMath {
+    /// Full Markdown source, including `$...$` or `\(...\)` delimiters.
+    pub source: String,
+    /// LaTeX body between the inline math delimiters.
+    pub body: String,
+    /// Delimiter form used by the source.
+    pub delimiter: InlineMathDelimiter,
+}
+
+/// Supported inline math delimiter syntaxes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum InlineMathDelimiter {
+    /// Dollar-delimited inline math: `$...$`.
+    Dollar,
+    /// Parenthesis-delimited inline math: `\(...\)`.
+    Paren,
 }
 
 /// Link metadata attached to a formatted inline text fragment.
@@ -200,6 +221,7 @@ pub struct InlineSpan {
     pub html_style: Option<HtmlInlineStyle>,
     pub link: Option<InlineLinkHit>,
     pub footnote: Option<InlineFootnoteHit>,
+    pub math: Option<InlineMath>,
 }
 
 /// Fragment attributes inherited by inserted text at a caret position.
@@ -209,6 +231,7 @@ pub struct InlineInsertionAttributes {
     pub html_style: Option<HtmlInlineStyle>,
     pub link: Option<InlineLink>,
     pub footnote: Option<InlineFootnoteReference>,
+    pub math: Option<InlineMath>,
 }
 
 /// Pre-computed view of an [`InlineTextTree`] optimized for rendering.
@@ -285,6 +308,7 @@ impl InlineRenderCache {
                         .footnote
                         .as_ref()
                         .and_then(InlineFootnoteReference::hit),
+                    math: fragment.math.clone(),
                 });
             }
 
@@ -355,6 +379,14 @@ impl InlineRenderCache {
             .find(|span| span.range.start <= offset && offset < span.range.end)
             .and_then(|span| span.footnote.as_ref())
     }
+
+    #[allow(dead_code)]
+    pub fn inline_math_at(&self, offset: usize) -> Option<&InlineMath> {
+        self.spans
+            .iter()
+            .find(|span| span.range.start <= offset && offset < span.range.end)
+            .and_then(|span| span.math.as_ref())
+    }
 }
 
 /// A sequence of [`InlineFragment`]s representing inline-formatted text.
@@ -380,6 +412,7 @@ impl InlineTextTree {
             html_style: None,
             link: None,
             footnote: None,
+            math: None,
         }])
     }
 
@@ -452,7 +485,14 @@ impl InlineTextTree {
                 .as_ref()
                 .is_some_and(InlineLink::is_source_preserving)
                 || fragment.footnote.is_some()
+                || fragment.math.is_some()
         })
+    }
+
+    pub(crate) fn has_inline_math(&self) -> bool {
+        self.fragments
+            .iter()
+            .any(|fragment| fragment.math.is_some())
     }
 
     pub(crate) fn has_footnote_references(&self) -> bool {
@@ -542,11 +582,36 @@ impl InlineTextTree {
                 continue;
             }
 
+            if let Some(math) = self.fragments[index].math.clone() {
+                let raw_markdown = math.source;
+                let raw_len = raw_markdown.len();
+                let run_visible_len = self.fragments[index].text.len();
+                let run_start = output.len();
+                output.push_str(&raw_markdown);
+                let run_end = output.len();
+
+                for local_visible in 0..=run_visible_len {
+                    visible_to_markdown[visible_cursor + local_visible] =
+                        run_start + local_visible.min(raw_len);
+                }
+
+                markdown_to_visible.resize(run_end + 1, visible_cursor);
+                for local_markdown in 0..=raw_len {
+                    markdown_to_visible[run_start + local_markdown] =
+                        visible_cursor + local_markdown.min(run_visible_len);
+                }
+
+                visible_cursor += run_visible_len;
+                index += 1;
+                continue;
+            }
+
             let link = self.fragments[index].link.clone();
             let mut end = index + 1;
             while end < self.fragments.len()
                 && self.fragments[end].link == link
                 && self.fragments[end].footnote.is_none()
+                && self.fragments[end].math.is_none()
             {
                 end += 1;
             }
@@ -687,7 +752,9 @@ fn serialize_fragment_run_markdown_with_offset_map(
             markdown_to_visible[transition_start + local] = visible_cursor;
         }
 
-        let escaped = if fragment.style.code {
+        let escaped = if let Some(math) = fragment.math.as_ref() {
+            identity_text_with_offset_map(&math.source)
+        } else if fragment.style.code {
             escape_code_span_text_with_offset_map(&fragment.text)
         } else {
             escape_literal_text_with_offset_map(&fragment.text)
@@ -747,6 +814,14 @@ fn push_markdown_marker(
     }
 }
 
+fn identity_text_with_offset_map(text: &str) -> InlineMarkdownOffsetMap {
+    InlineMarkdownOffsetMap {
+        markdown: text.to_string(),
+        visible_to_markdown: (0..=text.len()).collect(),
+        markdown_to_visible: (0..=text.len()).collect(),
+    }
+}
+
 fn html_style_open_marker(style: HtmlInlineStyle) -> Option<String> {
     style
         .to_css()
@@ -792,6 +867,7 @@ impl InlineTextTree {
                         html_style: fragment.html_style,
                         link: fragment.link.clone(),
                         footnote: fragment.footnote.clone(),
+                        math: None,
                     });
                 }
                 if split_offset < fragment_len {
@@ -801,6 +877,7 @@ impl InlineTextTree {
                         html_style: fragment.html_style,
                         link: fragment.link.clone(),
                         footnote: fragment.footnote.clone(),
+                        math: None,
                     });
                 }
             }
@@ -849,6 +926,7 @@ impl InlineTextTree {
                     html_style: fragment.html_style,
                     link: fragment.link.clone(),
                     footnote: fragment.footnote.clone(),
+                    math: None,
                 };
             }
 
@@ -864,6 +942,7 @@ impl InlineTextTree {
                         html_style: fragment.html_style,
                         link: fragment.link.clone(),
                         footnote: fragment.footnote.clone(),
+                        math: None,
                     }
                 };
             }
@@ -877,6 +956,7 @@ impl InlineTextTree {
                         html_style: fragment.html_style,
                         link: fragment.link.clone(),
                         footnote: fragment.footnote.clone(),
+                        math: None,
                     }
                 };
             }
@@ -956,6 +1036,7 @@ impl InlineTextTree {
                 html_style: inserted_attributes.html_style,
                 link: inserted_attributes.link,
                 footnote: inserted_attributes.footnote,
+                math: inserted_attributes.math,
             });
         }
         temp.append_tree(after);
@@ -985,6 +1066,7 @@ impl InlineTextTree {
                 html_style: inserted_attributes.html_style,
                 link: inserted_attributes.link,
                 footnote: inserted_attributes.footnote,
+                math: inserted_attributes.math,
             });
         }
         temp.append_tree(after);
@@ -1070,6 +1152,8 @@ impl InlineTextTree {
                 && last.html_style == fragment.html_style
                 && last.link == fragment.link
                 && last.footnote == fragment.footnote
+                && last.math.is_none()
+                && fragment.math.is_none()
             {
                 last.text.push_str(&fragment.text);
                 continue;
@@ -1265,6 +1349,7 @@ impl NormalizeBuilder {
             && last.html_style == html_style
             && last.link.is_none()
             && last.footnote.is_none()
+            && last.math.is_none()
         {
             last.text.push_str(&text);
             return;
@@ -1276,6 +1361,41 @@ impl NormalizeBuilder {
             html_style,
             link: None,
             footnote: None,
+            math: None,
+        });
+    }
+
+    fn emit_inline_math(
+        &mut self,
+        tokens: &[CharToken],
+        math: InlineMath,
+        extra_style: InlineStyle,
+        extra_html_style: Option<HtmlInlineStyle>,
+    ) {
+        let source_start = tokens
+            .first()
+            .map(|token| token.source_range.start)
+            .unwrap_or(0);
+        let normalized_start = self.normalized_len;
+        let source = math.source.clone();
+        let visible_len = source.len();
+
+        for token in tokens {
+            let token_len = token.source_range.len();
+            for delta in 0..=token_len {
+                self.visible_to_normalized[token.source_range.start + delta] =
+                    normalized_start + (token.source_range.start + delta - source_start);
+            }
+        }
+
+        self.normalized_len += visible_len;
+        self.fragments.push(InlineFragment {
+            text: source,
+            style: extra_style,
+            html_style: extra_html_style,
+            link: None,
+            footnote: None,
+            math: Some(math),
         });
     }
 }
@@ -1337,6 +1457,14 @@ fn parse_until(
                     closed: true,
                 };
             }
+        }
+
+        if !inside_code
+            && let Some(next_index) =
+                parse_inline_math(tokens, index, extra_style, extra_html_style, builder)
+        {
+            index = next_index;
+            continue;
         }
 
         if !inside_code
@@ -1438,6 +1566,125 @@ fn parse_until(
     }
 }
 
+fn parse_inline_math(
+    tokens: &[CharToken],
+    index: usize,
+    extra_style: InlineStyle,
+    extra_html_style: Option<HtmlInlineStyle>,
+    builder: &mut NormalizeBuilder,
+) -> Option<usize> {
+    let (body_start, close_start, close_end, delimiter) = if tokens.get(index)?.ch == '$' {
+        if matches_sequence(tokens, index, "$$") || token_is_backslash_escaped(tokens, index) {
+            return None;
+        }
+        let close = locate_inline_dollar_math_close(tokens, index + 1)?;
+        (index + 1, close, close, InlineMathDelimiter::Dollar)
+    } else if matches_sequence(tokens, index, "\\(") {
+        let close = locate_inline_paren_math_close(tokens, index + 2)?;
+        (index + 2, close, close + 1, InlineMathDelimiter::Paren)
+    } else {
+        return None;
+    };
+
+    if body_start >= close_start {
+        return None;
+    }
+    if tokens[body_start..close_start]
+        .iter()
+        .any(|token| token.ch == '\n' || token.ch == '\r')
+    {
+        return None;
+    }
+    if tokens[body_start].ch.is_whitespace() || tokens[close_start - 1].ch.is_whitespace() {
+        return None;
+    }
+
+    let source = tokens_to_string(&tokens[index..=close_end]);
+    let body = tokens_to_string(&tokens[body_start..close_start]);
+    if looks_like_obvious_currency(tokens, index, close_end, &body) {
+        return None;
+    }
+
+    let math = InlineMath {
+        source,
+        body,
+        delimiter,
+    };
+    builder.emit_inline_math(
+        &tokens[index..=close_end],
+        math,
+        extra_style,
+        extra_html_style,
+    );
+    Some(close_end + 1)
+}
+
+fn locate_inline_dollar_math_close(tokens: &[CharToken], mut cursor: usize) -> Option<usize> {
+    while cursor < tokens.len() {
+        let token = &tokens[cursor];
+        if token.ch == '\n' || token.ch == '\r' {
+            return None;
+        }
+        if token.ch == '$'
+            && !token_is_backslash_escaped(tokens, cursor)
+            && !matches_sequence(tokens, cursor, "$$")
+        {
+            return Some(cursor);
+        }
+        cursor += 1;
+    }
+    None
+}
+
+fn locate_inline_paren_math_close(tokens: &[CharToken], mut cursor: usize) -> Option<usize> {
+    while cursor + 1 < tokens.len() {
+        if tokens[cursor].ch == '\n' || tokens[cursor].ch == '\r' {
+            return None;
+        }
+        if matches_sequence(tokens, cursor, "\\)") {
+            return Some(cursor);
+        }
+        cursor += 1;
+    }
+    None
+}
+
+fn token_is_backslash_escaped(tokens: &[CharToken], index: usize) -> bool {
+    if index == 0 {
+        return false;
+    }
+    let mut cursor = index;
+    let mut slash_count = 0usize;
+    while cursor > 0 && tokens[cursor - 1].ch == '\\' {
+        slash_count += 1;
+        cursor -= 1;
+    }
+    slash_count % 2 == 1
+}
+
+fn looks_like_obvious_currency(
+    tokens: &[CharToken],
+    open_index: usize,
+    close_index: usize,
+    body: &str,
+) -> bool {
+    let prev_is_digit = open_index
+        .checked_sub(1)
+        .and_then(|idx| tokens.get(idx))
+        .is_some_and(|token| token.ch.is_ascii_digit());
+    let next_is_digit = tokens
+        .get(close_index + 1)
+        .is_some_and(|token| token.ch.is_ascii_digit());
+    if prev_is_digit || next_is_digit {
+        return true;
+    }
+
+    body.chars()
+        .all(|ch| ch.is_ascii_digit() || matches!(ch, '.' | ',' | '_'))
+        && body.chars().any(|ch| ch.is_ascii_digit())
+        && body.len() > 1
+}
+
 fn parse_footnote_reference(
     tokens: &[CharToken],
     index: usize,
@@ -1474,6 +1721,7 @@ fn parse_footnote_reference(
             ordinal: None,
             occurrence_index: 0,
         }),
+        math: None,
     }];
 
     let normalized_start = builder.normalized_len;
@@ -1494,6 +1742,8 @@ fn parse_footnote_reference(
             && last.html_style == fragment.html_style
             && last.link == fragment.link
             && last.footnote == fragment.footnote
+            && last.math.is_none()
+            && fragment.math.is_none()
         {
             last.text.push_str(&fragment.text);
         } else {
@@ -1556,12 +1806,15 @@ fn parse_inline_link(
     for mut fragment in label_result.tree.fragments {
         fragment.link = Some(link.clone());
         fragment.footnote = None;
+        fragment.math = None;
         builder.normalized_len += fragment.text.len();
         if let Some(last) = builder.fragments.last_mut()
             && last.style == fragment.style
             && last.html_style == fragment.html_style
             && last.link == fragment.link
             && last.footnote == fragment.footnote
+            && last.math.is_none()
+            && fragment.math.is_none()
         {
             last.text.push_str(&fragment.text);
         } else {
@@ -1591,6 +1844,7 @@ fn parse_autolink(
             target: target.clone(),
         }),
         footnote: None,
+        math: None,
     }];
 
     let normalized_start = builder.normalized_len;
@@ -1622,6 +1876,8 @@ fn parse_autolink(
             && last.html_style == fragment.html_style
             && last.link == fragment.link
             && last.footnote == fragment.footnote
+            && last.math.is_none()
+            && fragment.math.is_none()
         {
             last.text.push_str(&fragment.text);
         } else {
@@ -2672,8 +2928,8 @@ fn can_close_emphasis(tokens: &[CharToken], index: usize) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{
-        InlineFragment, InlineInsertionAttributes, InlineLinkHit, InlineStyle, InlineTextTree,
-        LinkReferenceDefinitions, StyleFlag,
+        InlineFragment, InlineInsertionAttributes, InlineLinkHit, InlineMathDelimiter, InlineStyle,
+        InlineTextTree, LinkReferenceDefinitions, StyleFlag,
     };
     use crate::components::HtmlCssColor;
 
@@ -2867,6 +3123,65 @@ mod tests {
             Some("http://example.com/")
         );
         assert_eq!(tree.serialize_markdown(), markdown);
+    }
+
+    #[test]
+    fn parses_dollar_inline_math_as_source_preserving_fragment() {
+        let markdown = "before $x^2$ after";
+        let tree = InlineTextTree::from_markdown(markdown);
+        let cache = tree.render_cache();
+        let math_start = "before ".len();
+        let math = cache
+            .inline_math_at(math_start)
+            .expect("inline math span should be recorded");
+
+        assert_eq!(tree.visible_text(), markdown);
+        assert_eq!(math.source, "$x^2$");
+        assert_eq!(math.body, "x^2");
+        assert_eq!(math.delimiter, InlineMathDelimiter::Dollar);
+        assert_eq!(tree.serialize_markdown(), markdown);
+    }
+
+    #[test]
+    fn parses_paren_inline_math_as_source_preserving_fragment() {
+        let markdown = "before \\(\\frac{1}{2}\\) after";
+        let tree = InlineTextTree::from_markdown(markdown);
+        let cache = tree.render_cache();
+        let math_start = "before ".len();
+        let math = cache
+            .inline_math_at(math_start)
+            .expect("inline math span should be recorded");
+
+        assert_eq!(tree.visible_text(), markdown);
+        assert_eq!(math.source, "\\(\\frac{1}{2}\\)");
+        assert_eq!(math.body, "\\frac{1}{2}");
+        assert_eq!(math.delimiter, InlineMathDelimiter::Paren);
+        assert_eq!(tree.serialize_markdown(), markdown);
+    }
+
+    #[test]
+    fn rejects_conservative_inline_math_cases() {
+        for markdown in ["\\$x$", "$ x $", "$", "$x\ny$", "cost $12$"] {
+            let tree = InlineTextTree::from_markdown(markdown);
+            assert!(
+                tree.render_cache()
+                    .spans()
+                    .iter()
+                    .all(|span| span.math.is_none()),
+                "{markdown:?} should stay plain text"
+            );
+        }
+    }
+
+    #[test]
+    fn inline_math_does_not_parse_inside_code_spans() {
+        let tree = InlineTextTree::from_markdown("`$x$` and $y$");
+        let cache = tree.render_cache();
+
+        assert!(cache.style_at(0).code);
+        assert!(cache.inline_math_at(0).is_none());
+        assert!(cache.inline_math_at("$x$ and ".len()).is_some());
+        assert_eq!(tree.serialize_markdown(), "`$x$` and $y$");
     }
 
     #[test]
@@ -3315,6 +3630,7 @@ mod tests {
                 html_style: None,
                 link: None,
                 footnote: None,
+                math: None,
             }]);
             let serialized = tree.serialize_markdown();
             let reparsed = InlineTextTree::from_markdown(&serialized);

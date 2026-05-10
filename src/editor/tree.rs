@@ -565,7 +565,10 @@ impl DocumentTree {
                     Self::collect_markdown_lines(&block_ref.children, 2, cx, lines, true);
                 }
             }
-            BlockKind::RawMarkdown | BlockKind::Comment | BlockKind::HtmlBlock => {
+            BlockKind::RawMarkdown
+            | BlockKind::Comment
+            | BlockKind::HtmlBlock
+            | BlockKind::MathBlock => {
                 let indentation = "  ".repeat(list_depth);
                 let raw_markdown = block_ref
                     .record

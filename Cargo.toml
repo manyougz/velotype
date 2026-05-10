@@ -1,6 +1,6 @@
 [package]
 name = "velotype"
-version = "0.1.0"
+version = "0.2.1"
 edition = "2024"
 license = "Apache-2.0"
 
@@ -42,10 +42,15 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 schemars = "1"
 futures = "0.3"
+semver = "1"
+toml = "1"
 ironpress = "1.4"
 pulldown-cmark = "0.13"
 cssparser = "0.37"
 directories = "6"
+ratex-layout = "0.1.4"
+ratex-parser = "0.1.4"
+ratex-svg = { version = "0.1.4", features = ["embed-fonts", "standalone"] }
 reqwest = { version = "0.13", default-features = false, features = ["blocking", "default-tls"] }
 sys-locale = "0.3"
 tree-sitter = { version = "0.26.8", optional = true }

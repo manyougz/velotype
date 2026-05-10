@@ -6,8 +6,9 @@ use gpui::{AnyWindowHandle, AppContext, TestAppContext, VisualTestContext};
 
 use super::{Editor, ViewMode};
 use crate::components::{
-    BlockKind, ImageResolvedSource, InlineTextTree, QuitApplication, SaveDocument,
-    TableColumnAlignment, superscript_ordinal,
+    BlockKind, ImageReferenceDefinitions, ImageResolvedSource, InlineTextTree, QuitApplication,
+    SaveDocument, TableCellInlineImageSegment, TableColumnAlignment,
+    parse_table_cell_inline_images, superscript_ordinal,
 };
 use crate::export::ExportFormat;
 use crate::i18n::{I18nManager, I18nStrings};
@@ -1515,6 +1516,43 @@ async fn table_cell_with_standalone_image_installs_runtime(cx: &mut TestAppConte
             }
             other => panic!("expected remote source, got {other:?}"),
         }
+    });
+}
+
+#[gpui::test]
+async fn table_cell_with_mixed_inline_image_uses_inline_image_segments(cx: &mut TestAppContext) {
+    let markdown = [
+        "| Preview |",
+        "| --- |",
+        "| image ![alt](https://example.com/x.png) |",
+    ]
+    .join("\n");
+    let editor = cx.new(|cx| Editor::from_markdown(cx, markdown, None));
+
+    editor.read_with(cx, |editor, cx| {
+        let table = editor.document.first_root().expect("table root").clone();
+        let runtime = table
+            .read(cx)
+            .table_runtime
+            .as_ref()
+            .expect("table runtime");
+        let cell = runtime.rows[0][0].read(cx);
+        assert!(cell.image_runtime().is_none());
+
+        let segments = parse_table_cell_inline_images(&cell.record.title_markdown());
+        assert_eq!(segments.len(), 2);
+        assert_eq!(
+            segments[0],
+            TableCellInlineImageSegment::Text("image ".to_string())
+        );
+        assert!(matches!(
+            &segments[1],
+            TableCellInlineImageSegment::Image { syntax, .. }
+                if syntax.alt == "alt"
+                    && syntax
+                        .resolve_target(&ImageReferenceDefinitions::default())
+                        .is_some_and(|target| target.src == "https://example.com/x.png")
+        ));
     });
 }
 
