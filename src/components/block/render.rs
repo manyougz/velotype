@@ -10,7 +10,10 @@ use super::element::{BlockTextElement, CodeLanguageInputElement};
 use super::{Block, BlockEvent, BlockKind, ImageResolvedSource, ImageRuntime};
 use crate::components::{
     Editor, HtmlCssColor, HtmlDocument, HtmlNode, HtmlNodeKind, TableAxisHighlight, TableAxisKind,
-    TableAxisMarker, TableColumnLayout, attr_value, resolve_image_source, style_for_node,
+    TableAxisMarker, TableCellInlineImageSegment, TableColumnLayout, attr_value,
+    display_math_font_size, inline_math_font_size, parse_display_math_source,
+    parse_table_cell_inline_images, render_display_math_svg, render_inline_math_svg,
+    resolve_image_source, style_for_node,
 };
 use crate::i18n::{I18nManager, I18nStrings};
 use crate::theme::{Theme, ThemeDimensions, ThemeManager};
@@ -491,6 +494,409 @@ impl Block {
         }
 
         container.into_any_element()
+    }
+
+    fn render_math_content(&self, theme: &Theme) -> AnyElement {
+        let c = &theme.colors;
+        let d = &theme.dimensions;
+        let t = &theme.typography;
+        let raw = self
+            .record
+            .raw_fallback
+            .as_deref()
+            .unwrap_or_else(|| self.display_text());
+
+        let Some(source) = parse_display_math_source(raw) else {
+            return div()
+                .w_full()
+                .text_size(px(t.text_size))
+                .line_height(rems(t.text_line_height))
+                .text_color(c.text_default)
+                .child(SharedString::from(raw.to_string()))
+                .into_any_element();
+        };
+
+        match render_display_math_svg(&source, c.text_default, display_math_font_size(t.text_size))
+        {
+            Ok(rendered) => div()
+                .w_full()
+                .flex()
+                .justify_center()
+                .py(px(d.block_padding_y.max(6.0)))
+                .child(
+                    img(rendered.path)
+                        .max_w(Length::Definite(relative(1.0)))
+                        .max_h(px(d.image_root_max_height))
+                        .object_fit(ObjectFit::Contain),
+                )
+                .into_any_element(),
+            Err(err) => div()
+                .w_full()
+                .flex()
+                .flex_col()
+                .gap(px(4.0))
+                .rounded_sm()
+                .bg(c.source_mode_block_bg)
+                .px(px(d.block_padding_x))
+                .py(px(d.block_padding_y))
+                .text_size(px(t.text_size))
+                .line_height(rems(t.text_line_height))
+                .text_color(c.text_default)
+                .child(SharedString::from(raw.to_string()))
+                .child(
+                    div()
+                        .text_size(px(t.code_size))
+                        .text_color(c.dialog_muted)
+                        .child(SharedString::from(format!("LaTeX render error: {err}"))),
+                )
+                .into_any_element(),
+        }
+    }
+
+    fn render_text_or_inline_math(
+        &self,
+        theme: &Theme,
+        focused: bool,
+        is_placeholder: bool,
+        placeholder_text: Option<SharedString>,
+        placeholder_color: Option<Hsla>,
+        text_color: Hsla,
+        font_size: f32,
+        font_weight: FontWeight,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        if focused || is_placeholder || !self.has_inline_math() {
+            return match placeholder_text {
+                Some(placeholder) => BlockTextElement::with_placeholder(
+                    cx.entity(),
+                    is_placeholder,
+                    placeholder,
+                    placeholder_color,
+                )
+                .into_any_element(),
+                None => BlockTextElement::new(cx.entity(), is_placeholder).into_any_element(),
+            };
+        }
+
+        self.render_inline_math_runs(theme, text_color, font_size, font_weight)
+    }
+
+    fn render_inline_math_runs(
+        &self,
+        theme: &Theme,
+        base_color: Hsla,
+        font_size: f32,
+        font_weight: FontWeight,
+    ) -> AnyElement {
+        self.render_inline_tree_runs(
+            &self.record.title,
+            theme,
+            base_color,
+            font_size,
+            font_weight,
+        )
+    }
+
+    fn render_inline_tree_runs(
+        &self,
+        tree: &crate::components::InlineTextTree,
+        theme: &Theme,
+        base_color: Hsla,
+        font_size: f32,
+        font_weight: FontWeight,
+    ) -> AnyElement {
+        div()
+            .w_full()
+            .min_w(px(0.0))
+            .flex()
+            .flex_wrap()
+            .items_center()
+            .gap(px(2.0))
+            .text_size(px(font_size))
+            .line_height(rems(theme.typography.text_line_height))
+            .children(self.render_inline_tree_children(
+                tree,
+                theme,
+                base_color,
+                font_size,
+                font_weight,
+            ))
+            .into_any_element()
+    }
+
+    fn render_inline_tree_children(
+        &self,
+        tree: &crate::components::InlineTextTree,
+        theme: &Theme,
+        base_color: Hsla,
+        font_size: f32,
+        font_weight: FontWeight,
+    ) -> Vec<AnyElement> {
+        let cache = tree.render_cache();
+        let text = cache.visible_text();
+        let mut children = Vec::new();
+        let mut cursor = 0usize;
+
+        for span in cache.spans() {
+            if cursor < span.range.start {
+                children.push(self.render_inline_text_segment(
+                    &text[cursor..span.range.start],
+                    span,
+                    theme,
+                    base_color,
+                    font_size,
+                    font_weight,
+                ));
+            }
+
+            let span_text = &text[span.range.clone()];
+            if let Some(math) = span.math.as_ref() {
+                children.push(
+                    self.render_inline_math_segment(math, span, theme, base_color, font_size),
+                );
+            } else {
+                children.push(self.render_inline_text_segment(
+                    span_text,
+                    span,
+                    theme,
+                    base_color,
+                    font_size,
+                    font_weight,
+                ));
+            }
+            cursor = span.range.end;
+        }
+
+        if cursor < text.len() {
+            let fallback_span = crate::components::InlineSpan {
+                range: cursor..text.len(),
+                style: crate::components::InlineStyle::default(),
+                html_style: None,
+                link: None,
+                footnote: None,
+                math: None,
+            };
+            children.push(self.render_inline_text_segment(
+                &text[cursor..],
+                &fallback_span,
+                theme,
+                base_color,
+                font_size,
+                font_weight,
+            ));
+        }
+
+        children
+    }
+
+    fn render_inline_text_segment(
+        &self,
+        text: &str,
+        span: &crate::components::InlineSpan,
+        theme: &Theme,
+        base_color: Hsla,
+        font_size: f32,
+        font_weight: FontWeight,
+    ) -> AnyElement {
+        if text.is_empty() {
+            return div().into_any_element();
+        }
+
+        let mut color = if span.link.is_some() || span.footnote.is_some() {
+            theme.colors.text_link
+        } else {
+            base_color
+        };
+        if let Some(style) = span.html_style
+            && let Some(html_color) = style.color
+        {
+            color = html_css_color_to_hsla(html_color, color);
+        }
+
+        let mut element = div()
+            .min_w(px(0.0))
+            .text_size(px(font_size))
+            .line_height(rems(theme.typography.text_line_height))
+            .text_color(color)
+            .font_weight(if span.style.bold {
+                FontWeight::BOLD
+            } else {
+                font_weight
+            })
+            .child(SharedString::from(text.to_string()));
+
+        if span.style.underline || span.link.is_some() || span.footnote.is_some() {
+            element = element.underline();
+        }
+        if span.style.code {
+            element = element
+                .rounded(px(theme.dimensions.code_bg_radius))
+                .px(px(theme.dimensions.code_bg_pad_x))
+                .py(px(theme.dimensions.code_bg_pad_y))
+                .bg(theme.colors.code_bg);
+        }
+        if let Some(style) = span.html_style
+            && let Some(background) = style.background_color
+        {
+            element = element
+                .rounded(px(3.0))
+                .px(px(2.0))
+                .bg(html_css_color_to_hsla(background, color));
+        }
+
+        element.into_any_element()
+    }
+
+    fn render_inline_math_segment(
+        &self,
+        math: &crate::components::InlineMath,
+        span: &crate::components::InlineSpan,
+        theme: &Theme,
+        base_color: Hsla,
+        font_size: f32,
+    ) -> AnyElement {
+        let mut color = base_color;
+        if let Some(style) = span.html_style
+            && let Some(html_color) = style.color
+        {
+            color = html_css_color_to_hsla(html_color, color);
+        }
+        let math_size = inline_math_font_size(font_size);
+        match render_inline_math_svg(&math.body, color, math_size) {
+            Ok(rendered) => div()
+                .flex()
+                .items_center()
+                .h(px(math_size * 1.65))
+                .child(
+                    img(rendered.path)
+                        .max_h(px(math_size * 1.65))
+                        .object_fit(ObjectFit::Contain),
+                )
+                .into_any_element(),
+            Err(_) => self.render_inline_text_segment(
+                &math.source,
+                span,
+                theme,
+                base_color,
+                font_size,
+                FontWeight::NORMAL,
+            ),
+        }
+    }
+
+    fn render_inline_image_content(
+        &self,
+        runtime: &ImageRuntime,
+        theme: &Theme,
+        strings: &I18nStrings,
+    ) -> AnyElement {
+        let d = &theme.dimensions;
+        let source = runtime.resolved_source.clone();
+        let max_height = px(d.image_cell_placeholder_height);
+        let max_width =
+            Length::Definite(px((d.image_cell_placeholder_height * 1.6).max(48.0)).into());
+        let placeholder_theme = theme.clone();
+        let loading_theme = theme.clone();
+        let placeholder_strings = strings.clone();
+        let loading_strings = strings.clone();
+        let runtime_for_fallback = runtime.clone();
+        let runtime_for_loading = runtime.clone();
+
+        let image = match source {
+            ImageResolvedSource::Local(path) => img(path),
+            ImageResolvedSource::Remote(uri) => img(uri),
+        }
+        .max_w(max_width)
+        .max_h(max_height)
+        .object_fit(ObjectFit::Contain)
+        .with_fallback(move || {
+            render_image_placeholder(
+                &runtime_for_fallback,
+                max_width,
+                max_height,
+                &placeholder_theme,
+                &placeholder_strings,
+            )
+        })
+        .with_loading(move || {
+            render_loading_placeholder(
+                &runtime_for_loading,
+                max_width,
+                max_height,
+                &loading_theme,
+                &loading_strings,
+            )
+        });
+
+        div()
+            .flex()
+            .flex_shrink_0()
+            .items_center()
+            .justify_center()
+            .child(image)
+            .into_any_element()
+    }
+
+    fn render_table_cell_inline_images(
+        &self,
+        theme: &Theme,
+        strings: &I18nStrings,
+        font_weight: FontWeight,
+    ) -> Option<AnyElement> {
+        let segments = parse_table_cell_inline_images(&self.record.title.serialize_markdown());
+        if !segments
+            .iter()
+            .any(|segment| matches!(segment, TableCellInlineImageSegment::Image { .. }))
+        {
+            return None;
+        }
+
+        let mut children = Vec::new();
+        for segment in segments {
+            match segment {
+                TableCellInlineImageSegment::Text(text) => {
+                    if text.is_empty() {
+                        continue;
+                    }
+                    let tree = self.inline_tree_from_markdown_with_context(&text);
+                    children.extend(self.render_inline_tree_children(
+                        &tree,
+                        theme,
+                        theme.colors.text_default,
+                        theme.typography.text_size,
+                        font_weight,
+                    ));
+                }
+                TableCellInlineImageSegment::Image { markdown, syntax } => {
+                    if let Some(runtime) = self.image_runtime_for_syntax(syntax) {
+                        children.push(self.render_inline_image_content(&runtime, theme, strings));
+                    } else {
+                        let tree = crate::components::InlineTextTree::plain(markdown);
+                        children.extend(self.render_inline_tree_children(
+                            &tree,
+                            theme,
+                            theme.colors.text_default,
+                            theme.typography.text_size,
+                            font_weight,
+                        ));
+                    }
+                }
+            }
+        }
+
+        Some(
+            div()
+                .w_full()
+                .min_w(px(0.0))
+                .flex()
+                .flex_wrap()
+                .items_center()
+                .gap(px(6.0))
+                .text_size(px(theme.typography.text_size))
+                .line_height(rems(theme.typography.text_line_height))
+                .children(children)
+                .into_any_element(),
+        )
     }
 
     fn render_html_document(
@@ -1007,7 +1413,13 @@ impl Render for Block {
             cx.notify();
         }
 
-        self.sync_inline_projection_for_focus(focused && !self.showing_rendered_image());
+        let showing_rendered_image = self.showing_rendered_image();
+        if self.sync_inline_math_source_edit_for_focus(focused && !showing_rendered_image) {
+            cx.notify();
+        }
+        self.sync_inline_projection_for_focus(
+            focused && !showing_rendered_image && !self.inline_math_source_editing(),
+        );
 
         if input_active && self.cursor_blink_task.is_none() {
             self.start_cursor_blink(cx);
@@ -1028,7 +1440,6 @@ impl Render for Block {
         let d = &theme.dimensions;
         let t = &theme.typography;
         let depth_padding = d.block_padding_x + d.nested_block_indent * self.render_depth as f32;
-        let showing_rendered_image = self.showing_rendered_image();
 
         if self.is_table_cell() {
             let is_header = self
@@ -1101,13 +1512,43 @@ impl Render for Block {
                     .into_any_element();
             }
 
+            if !focused
+                && let Some(inline_images) = self.render_table_cell_inline_images(
+                    &theme,
+                    &strings,
+                    if is_header {
+                        FontWeight::MEDIUM
+                    } else {
+                        FontWeight::NORMAL
+                    },
+                )
+            {
+                return cell_base.child(inline_images).into_any_element();
+            }
+
             return cell_base
-                .child(BlockTextElement::new(cx.entity(), is_placeholder))
+                .child(self.render_text_or_inline_math(
+                    &theme,
+                    focused,
+                    is_placeholder,
+                    None,
+                    None,
+                    c.text_default,
+                    t.text_size,
+                    if is_header {
+                        FontWeight::MEDIUM
+                    } else {
+                        FontWeight::NORMAL
+                    },
+                    cx,
+                ))
                 .into_any_element();
         }
 
         // Source-mode rendering: raw text with no formatting.
-        if self.is_source_raw_mode() && (focused || self.kind() != BlockKind::HtmlBlock) {
+        if self.is_source_raw_mode()
+            && (focused || !matches!(self.kind(), BlockKind::HtmlBlock | BlockKind::MathBlock))
+        {
             if focused && self.cursor_blink_task.is_none() {
                 self.start_cursor_blink(cx);
             } else if !focused && self.cursor_blink_task.is_some() {
@@ -1198,7 +1639,17 @@ impl Render for Block {
                 .mb(px(d.h1_margin_bottom))
                 .border_b(px(d.h1_border_width))
                 .border_color(c.border_h1)
-                .child(BlockTextElement::new(cx.entity(), is_placeholder))
+                .child(self.render_text_or_inline_math(
+                    &theme,
+                    focused,
+                    is_placeholder,
+                    None,
+                    None,
+                    c.text_h1,
+                    t.h1_size,
+                    t.h1_weight.to_font_weight(),
+                    cx,
+                ))
                 .into_any_element(),
             BlockKind::Heading { level: 2 } => focused_base
                 .text_size(px(t.h2_size))
@@ -1208,31 +1659,81 @@ impl Render for Block {
                 .mb(px(d.h1_margin_bottom))
                 .border_b(px(d.h1_border_width))
                 .border_color(c.border_h2)
-                .child(BlockTextElement::new(cx.entity(), is_placeholder))
+                .child(self.render_text_or_inline_math(
+                    &theme,
+                    focused,
+                    is_placeholder,
+                    None,
+                    None,
+                    c.text_h2,
+                    t.h2_size,
+                    t.h2_weight.to_font_weight(),
+                    cx,
+                ))
                 .into_any_element(),
             BlockKind::Heading { level: 3 } => focused_base
                 .text_size(px(t.h3_size))
                 .font_weight(t.h3_weight.to_font_weight())
                 .text_color(c.text_h3)
-                .child(BlockTextElement::new(cx.entity(), is_placeholder))
+                .child(self.render_text_or_inline_math(
+                    &theme,
+                    focused,
+                    is_placeholder,
+                    None,
+                    None,
+                    c.text_h3,
+                    t.h3_size,
+                    t.h3_weight.to_font_weight(),
+                    cx,
+                ))
                 .into_any_element(),
             BlockKind::Heading { level: 4 } => focused_base
                 .text_size(px(t.h4_size))
                 .font_weight(t.h4_weight.to_font_weight())
                 .text_color(c.text_h4)
-                .child(BlockTextElement::new(cx.entity(), is_placeholder))
+                .child(self.render_text_or_inline_math(
+                    &theme,
+                    focused,
+                    is_placeholder,
+                    None,
+                    None,
+                    c.text_h4,
+                    t.h4_size,
+                    t.h4_weight.to_font_weight(),
+                    cx,
+                ))
                 .into_any_element(),
             BlockKind::Heading { level: 5 } => focused_base
                 .text_size(px(t.h5_size))
                 .font_weight(t.h5_weight.to_font_weight())
                 .text_color(c.text_h5)
-                .child(BlockTextElement::new(cx.entity(), is_placeholder))
+                .child(self.render_text_or_inline_math(
+                    &theme,
+                    focused,
+                    is_placeholder,
+                    None,
+                    None,
+                    c.text_h5,
+                    t.h5_size,
+                    t.h5_weight.to_font_weight(),
+                    cx,
+                ))
                 .into_any_element(),
             BlockKind::Heading { level: 6 } => focused_base
                 .text_size(px(t.h6_size))
                 .font_weight(t.h6_weight.to_font_weight())
                 .text_color(c.text_h6)
-                .child(BlockTextElement::new(cx.entity(), is_placeholder))
+                .child(self.render_text_or_inline_math(
+                    &theme,
+                    focused,
+                    is_placeholder,
+                    None,
+                    None,
+                    c.text_h6,
+                    t.h6_size,
+                    t.h6_weight.to_font_weight(),
+                    cx,
+                ))
                 .into_any_element(),
             BlockKind::BulletedListItem => focused_base
                 .text_size(px(t.text_size))
@@ -1264,13 +1765,33 @@ impl Render for Block {
                             div()
                                 .min_w(px(0.0))
                                 .flex_grow()
-                                .child(BlockTextElement::new(cx.entity(), is_placeholder))
+                                .child(self.render_text_or_inline_math(
+                                    &theme,
+                                    focused,
+                                    is_placeholder,
+                                    None,
+                                    None,
+                                    c.text_default,
+                                    t.text_size,
+                                    FontWeight::NORMAL,
+                                    cx,
+                                ))
                         }
                     } else {
                         div()
                             .min_w(px(0.0))
                             .flex_grow()
-                            .child(BlockTextElement::new(cx.entity(), is_placeholder))
+                            .child(self.render_text_or_inline_math(
+                                &theme,
+                                focused,
+                                is_placeholder,
+                                None,
+                                None,
+                                c.text_default,
+                                t.text_size,
+                                FontWeight::NORMAL,
+                                cx,
+                            ))
                     },
                 ])
                 .into_any_element(),
@@ -1335,16 +1856,35 @@ impl Render for Block {
                                     &strings,
                                 ))
                             } else {
-                                div()
-                                    .min_w(px(0.0))
-                                    .flex_grow()
-                                    .child(BlockTextElement::new(cx.entity(), is_placeholder))
+                                div().min_w(px(0.0)).flex_grow().child(
+                                    self.render_text_or_inline_math(
+                                        &theme,
+                                        focused,
+                                        is_placeholder,
+                                        None,
+                                        None,
+                                        c.text_default,
+                                        t.text_size,
+                                        FontWeight::NORMAL,
+                                        cx,
+                                    ),
+                                )
                             }
                         } else {
                             div()
                                 .min_w(px(0.0))
                                 .flex_grow()
-                                .child(BlockTextElement::new(cx.entity(), is_placeholder))
+                                .child(self.render_text_or_inline_math(
+                                    &theme,
+                                    focused,
+                                    is_placeholder,
+                                    None,
+                                    None,
+                                    c.text_default,
+                                    t.text_size,
+                                    FontWeight::NORMAL,
+                                    cx,
+                                ))
                         },
                     ])
                     .into_any_element()
@@ -1382,13 +1922,33 @@ impl Render for Block {
                             div()
                                 .min_w(px(0.0))
                                 .flex_grow()
-                                .child(BlockTextElement::new(cx.entity(), is_placeholder))
+                                .child(self.render_text_or_inline_math(
+                                    &theme,
+                                    focused,
+                                    is_placeholder,
+                                    None,
+                                    None,
+                                    c.text_default,
+                                    t.text_size,
+                                    FontWeight::NORMAL,
+                                    cx,
+                                ))
                         }
                     } else {
                         div()
                             .min_w(px(0.0))
                             .flex_grow()
-                            .child(BlockTextElement::new(cx.entity(), is_placeholder))
+                            .child(self.render_text_or_inline_math(
+                                &theme,
+                                focused,
+                                is_placeholder,
+                                None,
+                                None,
+                                c.text_default,
+                                t.text_size,
+                                FontWeight::NORMAL,
+                                cx,
+                            ))
                     },
                 ])
                 .into_any_element(),
@@ -1396,7 +1956,17 @@ impl Render for Block {
                 .text_size(px(t.text_size))
                 .text_color(c.text_quote)
                 .line_height(rems(t.text_line_height))
-                .child(BlockTextElement::new(cx.entity(), is_placeholder))
+                .child(self.render_text_or_inline_math(
+                    &theme,
+                    focused,
+                    is_placeholder,
+                    None,
+                    None,
+                    c.text_quote,
+                    t.text_size,
+                    FontWeight::NORMAL,
+                    cx,
+                ))
                 .into_any_element(),
             BlockKind::Callout(variant) => {
                 let (accent, _) = callout_accent_and_background(variant, &theme);
@@ -1417,11 +1987,16 @@ impl Render for Block {
                         .text_size(px(t.text_size))
                         .font_weight(FontWeight::SEMIBOLD)
                         .text_color(accent)
-                        .child(BlockTextElement::with_placeholder(
-                            cx.entity(),
+                        .child(self.render_text_or_inline_math(
+                            &theme,
+                            focused,
                             is_placeholder,
-                            header_label,
+                            Some(header_label),
                             Some(accent),
+                            accent,
+                            t.text_size,
+                            FontWeight::SEMIBOLD,
+                            cx,
                         ))
                         .into_any_element()
                 };
@@ -1472,7 +2047,17 @@ impl Render for Block {
                             .min_w(px(0.0))
                             .flex_grow()
                             .text_color(c.text_quote)
-                            .child(BlockTextElement::new(cx.entity(), is_placeholder)),
+                            .child(self.render_text_or_inline_math(
+                                &theme,
+                                focused,
+                                is_placeholder,
+                                None,
+                                None,
+                                c.text_quote,
+                                t.code_size,
+                                FontWeight::NORMAL,
+                                cx,
+                            )),
                     );
 
                 if self.footnote_definition_has_backref() {
@@ -1591,7 +2176,17 @@ impl Render for Block {
                         .text_size(px(t.text_size))
                         .text_color(c.text_default)
                         .line_height(rems(t.text_line_height))
-                        .child(BlockTextElement::new(cx.entity(), is_placeholder))
+                        .child(self.render_text_or_inline_math(
+                            &theme,
+                            focused,
+                            is_placeholder,
+                            None,
+                            None,
+                            c.text_default,
+                            t.text_size,
+                            FontWeight::NORMAL,
+                            cx,
+                        ))
                         .into_any_element();
                 };
 
@@ -2006,6 +2601,18 @@ impl Render for Block {
                     .child(self.render_html_document(&html, &theme, cx))
                     .into_any_element()
             }
+            BlockKind::MathBlock => {
+                if !focused {
+                    self.last_layout = None;
+                    self.last_bounds = None;
+                }
+                let child = if focused {
+                    BlockTextElement::new(cx.entity(), is_placeholder).into_any_element()
+                } else {
+                    self.render_math_content(&theme)
+                };
+                focused_base.w_full().child(child).into_any_element()
+            }
             BlockKind::Paragraph
             | BlockKind::Comment
             | BlockKind::RawMarkdown
@@ -2013,7 +2620,17 @@ impl Render for Block {
                 .text_size(px(t.text_size))
                 .text_color(c.text_default)
                 .line_height(rems(t.text_line_height))
-                .child(BlockTextElement::new(cx.entity(), is_placeholder))
+                .child(self.render_text_or_inline_math(
+                    &theme,
+                    focused,
+                    is_placeholder,
+                    None,
+                    None,
+                    c.text_default,
+                    t.text_size,
+                    FontWeight::NORMAL,
+                    cx,
+                ))
                 .into_any_element(),
         };
 

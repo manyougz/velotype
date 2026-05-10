@@ -7,6 +7,7 @@
 use gpui::*;
 
 use super::Editor;
+use crate::components::parse_display_math_source;
 use crate::components::{
     BlockKind, BlockRecord, CalloutVariant, CodeFenceOpening, InlineTextTree,
     parse_footnote_definition_head,
@@ -789,6 +790,14 @@ fn html_or_raw_block(cx: &mut Context<Editor>, markdown: String) -> Entity<super
     }
 }
 
+fn math_or_raw_block(cx: &mut Context<Editor>, markdown: String) -> Entity<super::Block> {
+    if parse_display_math_source(&markdown).is_some() {
+        Editor::new_block(cx, BlockRecord::math(markdown))
+    } else {
+        raw_block(cx, markdown)
+    }
+}
+
 fn collect_comment_block(
     cx: &mut Context<Editor>,
     lines: &[String],
@@ -1089,7 +1098,7 @@ impl Editor {
 
             if is_display_math_start(line) {
                 let end = collect_display_math_region(lines, index);
-                roots.push(raw_block(cx, lines[index..end].join("\n")));
+                roots.push(math_or_raw_block(cx, lines[index..end].join("\n")));
                 index = end;
                 continue;
             }
@@ -1234,6 +1243,18 @@ impl Editor {
                 saw_child = true;
                 pending_blank_lines = 0;
                 index = html_end;
+                continue;
+            }
+
+            if is_display_math_start(line) {
+                if pending_blank_lines > 0 && (!title_markdown.is_empty() || !children.is_empty()) {
+                    append_quote_separator_children(&mut children, pending_blank_lines, cx);
+                }
+                let math_end = collect_display_math_region(lines, index);
+                children.push(math_or_raw_block(cx, lines[index..math_end].join("\n")));
+                saw_child = true;
+                pending_blank_lines = 0;
+                index = math_end;
                 continue;
             }
 
@@ -1443,6 +1464,13 @@ impl Editor {
                 let html_end = collect_block_html_region(lines, index);
                 children.push(html_or_raw_block(cx, lines[index..html_end].join("\n")));
                 index = html_end;
+                continue;
+            }
+
+            if is_display_math_start(line) {
+                let math_end = collect_display_math_region(lines, index);
+                children.push(math_or_raw_block(cx, lines[index..math_end].join("\n")));
+                index = math_end;
                 continue;
             }
 
@@ -1719,7 +1747,10 @@ impl Editor {
                         let consumed = collect_display_math_region(&anchor_dedented, 0);
                         attach_child_blocks(
                             &block,
-                            vec![raw_block(cx, anchor_dedented[..consumed].join("\n"))],
+                            vec![math_or_raw_block(
+                                cx,
+                                anchor_dedented[..consumed].join("\n"),
+                            )],
                             cx,
                         );
                         body_index += consumed;
@@ -3013,15 +3044,47 @@ mod tests {
     }
 
     #[gpui::test]
-    async fn preserves_display_math_block_as_single_raw_block(cx: &mut TestAppContext) {
+    async fn imports_display_math_block_as_native_math_block(cx: &mut TestAppContext) {
         let markdown = "$$\n\\int_0^1 x^2 dx\n$$".to_string();
         let editor = cx.new(|cx| Editor::from_markdown(cx, markdown.clone(), None));
 
         editor.update(cx, |editor, cx| {
             let visible = editor.document.visible_blocks();
             assert_eq!(visible.len(), 1);
-            assert_eq!(visible[0].entity.read(cx).kind(), BlockKind::RawMarkdown);
+            assert_eq!(visible[0].entity.read(cx).kind(), BlockKind::MathBlock);
             assert_eq!(visible[0].entity.read(cx).display_text(), markdown);
+            assert_eq!(editor.document.markdown_text(cx), markdown);
+        });
+    }
+
+    #[gpui::test]
+    async fn imports_single_line_display_math_between_paragraphs(cx: &mut TestAppContext) {
+        let markdown = "before\n$$x^2$$\nafter".to_string();
+        let editor = cx.new(|cx| Editor::from_markdown(cx, markdown, None));
+
+        editor.update(cx, |editor, cx| {
+            let visible = editor.document.visible_blocks();
+            assert_eq!(visible.len(), 3);
+            assert_eq!(visible[0].entity.read(cx).kind(), BlockKind::Paragraph);
+            assert_eq!(visible[1].entity.read(cx).kind(), BlockKind::MathBlock);
+            assert_eq!(visible[1].entity.read(cx).display_text(), "$$x^2$$");
+            assert_eq!(visible[2].entity.read(cx).kind(), BlockKind::Paragraph);
+            assert_eq!(
+                editor.document.markdown_text(cx),
+                "before\n\n$$x^2$$\n\nafter"
+            );
+        });
+    }
+
+    #[gpui::test]
+    async fn unclosed_display_math_stays_raw(cx: &mut TestAppContext) {
+        let markdown = "$$\n\\int_0^1 x^2 dx".to_string();
+        let editor = cx.new(|cx| Editor::from_markdown(cx, markdown.clone(), None));
+
+        editor.update(cx, |editor, cx| {
+            let visible = editor.document.visible_blocks();
+            assert_eq!(visible.len(), 1);
+            assert_eq!(visible[0].entity.read(cx).kind(), BlockKind::RawMarkdown);
             assert_eq!(editor.document.markdown_text(cx), markdown);
         });
     }

@@ -108,6 +108,12 @@ fn show_info_dialog_on_active_editor(cx: &mut App, kind: InfoDialogKind) {
     });
 }
 
+fn request_update_check_on_active_editor(cx: &mut App) {
+    let _ = with_active_editor(cx, |editor, window, cx| {
+        editor.request_check_updates(window, cx);
+    });
+}
+
 fn is_editor_scoped_menu_action(action: &dyn Action) -> bool {
     action.as_any().is::<SaveDocument>()
         || action.as_any().is::<SaveDocumentAs>()
@@ -209,7 +215,7 @@ pub(crate) fn dispatch_menu_action(action: &dyn Action, cx: &mut App) {
             cx.refresh_windows();
         }
     } else if action.as_any().is::<CheckForUpdates>() {
-        show_info_dialog_on_active_editor(cx, InfoDialogKind::CheckForUpdates);
+        request_update_check_on_active_editor(cx);
     } else if action.as_any().is::<ShowAbout>() {
         show_info_dialog_on_active_editor(cx, InfoDialogKind::About);
     } else if action.as_any().is::<QuitApplication>() {
@@ -251,7 +257,7 @@ pub(crate) fn dispatch_menu_action_for_editor(
         });
     } else if action.as_any().is::<CheckForUpdates>() {
         let _ = target.update(cx, |editor, cx| {
-            editor.show_info_dialog(InfoDialogKind::CheckForUpdates, cx)
+            editor.request_check_updates(window, cx);
         });
     } else if action.as_any().is::<ShowAbout>() {
         let _ = target.update(cx, |editor, cx| {

@@ -34,6 +34,16 @@ pub(crate) struct ImageSyntax {
     pub(crate) target: ImageTarget,
 }
 
+/// Inline image/text segment used only by native table-cell rendering.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum TableCellInlineImageSegment {
+    Text(String),
+    Image {
+        markdown: String,
+        syntax: ImageSyntax,
+    },
+}
+
 /// Image target form before reference resolution.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum ImageTarget {
@@ -159,6 +169,139 @@ pub(crate) fn parse_standalone_image(markdown: &str) -> Option<ImageSyntax> {
         }
         _ => None,
     }
+}
+
+pub(crate) fn parse_table_cell_inline_images(markdown: &str) -> Vec<TableCellInlineImageSegment> {
+    let mut segments = Vec::new();
+    let mut text_start = 0usize;
+    let mut cursor = 0usize;
+    let mut found_image = false;
+
+    while cursor < markdown.len() {
+        if markdown[cursor..].starts_with("![")
+            && !is_escaped(markdown, cursor)
+            && let Some((image_markdown, syntax, end)) = parse_inline_image_at(markdown, cursor)
+        {
+            if is_link_wrapped_inline_image(markdown, cursor, end) {
+                cursor += markdown[cursor..]
+                    .chars()
+                    .next()
+                    .map(char::len_utf8)
+                    .unwrap_or(1);
+                continue;
+            }
+
+            if text_start < cursor {
+                segments.push(TableCellInlineImageSegment::Text(
+                    markdown[text_start..cursor].to_string(),
+                ));
+            }
+            segments.push(TableCellInlineImageSegment::Image {
+                markdown: image_markdown,
+                syntax,
+            });
+            found_image = true;
+            cursor = end;
+            text_start = cursor;
+            continue;
+        }
+
+        cursor += markdown[cursor..]
+            .chars()
+            .next()
+            .map(char::len_utf8)
+            .unwrap_or(1);
+    }
+
+    if text_start < markdown.len() {
+        segments.push(TableCellInlineImageSegment::Text(
+            markdown[text_start..].to_string(),
+        ));
+    }
+
+    if found_image {
+        segments
+    } else {
+        vec![TableCellInlineImageSegment::Text(markdown.to_string())]
+    }
+}
+
+fn parse_inline_image_at(markdown: &str, start: usize) -> Option<(String, ImageSyntax, usize)> {
+    if !markdown[start..].starts_with("![") {
+        return None;
+    }
+
+    let alt_end = find_unescaped_char(markdown, start + 2, b']')?;
+    let alt = markdown[start + 2..alt_end].to_string();
+    let next = markdown.as_bytes().get(alt_end + 1).copied();
+
+    match next {
+        Some(b'(') => {
+            let close = find_unescaped_char(markdown, alt_end + 2, b')')?;
+            let inner = &markdown[alt_end + 2..close];
+            let (src, title) = parse_image_target(inner)?;
+            let end = close + 1;
+            Some((
+                markdown[start..end].to_string(),
+                ImageSyntax {
+                    alt,
+                    target: ImageTarget::Direct { src, title },
+                },
+                end,
+            ))
+        }
+        Some(b'[') => {
+            let close = find_unescaped_char(markdown, alt_end + 2, b']')?;
+            let raw_label = &markdown[alt_end + 2..close];
+            let label_source = if raw_label.is_empty() {
+                alt.as_str()
+            } else {
+                raw_label
+            };
+            let label = normalize_reference_label(label_source)?;
+            let end = close + 1;
+            Some((
+                markdown[start..end].to_string(),
+                ImageSyntax {
+                    alt,
+                    target: ImageTarget::Reference { label },
+                },
+                end,
+            ))
+        }
+        _ => {
+            let label = normalize_reference_label(&alt)?;
+            let end = alt_end + 1;
+            Some((
+                markdown[start..end].to_string(),
+                ImageSyntax {
+                    alt,
+                    target: ImageTarget::Reference { label },
+                },
+                end,
+            ))
+        }
+    }
+}
+
+fn is_link_wrapped_inline_image(markdown: &str, start: usize, end: usize) -> bool {
+    let mut cursor = 0usize;
+    let mut open_label = None;
+    while cursor < start {
+        let byte = markdown.as_bytes()[cursor];
+        if byte == b'[' && !is_escaped(markdown, cursor) {
+            open_label = Some(cursor);
+        } else if byte == b']' && !is_escaped(markdown, cursor) {
+            open_label = None;
+        }
+        cursor += markdown[cursor..]
+            .chars()
+            .next()
+            .map(char::len_utf8)
+            .unwrap_or(1);
+    }
+
+    open_label.is_some() && markdown[end..].starts_with("](")
 }
 
 pub(crate) fn parse_image_reference_definitions(markdown: &str) -> ImageReferenceDefinitions {
@@ -550,8 +693,8 @@ fn is_escaped(input: &str, index: usize) -> bool {
 mod tests {
     use super::{
         ImageReferenceDefinition, ImageResolvedSource, ImageSyntax, ImageTarget,
-        normalize_reference_label, parse_image_reference_definitions, parse_standalone_image,
-        resolve_image_source,
+        TableCellInlineImageSegment, normalize_reference_label, parse_image_reference_definitions,
+        parse_standalone_image, parse_table_cell_inline_images, resolve_image_source,
     };
     use std::path::Path;
 
@@ -660,6 +803,89 @@ mod tests {
         assert!(parse_standalone_image("[![alt](./img.png)](https://example.com)").is_none());
         assert!(parse_standalone_image("![][]").is_none());
         assert!(parse_standalone_image("![]").is_none());
+    }
+
+    #[test]
+    fn parses_table_cell_inline_image_segments() {
+        let segments = parse_table_cell_inline_images("image ![alt](https://example.com/x.png)");
+        assert_eq!(
+            segments,
+            vec![
+                TableCellInlineImageSegment::Text("image ".to_string()),
+                TableCellInlineImageSegment::Image {
+                    markdown: "![alt](https://example.com/x.png)".to_string(),
+                    syntax: ImageSyntax {
+                        alt: "alt".to_string(),
+                        target: ImageTarget::Direct {
+                            src: "https://example.com/x.png".to_string(),
+                            title: None,
+                        },
+                    },
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn parses_multiple_table_cell_inline_images() {
+        let segments = parse_table_cell_inline_images("![a](x.png) and ![b](y.png)");
+        assert_eq!(segments.len(), 3);
+        assert!(matches!(
+            &segments[0],
+            TableCellInlineImageSegment::Image { syntax, .. } if syntax.alt == "a"
+        ));
+        assert_eq!(
+            segments[1],
+            TableCellInlineImageSegment::Text(" and ".to_string())
+        );
+        assert!(matches!(
+            &segments[2],
+            TableCellInlineImageSegment::Image { syntax, .. } if syntax.alt == "b"
+        ));
+    }
+
+    #[test]
+    fn table_cell_inline_image_segments_keep_escaped_wrapped_and_broken_text() {
+        assert_eq!(
+            parse_table_cell_inline_images(r"\![alt](x.png)"),
+            vec![TableCellInlineImageSegment::Text(
+                r"\![alt](x.png)".to_string()
+            )]
+        );
+        assert_eq!(
+            parse_table_cell_inline_images("[![alt](x.png)](https://example.com)"),
+            vec![TableCellInlineImageSegment::Text(
+                "[![alt](x.png)](https://example.com)".to_string()
+            )]
+        );
+        assert_eq!(
+            parse_table_cell_inline_images("broken ![alt](x.png"),
+            vec![TableCellInlineImageSegment::Text(
+                "broken ![alt](x.png".to_string()
+            )]
+        );
+    }
+
+    #[test]
+    fn table_cell_inline_reference_images_resolve() {
+        let definitions = parse_image_reference_definitions(
+            "[ref]: ./ref.png\n[collapsed]: ./collapsed.png\n[shortcut]: ./shortcut.png",
+        );
+        let segments = parse_table_cell_inline_images("![full][ref] ![collapsed][] ![shortcut]");
+        let resolved = segments
+            .iter()
+            .filter_map(|segment| match segment {
+                TableCellInlineImageSegment::Image { syntax, .. } => {
+                    syntax.resolve_target(&definitions).map(|target| target.src)
+                }
+                TableCellInlineImageSegment::Text(_) => None,
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            resolved,
+            vec!["./ref.png", "./collapsed.png", "./shortcut.png"]
+        );
     }
 
     #[test]

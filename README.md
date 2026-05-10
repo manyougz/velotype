@@ -4,7 +4,9 @@
 
 ![Velotype banner](./assets/icon/velotype-banner.png)
 
-**A Rust + GPUI native Markdown editor with WYSIWYG and source editing modes.** [Editor Showcase](./assets/showcase/showcase.md)
+**A Rust + GPUI native Markdown editor with WYSIWYG and source editing modes.** 
+
+[Editor Showcase](./assets/showcase/showcase.md)
 
 [English](README.md) | [中文](assets/README.zh-CN.md)
 
@@ -69,7 +71,7 @@ Velotype already supports almost all basic Markdown syntax and most commonly use
 Syntax support will continue to improve. Planned work includes:
 
 - [ ] Mind-map drawing and rendering support
-- [ ] LaTeX math syntax and rendering support
+- [x] ~~LaTeX math syntax and rendering support~~
 - [ ] Built-in image hosting
 - [ ] More complete IME behavior
 

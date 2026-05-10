@@ -2,6 +2,7 @@
 
 mod actions;
 mod block;
+pub(crate) mod latex;
 pub(crate) mod markdown;
 
 pub use crate::editor::Editor;
@@ -9,6 +10,8 @@ pub use crate::editor::Editor;
 pub(crate) use crate::editor::InfoDialogKind;
 pub use actions::*;
 pub use block::*;
+#[allow(unused_imports)]
+pub(crate) use latex::*;
 #[allow(unused_imports)]
 pub(crate) use markdown::code_highlight::*;
 #[allow(unused_imports)]

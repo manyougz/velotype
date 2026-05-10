@@ -3,13 +3,17 @@
 use gpui::{Hsla, Rgba};
 use pulldown_cmark::{Options, Parser, html};
 
-use crate::components::sanitize_html_for_export;
+use crate::components::{
+    inline_math_font_size, parse_display_math_source, render_latex_to_svg, sanitize_html_for_export,
+};
 use crate::theme::{FontWeightDef, Theme};
 
 /// Builds a full HTML document with embedded CSS derived from the active theme.
 pub(crate) fn render_html(markdown: &str, theme: &Theme, title: &str) -> String {
     let rewritten = rewrite_visible_comment_blocks(markdown);
     let rewritten = rewrite_unsafe_html_blocks(&rewritten);
+    let rewritten = rewrite_display_math_blocks(&rewritten, theme);
+    let rewritten = rewrite_inline_math(&rewritten, theme);
     let mut options = Options::empty();
     options.insert(Options::ENABLE_TABLES);
     options.insert(Options::ENABLE_FOOTNOTES);
@@ -82,6 +86,149 @@ fn rewrite_visible_comment_blocks(markdown: &str) -> String {
     rewritten.join("\n")
 }
 
+fn rewrite_inline_math(markdown: &str, theme: &Theme) -> String {
+    let mut rewritten = Vec::new();
+    let mut active_fence: Option<(char, usize)> = None;
+    for line in markdown.split('\n') {
+        if let Some((marker, run_len)) = active_fence {
+            rewritten.push(line.to_string());
+            if is_closing_fence(line, marker, run_len) {
+                active_fence = None;
+            }
+            continue;
+        }
+
+        if let Some(fence) = opening_fence(line) {
+            active_fence = Some(fence);
+            rewritten.push(line.to_string());
+            continue;
+        }
+
+        rewritten.push(rewrite_inline_math_line(line, theme));
+    }
+
+    rewritten.join("\n")
+}
+
+fn rewrite_inline_math_line(line: &str, theme: &Theme) -> String {
+    let mut output = String::with_capacity(line.len());
+    let mut index = 0usize;
+    while index < line.len() {
+        if line[index..].starts_with('`') {
+            let run_len = line[index..]
+                .bytes()
+                .take_while(|byte| *byte == b'`')
+                .count();
+            if let Some(close) = find_backtick_run(line, index + run_len, run_len) {
+                output.push_str(&line[index..close + run_len]);
+                index = close + run_len;
+                continue;
+            }
+        }
+
+        if let Some((end, body)) = locate_inline_dollar_math_source(line, index)
+            .or_else(|| locate_inline_paren_math_source(line, index))
+        {
+            match render_latex_to_svg(
+                &body,
+                theme.colors.text_default,
+                inline_math_font_size(theme.typography.text_size),
+            ) {
+                Ok(svg) => {
+                    output.push_str(&format!("<span class=\"vlt-inline-math\">{svg}</span>"))
+                }
+                Err(_) => output.push_str(&escape_html(&line[index..end])),
+            }
+            index = end;
+            continue;
+        }
+
+        let ch = line[index..].chars().next().unwrap();
+        output.push(ch);
+        index += ch.len_utf8();
+    }
+    output
+}
+
+fn find_backtick_run(line: &str, mut index: usize, run_len: usize) -> Option<usize> {
+    while index < line.len() {
+        if line[index..].starts_with(&"`".repeat(run_len)) {
+            return Some(index);
+        }
+        index += line[index..].chars().next()?.len_utf8();
+    }
+    None
+}
+
+fn locate_inline_dollar_math_source(line: &str, index: usize) -> Option<(usize, String)> {
+    if !line[index..].starts_with('$')
+        || line[index..].starts_with("$$")
+        || is_escaped_ascii(line, index)
+    {
+        return None;
+    }
+    let mut cursor = index + 1;
+    while cursor < line.len() {
+        if line[cursor..].starts_with('$')
+            && !line[cursor..].starts_with("$$")
+            && !is_escaped_ascii(line, cursor)
+        {
+            let body = &line[index + 1..cursor];
+            if valid_inline_math_body(body)
+                && !looks_like_export_currency(line, index, cursor, body)
+            {
+                return Some((cursor + 1, body.to_string()));
+            }
+            return None;
+        }
+        cursor += line[cursor..].chars().next()?.len_utf8();
+    }
+    None
+}
+
+fn locate_inline_paren_math_source(line: &str, index: usize) -> Option<(usize, String)> {
+    if !line[index..].starts_with("\\(") {
+        return None;
+    }
+    let mut cursor = index + 2;
+    while cursor + 1 < line.len() {
+        if line[cursor..].starts_with("\\)") {
+            let body = &line[index + 2..cursor];
+            if valid_inline_math_body(body) {
+                return Some((cursor + 2, body.to_string()));
+            }
+            return None;
+        }
+        cursor += line[cursor..].chars().next()?.len_utf8();
+    }
+    None
+}
+
+fn valid_inline_math_body(body: &str) -> bool {
+    !body.is_empty() && !body.contains(['\n', '\r']) && body.trim() == body && !body.is_empty()
+}
+
+fn is_escaped_ascii(line: &str, index: usize) -> bool {
+    let mut slash_count = 0usize;
+    let mut cursor = index;
+    while cursor > 0 && line.as_bytes()[cursor - 1] == b'\\' {
+        slash_count += 1;
+        cursor -= 1;
+    }
+    slash_count % 2 == 1
+}
+
+fn looks_like_export_currency(line: &str, open: usize, close: usize, body: &str) -> bool {
+    let prev_is_digit = open > 0 && line.as_bytes()[open - 1].is_ascii_digit();
+    let next_is_digit = close + 1 < line.len() && line.as_bytes()[close + 1].is_ascii_digit();
+    (prev_is_digit || next_is_digit)
+        || (body
+            .chars()
+            .all(|ch| ch.is_ascii_digit() || matches!(ch, '.' | ',' | '_'))
+            && body.chars().any(|ch| ch.is_ascii_digit())
+            && body.len() > 1)
+}
+
 fn rewrite_unsafe_html_blocks(markdown: &str) -> String {
     let lines = markdown.split('\n').collect::<Vec<_>>();
     let mut rewritten = Vec::with_capacity(lines.len());
@@ -115,6 +262,59 @@ fn rewrite_unsafe_html_blocks(markdown: &str) -> String {
         let end = collect_export_html_region(&lines, index, &html_start);
         let raw = lines[index..end].join("\n");
         rewritten.push(sanitize_html_for_export(&raw));
+        index = end;
+    }
+
+    rewritten.join("\n")
+}
+
+fn rewrite_display_math_blocks(markdown: &str, theme: &Theme) -> String {
+    let lines = markdown.split('\n').collect::<Vec<_>>();
+    let mut rewritten = Vec::with_capacity(lines.len());
+    let mut index = 0usize;
+    let mut active_fence: Option<(char, usize)> = None;
+
+    while index < lines.len() {
+        let line = lines[index];
+        if let Some((marker, run_len)) = active_fence {
+            rewritten.push(line.to_string());
+            if is_closing_fence(line, marker, run_len) {
+                active_fence = None;
+            }
+            index += 1;
+            continue;
+        }
+
+        if let Some(fence) = opening_fence(line) {
+            active_fence = Some(fence);
+            rewritten.push(line.to_string());
+            index += 1;
+            continue;
+        }
+
+        if !is_root_display_math_start(line) {
+            rewritten.push(line.to_string());
+            index += 1;
+            continue;
+        }
+
+        let end = collect_display_math_region(&lines, index);
+        let raw = lines[index..end].join("\n");
+        if let Some(source) = parse_display_math_source(&raw) {
+            match render_latex_to_svg(
+                &source.body,
+                theme.colors.text_default,
+                theme.typography.text_size,
+            ) {
+                Ok(svg) => rewritten.push(format!("<div class=\"vlt-math\">{svg}</div>")),
+                Err(_) => rewritten.push(format!(
+                    "<pre class=\"vlt-math-error\">{}</pre>",
+                    escape_html(&raw)
+                )),
+            }
+        } else {
+            rewritten.push(raw);
+        }
         index = end;
     }
 
@@ -208,6 +408,30 @@ fn is_closing_fence(line: &str, marker: char, opening_run_len: usize) -> bool {
 fn is_root_comment_start(line: &str) -> bool {
     let trimmed = line.trim_start();
     trimmed.starts_with("<!--") && line.len() - trimmed.len() <= 3
+}
+
+fn is_root_display_math_start(line: &str) -> bool {
+    let trimmed = line.trim_start();
+    trimmed.starts_with("$$") && line.len() - trimmed.len() <= 3
+}
+
+fn collect_display_math_region(lines: &[&str], start: usize) -> usize {
+    let opener = lines[start].trim_start().trim_end();
+    if opener != "$$" && opener[2..].contains("$$") {
+        return start + 1;
+    }
+
+    let mut index = start + 1;
+    while index < lines.len() {
+        if lines[index].trim() == "$$" {
+            return index + 1;
+        }
+        if lines[index].trim().is_empty() {
+            return index;
+        }
+        index += 1;
+    }
+    lines.len()
 }
 
 fn theme_css(theme: &Theme) -> String {
@@ -312,6 +536,31 @@ pre code {{ padding: 0; background-color: transparent; }}
   color: var(--vlt-text);
 }}
 .vlt-raw-html {{
+  white-space: pre-wrap;
+  background-color: var(--vlt-code-bg);
+  color: var(--vlt-code-text);
+}}
+.vlt-math {{
+  display: flex;
+  justify-content: center;
+  margin: 1rem 0;
+  overflow-x: auto;
+}}
+.vlt-math svg {{
+  max-width: 100%;
+  height: auto;
+}}
+.vlt-inline-math {{
+  display: inline-flex;
+  align-items: center;
+  vertical-align: middle;
+  max-width: 100%;
+}}
+.vlt-inline-math svg {{
+  max-height: 1.8em;
+  width: auto;
+}}
+.vlt-math-error {{
   white-space: pre-wrap;
   background-color: var(--vlt-code-bg);
   color: var(--vlt-code-text);
@@ -535,5 +784,43 @@ mod tests {
 
         assert!(html.contains("<title>A &amp; &lt;B&gt;</title>"));
         assert!(html.contains("<h1>A &amp; B</h1>"));
+    }
+
+    #[test]
+    fn exports_display_math_as_svg() {
+        let html = render_html("$$\n\\frac{1}{2}\n$$", &Theme::default_theme(), "Doc");
+
+        assert!(html.contains("class=\"vlt-math\""));
+        assert!(html.contains("<svg"));
+        assert!(!html.contains("$$\n\\frac{1}{2}\n$$"));
+    }
+
+    #[test]
+    fn exports_inline_math_as_svg() {
+        let html = render_html("before $x^2$ after", &Theme::default_theme(), "Doc");
+
+        assert!(html.contains("class=\"vlt-inline-math\""));
+        assert!(html.contains("<svg"));
+        assert!(!html.contains("$x^2$"));
+        assert!(html.contains("before"));
+        assert!(html.contains("after"));
+    }
+
+    #[test]
+    fn export_inline_math_ignores_code_and_escaped_delimiters() {
+        let html = render_html("`$x$` and \\$y$", &Theme::default_theme(), "Doc");
+
+        assert!(!html.contains("class=\"vlt-inline-math\""));
+        assert!(html.contains("$x$"));
+        assert!(html.contains("$y$"));
+    }
+
+    #[test]
+    fn invalid_display_math_exports_escaped_raw_markdown() {
+        let html = render_html("$$\n\\frac{a}\n$$", &Theme::default_theme(), "Doc");
+
+        assert!(html.contains("class=\"vlt-math-error\""));
+        assert!(html.contains("$$\n\\frac{a}\n$$"));
+        assert!(!html.contains("class=\"vlt-math\"><svg"));
     }
 }

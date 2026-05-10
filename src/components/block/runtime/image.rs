@@ -32,6 +32,10 @@ impl Block {
         })
     }
 
+    pub(crate) fn image_runtime_for_syntax(&self, syntax: ImageSyntax) -> Option<ImageRuntime> {
+        self.compute_image_runtime(self.image_base_dir.as_deref(), syntax)
+    }
+
     pub(super) fn sync_image_runtime(&mut self) {
         let next_runtime = if self.can_present_as_image() {
             let markdown = self.record.title.serialize_markdown();
