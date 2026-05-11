@@ -96,9 +96,9 @@ pub struct Editor {
     table_axis_selection: Option<TableAxisSelection>,
     cross_block_selection: Option<CrossBlockSelection>,
     cross_block_drag: Option<CrossBlockDrag>,
-    /// Open top-level menu in the Windows fallback menu bar.
+    /// Open top-level menu in the in-window fallback menu bar.
     menu_bar_open: Option<usize>,
-    /// Open child submenu inside the Windows fallback menu panel.
+    /// Open child submenu inside the in-window fallback menu panel.
     menu_submenu_open: Option<usize>,
     menu_bar_hovered: bool,
     menu_panel_hovered: bool,

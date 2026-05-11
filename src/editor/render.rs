@@ -146,6 +146,26 @@ fn menu_bar_button_width(label: &str, dimensions: &ThemeDimensions) -> f32 {
     dimensions.menu_bar_button_width.max(content_width.ceil())
 }
 
+fn supports_in_window_menu_for_target_os(target_os: &str) -> bool {
+    target_os != "macos"
+}
+
+fn supports_in_window_menu() -> bool {
+    supports_in_window_menu_for_target_os(std::env::consts::OS)
+}
+
+fn in_window_menu_bar_height_for_target_os(
+    target_os: &str,
+    has_menus: bool,
+    dimensions: &ThemeDimensions,
+) -> f32 {
+    if has_menus && supports_in_window_menu_for_target_os(target_os) {
+        dimensions.menu_bar_height
+    } else {
+        0.0
+    }
+}
+
 fn menu_panel_left(open_index: usize, menu_labels: &[String], dimensions: &ThemeDimensions) -> f32 {
     let prior_width: f32 = menu_labels
         .iter()
@@ -433,10 +453,14 @@ impl Editor {
         }
     }
 
-    /// Renders a Windows-only fallback menu bar backed by the app menus
+    /// Renders the in-window fallback menu bar backed by the app menus
     /// registered through `App::set_menus`.
-    fn render_windows_menu_bar(&self, theme: &Theme, cx: &mut Context<Self>) -> Option<AnyElement> {
-        if !cfg!(target_os = "windows") {
+    fn render_in_window_menu_bar(
+        &self,
+        theme: &Theme,
+        cx: &mut Context<Self>,
+    ) -> Option<AnyElement> {
+        if !supports_in_window_menu() {
             return None;
         }
 
@@ -460,7 +484,7 @@ impl Editor {
 
         Some(
             div()
-                .id("windows-menu-bar")
+                .id("app-menu-bar")
                 .absolute()
                 .top_0()
                 .left_0()
@@ -483,7 +507,7 @@ impl Editor {
                     let button_width = button_widths[index];
 
                     div()
-                        .id(("windows-menu-button", index))
+                        .id(("app-menu-button", index))
                         .h(px(d.menu_bar_button_height))
                         .w(px(button_width))
                         .px(px(d.menu_bar_button_padding_x))
@@ -516,13 +540,13 @@ impl Editor {
         )
     }
 
-    /// Renders the currently open Windows fallback menu as a floating panel.
-    fn render_windows_menu_panel(
+    /// Renders the currently open in-window fallback menu as a floating panel.
+    fn render_in_window_menu_panel(
         &self,
         theme: &Theme,
         cx: &mut Context<Self>,
     ) -> Option<AnyElement> {
-        if !cfg!(target_os = "windows") {
+        if !supports_in_window_menu() {
             return None;
         }
 
@@ -550,7 +574,7 @@ impl Editor {
                     )?;
                     Some(
                         div()
-                            .id(("windows-submenu-bridge", open_index * 1000 + submenu_index))
+                            .id(("app-submenu-bridge", open_index * 1000 + submenu_index))
                             .absolute()
                             .occlude()
                             .top(px(geometry.top))
@@ -588,7 +612,7 @@ impl Editor {
                             |(item_index, item)| match item {
                                 OwnedMenuItem::Separator => div()
                                     .id((
-                                        "windows-submenu-separator",
+                                        "app-submenu-separator",
                                         submenu_index * 1000 + item_index,
                                     ))
                                     .mx(px(d.menu_separator_margin_x))
@@ -601,10 +625,7 @@ impl Editor {
                                         action.as_ref().as_any().is::<NoRecentFiles>();
                                     let editor = editor.clone();
                                     let base = div()
-                                        .id((
-                                            "windows-submenu-item",
-                                            submenu_index * 1000 + item_index,
-                                        ))
+                                        .id(("app-submenu-item", submenu_index * 1000 + item_index))
                                         .w_full()
                                         .h(px(d.menu_item_height))
                                         .px(px(d.menu_item_padding_x))
@@ -642,10 +663,7 @@ impl Editor {
                                     }
                                 }
                                 OwnedMenuItem::Submenu(submenu) => div()
-                                    .id((
-                                        "windows-submenu-nested",
-                                        submenu_index * 1000 + item_index,
-                                    ))
+                                    .id(("app-submenu-nested", submenu_index * 1000 + item_index))
                                     .w_full()
                                     .h(px(d.menu_item_height))
                                     .px(px(d.menu_item_padding_x))
@@ -658,10 +676,7 @@ impl Editor {
                                     .child(submenu.name.to_string())
                                     .into_any_element(),
                                 OwnedMenuItem::SystemMenu(os_menu) => div()
-                                    .id((
-                                        "windows-submenu-system",
-                                        submenu_index * 1000 + item_index,
-                                    ))
+                                    .id(("app-submenu-system", submenu_index * 1000 + item_index))
                                     .w_full()
                                     .h(px(d.menu_item_height))
                                     .px(px(d.menu_item_padding_x))
@@ -678,7 +693,7 @@ impl Editor {
 
                         Some(
                             div()
-                                .id(("windows-submenu-panel", open_index * 1000 + submenu_index))
+                                .id(("app-submenu-panel", open_index * 1000 + submenu_index))
                                 .absolute()
                                 .occlude()
                                 .top(px(top))
@@ -708,7 +723,7 @@ impl Editor {
             .enumerate()
             .map(|(item_index, item)| match item {
                 OwnedMenuItem::Separator => div()
-                    .id(("windows-menu-separator", item_index))
+                    .id(("app-menu-separator", item_index))
                     .mx(px(d.menu_separator_margin_x))
                     .my(px(d.menu_separator_margin_y))
                     .h(px(d.menu_separator_height))
@@ -719,7 +734,7 @@ impl Editor {
                     let editor = editor.clone();
                     let hover_editor = editor.clone();
                     let base = div()
-                        .id(("windows-menu-item", item_index))
+                        .id(("app-menu-item", item_index))
                         .w_full()
                         .h(px(d.menu_item_height))
                         .px(px(d.menu_item_padding_x))
@@ -764,7 +779,7 @@ impl Editor {
                     let is_open = self.menu_submenu_open == Some(item_index);
                     let hover_editor = editor.clone();
                     div()
-                        .id(("windows-menu-submenu", item_index))
+                        .id(("app-menu-submenu", item_index))
                         .w_full()
                         .h(px(d.menu_item_height))
                         .px(px(d.menu_item_padding_x))
@@ -794,7 +809,7 @@ impl Editor {
                         .into_any_element()
                 }
                 OwnedMenuItem::SystemMenu(os_menu) => div()
-                    .id(("windows-menu-system", item_index))
+                    .id(("app-menu-system", item_index))
                     .w_full()
                     .h(px(d.menu_item_height))
                     .px(px(d.menu_item_padding_x))
@@ -809,7 +824,7 @@ impl Editor {
             });
 
         let main_panel = div()
-            .id(("windows-menu-panel", open_index))
+            .id(("app-menu-panel", open_index))
             .absolute()
             .occlude()
             .top(px(d.menu_panel_top))
@@ -829,7 +844,7 @@ impl Editor {
             .into_any_element();
 
         let layer = div()
-            .id(("windows-menu-panel-layer", open_index))
+            .id(("app-menu-panel-layer", open_index))
             .absolute()
             .top_0()
             .left_0()
@@ -903,25 +918,11 @@ impl Editor {
                             )
                             .child(
                                 div()
-                                    .flex()
-                                    .flex_col()
-                                    .gap(px(d.dialog_gap * 0.5))
-                                    .child(
-                                        div()
-                                            .text_size(px(t.dialog_body_size))
-                                            .font_weight(t.dialog_body_weight.to_font_weight())
-                                            .line_height(rems(t.text_line_height))
-                                            .text_color(c.dialog_body)
-                                            .child(strings.unsaved_changes_message.clone()),
-                                    )
-                                    .child(
-                                        div()
-                                            .text_size(px(t.dialog_body_size))
-                                            .font_weight(t.dialog_body_weight.to_font_weight())
-                                            .line_height(rems(t.text_line_height))
-                                            .text_color(c.dialog_muted)
-                                            .child(strings.unsaved_changes_hint.clone()),
-                                    ),
+                                    .text_size(px(t.dialog_body_size))
+                                    .font_weight(t.dialog_body_weight.to_font_weight())
+                                    .line_height(rems(t.text_line_height))
+                                    .text_color(c.dialog_body)
+                                    .child(strings.unsaved_changes_message.clone()),
                             )
                             .child(
                                 div()
@@ -1049,25 +1050,11 @@ impl Editor {
                             )
                             .child(
                                 div()
-                                    .flex()
-                                    .flex_col()
-                                    .gap(px(d.dialog_gap * 0.5))
-                                    .child(
-                                        div()
-                                            .text_size(px(t.dialog_body_size))
-                                            .font_weight(t.dialog_body_weight.to_font_weight())
-                                            .line_height(rems(t.text_line_height))
-                                            .text_color(c.dialog_body)
-                                            .child(strings.drop_replace_message.clone()),
-                                    )
-                                    .child(
-                                        div()
-                                            .text_size(px(t.dialog_body_size))
-                                            .font_weight(t.dialog_body_weight.to_font_weight())
-                                            .line_height(rems(t.text_line_height))
-                                            .text_color(c.dialog_muted)
-                                            .child(strings.drop_replace_hint.clone()),
-                                    ),
+                                    .text_size(px(t.dialog_body_size))
+                                    .font_weight(t.dialog_body_weight.to_font_weight())
+                                    .line_height(rems(t.text_line_height))
+                                    .text_color(c.dialog_body)
+                                    .child(strings.drop_replace_message.clone()),
                             )
                             .child(
                                 div()
@@ -1338,16 +1325,15 @@ impl Render for Editor {
         let c = &theme.colors;
         let visible_blocks = self.document.visible_blocks().to_vec();
         let editor = cx.entity().downgrade();
-        let has_windows_menu = cfg!(target_os = "windows")
-            && cx
-                .get_menus()
-                .map(|menus| !menus.is_empty())
-                .unwrap_or(false);
-        let menu_bar_height = if has_windows_menu {
-            px(d.menu_bar_height)
-        } else {
-            px(0.0)
-        };
+        let has_menus = cx
+            .get_menus()
+            .map(|menus| !menus.is_empty())
+            .unwrap_or(false);
+        let menu_bar_height = px(in_window_menu_bar_height_for_target_os(
+            std::env::consts::OS,
+            has_menus,
+            d,
+        ));
         let scroll_trigger_padding = (d.block_min_height * 0.75).max(16.0);
         let max_scroll_y = f32::from(self.scroll_handle.max_offset().height.max(px(0.0)));
         let viewport_height = f32::from(viewport_bounds.size.height.max(px(1.0)));
@@ -1682,8 +1668,12 @@ impl Render for Editor {
             .left(px(d.view_mode_toggle_left))
             .bottom(px(d.view_mode_toggle_bottom))
             .occlude()
+            .min_w(px(d.view_mode_toggle_min_width))
             .px(px(d.view_mode_toggle_padding_x))
             .py(px(d.view_mode_toggle_padding_y))
+            .flex()
+            .items_center()
+            .justify_center()
             .rounded(px(d.view_mode_toggle_radius))
             .bg(if self.view_mode_toggle_hovered {
                 c.dialog_secondary_button_hover
@@ -1699,6 +1689,7 @@ impl Render for Editor {
             } else {
                 c.dialog_muted
             })
+            .whitespace_nowrap()
             .on_hover(cx.listener(Self::on_view_mode_toggle_hover))
             .child(SharedString::from(toggle_label))
             .on_click(cx.listener(Self::on_toggle_view_mode));
@@ -1721,7 +1712,7 @@ impl Render for Editor {
             .on_action(cx.listener(Self::on_export_pdf))
             .on_action(cx.listener(Self::on_quit_application))
             .on_action(cx.listener(Self::on_dismiss_transient_ui));
-        let base = if let Some(menu_bar) = self.render_windows_menu_bar(&theme, cx) {
+        let base = if let Some(menu_bar) = self.render_in_window_menu_bar(&theme, cx) {
             base.child(menu_bar)
         } else {
             base
@@ -1733,7 +1724,7 @@ impl Render for Editor {
                 .pt(menu_bar_height)
                 .child(content_area),
         );
-        let base = if let Some(menu_panel) = self.render_windows_menu_panel(&theme, cx) {
+        let base = if let Some(menu_panel) = self.render_in_window_menu_panel(&theme, cx) {
             base.child(menu_panel)
         } else {
             base
@@ -1765,8 +1756,9 @@ impl Render for Editor {
 #[cfg(test)]
 mod tests {
     use super::{
-        RenderedRowSpacingInfo, callout_row_top_gap, menu_bar_button_width, menu_panel_left,
-        menu_panel_width_for_labels, rendered_row_top_gap, submenu_bridge_geometry,
+        RenderedRowSpacingInfo, callout_row_top_gap, in_window_menu_bar_height_for_target_os,
+        menu_bar_button_width, menu_panel_left, menu_panel_width_for_labels, rendered_row_top_gap,
+        submenu_bridge_geometry, supports_in_window_menu_for_target_os,
     };
     use crate::theme::Theme;
     use gpui::{OwnedMenu, OwnedMenuItem};
@@ -1896,6 +1888,51 @@ mod tests {
             dimensions.menu_bar_button_width
         );
         assert!(menu_bar_button_width("Language", dimensions) > dimensions.menu_bar_button_width);
+    }
+
+    #[test]
+    fn in_window_menu_is_enabled_for_every_target_except_macos() {
+        for target_os in [
+            "windows",
+            "linux",
+            "freebsd",
+            "openbsd",
+            "netbsd",
+            "dragonfly",
+            "solaris",
+            "illumos",
+            "android",
+            "unknown",
+        ] {
+            assert!(
+                supports_in_window_menu_for_target_os(target_os),
+                "{target_os} should use the in-window fallback menu"
+            );
+        }
+        assert!(!supports_in_window_menu_for_target_os("macos"));
+    }
+
+    #[test]
+    fn in_window_menu_height_depends_on_platform_and_menu_presence() {
+        let theme = Theme::default_theme();
+        let dimensions = &theme.dimensions;
+
+        assert_eq!(
+            in_window_menu_bar_height_for_target_os("linux", true, dimensions),
+            dimensions.menu_bar_height
+        );
+        assert_eq!(
+            in_window_menu_bar_height_for_target_os("windows", true, dimensions),
+            dimensions.menu_bar_height
+        );
+        assert_eq!(
+            in_window_menu_bar_height_for_target_os("linux", false, dimensions),
+            0.0
+        );
+        assert_eq!(
+            in_window_menu_bar_height_for_target_os("macos", true, dimensions),
+            0.0
+        );
     }
 
     #[test]
