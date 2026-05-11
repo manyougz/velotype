@@ -70,7 +70,7 @@ Velotype already supports almost all basic Markdown syntax and most commonly use
 
 Syntax support will continue to improve. Planned work includes:
 
-- [ ] Mind-map drawing and rendering support
+- [x] ~~Mind-map drawing and rendering support~~
 - [x] ~~LaTeX math syntax and rendering support~~
 - [ ] Built-in image hosting
 - [ ] More complete IME behavior
