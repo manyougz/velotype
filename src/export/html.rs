@@ -4,7 +4,9 @@ use gpui::{Hsla, Rgba};
 use pulldown_cmark::{Options, Parser, html};
 
 use crate::components::{
-    inline_math_font_size, parse_display_math_source, render_latex_to_svg, sanitize_html_for_export,
+    inline_math_font_size, is_mermaid_closing_fence, parse_display_math_source,
+    parse_mermaid_fence_source, parse_mermaid_fence_start, render_latex_to_svg,
+    render_mermaid_to_svg, sanitize_html_for_export,
 };
 use crate::theme::{FontWeightDef, Theme};
 
@@ -14,6 +16,7 @@ pub(crate) fn render_html(markdown: &str, theme: &Theme, title: &str) -> String 
     let rewritten = rewrite_unsafe_html_blocks(&rewritten);
     let rewritten = rewrite_display_math_blocks(&rewritten, theme);
     let rewritten = rewrite_inline_math(&rewritten, theme);
+    let rewritten = rewrite_mermaid_blocks(&rewritten);
     let mut options = Options::empty();
     options.insert(Options::ENABLE_TABLES);
     options.insert(Options::ENABLE_FOOTNOTES);
@@ -321,6 +324,47 @@ fn rewrite_display_math_blocks(markdown: &str, theme: &Theme) -> String {
     rewritten.join("\n")
 }
 
+fn rewrite_mermaid_blocks(markdown: &str) -> String {
+    let lines = markdown.split('\n').collect::<Vec<_>>();
+    let mut rewritten = Vec::with_capacity(lines.len());
+    let mut index = 0usize;
+
+    while index < lines.len() {
+        let line = lines[index];
+        let Some(fence) = parse_mermaid_fence_start(line) else {
+            rewritten.push(line.to_string());
+            index += 1;
+            continue;
+        };
+
+        let mut end = index + 1;
+        while end < lines.len() && !is_mermaid_closing_fence(lines[end], fence) {
+            end += 1;
+        }
+        if end >= lines.len() {
+            rewritten.push(line.to_string());
+            index += 1;
+            continue;
+        }
+
+        let raw = lines[index..=end].join("\n");
+        if let Some(source) = parse_mermaid_fence_source(&raw) {
+            match render_mermaid_to_svg(&source.body) {
+                Ok(svg) => rewritten.push(format!("<div class=\"vlt-mermaid\">{svg}</div>")),
+                Err(_) => rewritten.push(format!(
+                    "<pre class=\"vlt-mermaid-error\">{}</pre>",
+                    escape_html(&raw)
+                )),
+            }
+        } else {
+            rewritten.push(raw);
+        }
+        index = end + 1;
+    }
+
+    rewritten.join("\n")
+}
+
 #[derive(Clone, Debug)]
 struct ExportHtmlStart {
     name: String,
@@ -550,6 +594,16 @@ pre code {{ padding: 0; background-color: transparent; }}
   max-width: 100%;
   height: auto;
 }}
+.vlt-mermaid {{
+  display: flex;
+  justify-content: center;
+  margin: 1rem 0;
+  overflow-x: auto;
+}}
+.vlt-mermaid svg {{
+  max-width: 100%;
+  height: auto;
+}}
 .vlt-inline-math {{
   display: inline-flex;
   align-items: center;
@@ -561,6 +615,11 @@ pre code {{ padding: 0; background-color: transparent; }}
   width: auto;
 }}
 .vlt-math-error {{
+  white-space: pre-wrap;
+  background-color: var(--vlt-code-bg);
+  color: var(--vlt-code-text);
+}}
+.vlt-mermaid-error {{
   white-space: pre-wrap;
   background-color: var(--vlt-code-bg);
   color: var(--vlt-code-text);
@@ -796,6 +855,19 @@ mod tests {
     }
 
     #[test]
+    fn exports_mermaid_block_as_svg() {
+        let html = render_html(
+            "```mermaid\nflowchart LR\nA --> B\n```",
+            &Theme::default_theme(),
+            "Doc",
+        );
+
+        assert!(html.contains("class=\"vlt-mermaid\""));
+        assert!(html.contains("<svg"));
+        assert!(!html.contains("```mermaid\nflowchart LR\nA --&gt; B\n```"));
+    }
+
+    #[test]
     fn exports_inline_math_as_svg() {
         let html = render_html("before $x^2$ after", &Theme::default_theme(), "Doc");
 
@@ -822,5 +894,18 @@ mod tests {
         assert!(html.contains("class=\"vlt-math-error\""));
         assert!(html.contains("$$\n\\frac{a}\n$$"));
         assert!(!html.contains("class=\"vlt-math\"><svg"));
+    }
+
+    #[test]
+    fn invalid_mermaid_exports_escaped_raw_markdown() {
+        let html = render_html(
+            "```mermaid\nnot a real mermaid diagram ::::\n```",
+            &Theme::default_theme(),
+            "Doc",
+        );
+
+        assert!(html.contains("class=\"vlt-mermaid-error\""));
+        assert!(html.contains("not a real mermaid diagram ::::"));
+        assert!(!html.contains("class=\"vlt-mermaid\"><svg"));
     }
 }

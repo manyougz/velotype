@@ -71,6 +71,7 @@ impl EditMode {
                 | BlockKind::Comment
                 | BlockKind::HtmlBlock
                 | BlockKind::MathBlock
+                | BlockKind::MermaidBlock
         ) {
             Self::SourceRaw
         } else {

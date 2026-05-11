@@ -758,7 +758,31 @@ async fn dismissing_menu_bar_from_body_clears_open_state(cx: &mut TestAppContext
         assert_eq!(editor.menu_bar_open, None);
         assert!(!editor.menu_bar_hovered);
         assert!(!editor.menu_panel_hovered);
+        assert!(!editor.menu_submenu_panel_hovered);
         assert!(editor.menu_close_task.is_none());
+    });
+}
+
+#[gpui::test]
+async fn submenu_panel_hover_keeps_windows_menu_open(cx: &mut TestAppContext) {
+    let editor = cx.new(|cx| Editor::from_markdown(cx, "alpha".to_string(), None));
+
+    editor.update(cx, |editor, cx| {
+        editor.open_menu_bar(0, cx);
+        editor.open_menu_submenu(2, cx);
+        editor.set_menu_submenu_panel_hovered(true, cx);
+        editor.set_menu_panel_hovered(false, cx);
+        editor.set_menu_bar_hovered(false, cx);
+
+        assert_eq!(editor.menu_bar_open, Some(0));
+        assert_eq!(editor.menu_submenu_open, Some(2));
+        assert!(editor.menu_submenu_panel_hovered);
+        assert!(editor.menu_close_task.is_none());
+
+        editor.set_menu_submenu_panel_hovered(false, cx);
+        assert!(editor.menu_close_task.is_some());
+
+        editor.close_menu_bar(cx);
     });
 }
 

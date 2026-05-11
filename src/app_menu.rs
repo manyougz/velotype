@@ -11,9 +11,11 @@ use gpui::*;
 
 use crate::app_identity::VELOTYPE_APP_ID;
 use crate::components::{
-    AddLanguageConfig, AddThemeConfig, CheckForUpdates, ExportHtml, ExportPdf, NewWindow, OpenFile,
-    QuitApplication, SaveDocument, SaveDocumentAs, SelectLanguage, SelectTheme, ShowAbout,
+    AddLanguageConfig, AddThemeConfig, CheckForUpdates, ExportHtml, ExportPdf, NewWindow,
+    NoRecentFiles, OpenFile, OpenRecentFile, QuitApplication, SaveDocument, SaveDocumentAs,
+    SelectLanguage, SelectTheme, ShowAbout,
 };
+use crate::config::{read_recent_files, record_recent_file, remove_recent_file};
 use crate::editor::{Editor, InfoDialogKind};
 use crate::export::ExportFormat;
 use crate::i18n::I18nManager;
@@ -79,7 +81,21 @@ fn open_file_in_new_window(cx: &mut App, path: &Path) -> anyhow::Result<()> {
     let markdown = std::fs::read_to_string(path)
         .with_context(|| format!("failed to read '{}'", path.display()))?;
     open_editor_window(cx, markdown, Some(path.to_path_buf()));
+    record_recent_file_and_refresh(path, cx);
     Ok(())
+}
+
+fn record_recent_file_and_refresh(path: &Path, cx: &mut App) {
+    if let Err(err) = record_recent_file(path) {
+        eprintln!("failed to update recent file history: {err}");
+        return;
+    }
+    install_menus(cx);
+    cx.refresh_windows();
+}
+
+pub(crate) fn record_recent_file_from_editor(path: &Path, cx: &mut App) {
+    record_recent_file_and_refresh(path, cx);
 }
 
 fn show_window_prompt(window: Option<AnyWindowHandle>, title: String, detail: &str, cx: &mut App) {
@@ -112,6 +128,46 @@ fn request_update_check_on_active_editor(cx: &mut App) {
     let _ = with_active_editor(cx, |editor, window, cx| {
         editor.request_check_updates(window, cx);
     });
+}
+
+fn recent_files_for_menu() -> Vec<PathBuf> {
+    match read_recent_files() {
+        Ok(paths) => paths,
+        Err(err) => {
+            eprintln!("failed to read recent file history: {err}");
+            Vec::new()
+        }
+    }
+}
+
+fn open_recent_file(cx: &mut App, path: PathBuf) {
+    if !path.is_file() {
+        if let Err(err) = remove_recent_file(&path) {
+            eprintln!("failed to remove missing recent file: {err}");
+        }
+        install_menus(cx);
+        cx.refresh_windows();
+        let strings = cx.global::<I18nManager>().strings().clone();
+        let detail = strings
+            .recent_file_missing_message_template
+            .replace("{path}", &path.to_string_lossy());
+        show_window_prompt(
+            cx.active_window(),
+            strings.recent_file_missing_title,
+            &detail,
+            cx,
+        );
+        return;
+    }
+
+    if let Err(err) = open_file_in_new_window(cx, &path) {
+        let title = cx
+            .global::<I18nManager>()
+            .strings()
+            .open_failed_title
+            .clone();
+        show_window_prompt(cx.active_window(), title, &err.to_string(), cx);
+    }
 }
 
 fn is_editor_scoped_menu_action(action: &dyn Action) -> bool {
@@ -182,6 +238,9 @@ pub(crate) fn dispatch_menu_action(action: &dyn Action, cx: &mut App) {
         open_editor_window(cx, String::new(), None);
     } else if action.as_any().is::<OpenFile>() {
         prompt_and_open_files(cx);
+    } else if let Some(action) = action.as_any().downcast_ref::<OpenRecentFile>() {
+        open_recent_file(cx, PathBuf::from(&action.path));
+    } else if action.as_any().is::<NoRecentFiles>() {
     } else if action.as_any().is::<AddLanguageConfig>() {
         prompt_and_import_language_config(cx);
     } else if action.as_any().is::<AddThemeConfig>() {
@@ -266,7 +325,11 @@ pub(crate) fn dispatch_menu_action_for_editor(
     }
 }
 
-fn build_menus(theme_manager: &ThemeManager, i18n_manager: &I18nManager) -> Vec<Menu> {
+fn build_menus(
+    theme_manager: &ThemeManager,
+    i18n_manager: &I18nManager,
+    recent_files: &[PathBuf],
+) -> Vec<Menu> {
     let current_theme_id = theme_manager.current_theme_id().to_string();
     let current_language_id = i18n_manager.current_language_id().to_string();
     let strings = i18n_manager.strings().clone();
@@ -317,12 +380,31 @@ fn build_menus(theme_manager: &ThemeManager, i18n_manager: &I18nManager) -> Vec<
         AddLanguageConfig,
     ));
 
+    let recent_items = if recent_files.is_empty() {
+        vec![MenuItem::action(
+            strings.menu_no_recent_files.clone(),
+            NoRecentFiles,
+        )]
+    } else {
+        recent_files
+            .iter()
+            .map(|path| {
+                let label = path.to_string_lossy().to_string();
+                MenuItem::action(label.clone(), OpenRecentFile { path: label })
+            })
+            .collect()
+    };
+
     vec![
         Menu {
             name: strings.menu_file.into(),
             items: vec![
                 MenuItem::action(strings.menu_new_window.clone(), NewWindow),
                 MenuItem::action(strings.menu_open_file.clone(), OpenFile),
+                MenuItem::submenu(Menu {
+                    name: strings.menu_open_recent_file.clone().into(),
+                    items: recent_items,
+                }),
                 MenuItem::separator(),
                 MenuItem::action(strings.menu_save.clone(), SaveDocument),
                 MenuItem::action(strings.menu_save_as.clone(), SaveDocumentAs),
@@ -356,8 +438,13 @@ fn build_menus(theme_manager: &ThemeManager, i18n_manager: &I18nManager) -> Vec<
     ]
 }
 
-fn install_menus(cx: &mut App) {
-    let menus = build_menus(cx.global::<ThemeManager>(), cx.global::<I18nManager>());
+pub(crate) fn install_menus(cx: &mut App) {
+    let recent_files = recent_files_for_menu();
+    let menus = build_menus(
+        cx.global::<ThemeManager>(),
+        cx.global::<I18nManager>(),
+        &recent_files,
+    );
     cx.set_menus(menus);
 }
 
@@ -534,6 +621,12 @@ pub(crate) fn init(cx: &mut App) {
     cx.on_action(|_: &OpenFile, cx| {
         dispatch_menu_action(&OpenFile, cx);
     });
+    cx.on_action(|action: &OpenRecentFile, cx| {
+        dispatch_menu_action(action, cx);
+    });
+    cx.on_action(|_: &NoRecentFiles, cx| {
+        dispatch_menu_action(&NoRecentFiles, cx);
+    });
     cx.on_action(|_: &AddLanguageConfig, cx| {
         dispatch_menu_action(&AddLanguageConfig, cx);
     });
@@ -576,12 +669,13 @@ pub(crate) fn init(cx: &mut App) {
 mod tests {
     use super::build_menus;
     use crate::components::{
-        AddLanguageConfig, AddThemeConfig, CheckForUpdates, ExportHtml, ExportPdf, SelectLanguage,
-        SelectTheme, ShowAbout,
+        AddLanguageConfig, AddThemeConfig, CheckForUpdates, ExportHtml, ExportPdf, NoRecentFiles,
+        OpenRecentFile, SelectLanguage, SelectTheme, ShowAbout,
     };
     use crate::i18n::I18nManager;
     use crate::theme::ThemeManager;
     use gpui::MenuItem;
+    use std::path::PathBuf;
 
     fn action_name(item: &MenuItem) -> &str {
         match item {
@@ -590,11 +684,18 @@ mod tests {
         }
     }
 
+    fn submenu(item: &MenuItem) -> &gpui::Menu {
+        match item {
+            MenuItem::Submenu(menu) => menu,
+            _ => panic!("expected submenu item"),
+        }
+    }
+
     #[test]
     fn build_menus_uses_english_fallback_by_default() {
         let theme_manager = ThemeManager::default();
         let i18n_manager = I18nManager::default();
-        let menus = build_menus(&theme_manager, &i18n_manager);
+        let menus = build_menus(&theme_manager, &i18n_manager, &[]);
 
         let menu_names = menus
             .iter()
@@ -605,6 +706,10 @@ mod tests {
             vec!["File", "Export", "Language", "Theme", "Help"]
         );
         assert_eq!(action_name(&menus[0].items[0]), "New Window");
+        assert_eq!(
+            submenu(&menus[0].items[2]).name.to_string(),
+            "Open Recent File"
+        );
         assert_eq!(action_name(&menus[1].items[0]), "HTML");
         assert_eq!(action_name(&menus[1].items[1]), "PDF");
         assert_eq!(action_name(&menus[2].items[0]), "简体中文");
@@ -615,7 +720,12 @@ mod tests {
     fn build_menus_uses_chinese_language_when_selected() {
         let theme_manager = ThemeManager::default();
         let i18n_manager = I18nManager::new_with_language_id("zh-CN");
-        let menus = build_menus(&theme_manager, &i18n_manager);
+        let menus = build_menus(&theme_manager, &i18n_manager, &[]);
+
+        assert_eq!(
+            submenu(&menus[0].items[2]).name.to_string(),
+            i18n_manager.strings().menu_open_recent_file.as_str()
+        );
 
         let menu_names = menus
             .iter()
@@ -633,7 +743,7 @@ mod tests {
     fn export_menu_items_dispatch_export_actions() {
         let theme_manager = ThemeManager::default();
         let i18n_manager = I18nManager::default();
-        let menus = build_menus(&theme_manager, &i18n_manager);
+        let menus = build_menus(&theme_manager, &i18n_manager, &[]);
 
         match &menus[1].items[0] {
             MenuItem::Action { action, .. } => {
@@ -654,7 +764,7 @@ mod tests {
     fn language_menu_items_dispatch_select_language_actions() {
         let theme_manager = ThemeManager::default();
         let i18n_manager = I18nManager::default();
-        let menus = build_menus(&theme_manager, &i18n_manager);
+        let menus = build_menus(&theme_manager, &i18n_manager, &[]);
 
         match &menus[2].items[0] {
             MenuItem::Action { action, .. } => {
@@ -669,10 +779,53 @@ mod tests {
     }
 
     #[test]
+    fn recent_files_submenu_uses_empty_state_when_history_is_empty() {
+        let theme_manager = ThemeManager::default();
+        let i18n_manager = I18nManager::default();
+        let menus = build_menus(&theme_manager, &i18n_manager, &[]);
+        let recent_menu = submenu(&menus[0].items[2]);
+
+        assert_eq!(recent_menu.name.to_string(), "Open Recent File");
+        assert_eq!(recent_menu.items.len(), 1);
+        assert_eq!(action_name(&recent_menu.items[0]), "No Recent Files");
+        match &recent_menu.items[0] {
+            MenuItem::Action { action, .. } => {
+                assert!(action.as_any().is::<NoRecentFiles>());
+            }
+            _ => panic!("expected empty recent-file action item"),
+        }
+    }
+
+    #[test]
+    fn recent_files_submenu_dispatches_path_actions() {
+        let theme_manager = ThemeManager::default();
+        let i18n_manager = I18nManager::default();
+        let recent_files = vec![
+            PathBuf::from(r"C:\docs\one.md"),
+            PathBuf::from(r"D:\notes\two.markdown"),
+        ];
+        let menus = build_menus(&theme_manager, &i18n_manager, &recent_files);
+        let recent_menu = submenu(&menus[0].items[2]);
+
+        assert_eq!(recent_menu.items.len(), 2);
+        assert_eq!(action_name(&recent_menu.items[0]), r"C:\docs\one.md");
+        match &recent_menu.items[0] {
+            MenuItem::Action { action, .. } => {
+                let action = action
+                    .as_any()
+                    .downcast_ref::<OpenRecentFile>()
+                    .expect("recent file should dispatch OpenRecentFile");
+                assert_eq!(action.path, r"C:\docs\one.md");
+            }
+            _ => panic!("expected recent-file action item"),
+        }
+    }
+
+    #[test]
     fn config_import_items_are_bottom_menu_actions() {
         let theme_manager = ThemeManager::default();
         let i18n_manager = I18nManager::default();
-        let menus = build_menus(&theme_manager, &i18n_manager);
+        let menus = build_menus(&theme_manager, &i18n_manager, &[]);
 
         let language_items = &menus[2].items;
         assert!(matches!(
@@ -717,7 +870,7 @@ mod tests {
     fn help_menu_contains_update_and_about_only() {
         let theme_manager = ThemeManager::default();
         let i18n_manager = I18nManager::default();
-        let menus = build_menus(&theme_manager, &i18n_manager);
+        let menus = build_menus(&theme_manager, &i18n_manager, &[]);
         let help_items = &menus[4].items;
 
         assert_eq!(help_items.len(), 3);

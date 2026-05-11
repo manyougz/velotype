@@ -237,6 +237,8 @@ impl Editor {
         }
 
         self.menu_bar_open = None;
+        self.menu_submenu_open = None;
+        self.menu_submenu_panel_hovered = false;
         self.info_dialog = Some(kind);
         cx.notify();
     }
@@ -251,6 +253,25 @@ impl Editor {
         self.menu_close_task = None;
         if self.menu_bar_open != Some(index) {
             self.menu_bar_open = Some(index);
+            self.menu_submenu_open = None;
+            self.menu_submenu_panel_hovered = false;
+            cx.notify();
+        }
+    }
+
+    pub(crate) fn open_menu_submenu(&mut self, index: usize, cx: &mut Context<Self>) {
+        self.menu_close_task = None;
+        if self.menu_submenu_open != Some(index) {
+            self.menu_submenu_open = Some(index);
+            cx.notify();
+        }
+    }
+
+    pub(crate) fn close_menu_submenu(&mut self, cx: &mut Context<Self>) {
+        let had_open_submenu = self.menu_submenu_open.take().is_some();
+        let had_submenu_hover = self.menu_submenu_panel_hovered;
+        self.menu_submenu_panel_hovered = false;
+        if had_open_submenu || had_submenu_hover {
             cx.notify();
         }
     }
@@ -268,7 +289,10 @@ impl Editor {
                     .await;
                 let _ = weak_editor.update(cx, |editor, cx| {
                     editor.menu_close_task = None;
-                    if !editor.menu_bar_hovered && !editor.menu_panel_hovered {
+                    if !editor.menu_bar_hovered
+                        && !editor.menu_panel_hovered
+                        && !editor.menu_submenu_panel_hovered
+                    {
                         editor.close_menu_bar(cx);
                     }
                 });
@@ -280,7 +304,7 @@ impl Editor {
         self.menu_bar_hovered = hovered;
         if hovered {
             self.menu_close_task = None;
-        } else if !self.menu_panel_hovered {
+        } else if !self.menu_panel_hovered && !self.menu_submenu_panel_hovered {
             self.schedule_menu_bar_close(cx);
         }
     }
@@ -289,7 +313,16 @@ impl Editor {
         self.menu_panel_hovered = hovered;
         if hovered {
             self.menu_close_task = None;
-        } else if !self.menu_bar_hovered {
+        } else if !self.menu_bar_hovered && !self.menu_submenu_panel_hovered {
+            self.schedule_menu_bar_close(cx);
+        }
+    }
+
+    pub(crate) fn set_menu_submenu_panel_hovered(&mut self, hovered: bool, cx: &mut Context<Self>) {
+        self.menu_submenu_panel_hovered = hovered;
+        if hovered {
+            self.menu_close_task = None;
+        } else if !self.menu_bar_hovered && !self.menu_panel_hovered {
             self.schedule_menu_bar_close(cx);
         }
     }
@@ -336,11 +369,14 @@ impl Editor {
 
     pub(crate) fn close_menu_bar(&mut self, cx: &mut Context<Self>) {
         let had_open_menu = self.menu_bar_open.take().is_some();
-        let had_hover_state = self.menu_bar_hovered || self.menu_panel_hovered;
+        let had_open_submenu = self.menu_submenu_open.take().is_some();
+        let had_hover_state =
+            self.menu_bar_hovered || self.menu_panel_hovered || self.menu_submenu_panel_hovered;
         let had_pending_close = self.menu_close_task.take().is_some();
         self.menu_bar_hovered = false;
         self.menu_panel_hovered = false;
-        if had_open_menu || had_hover_state || had_pending_close {
+        self.menu_submenu_panel_hovered = false;
+        if had_open_menu || had_open_submenu || had_hover_state || had_pending_close {
             cx.notify();
         }
     }

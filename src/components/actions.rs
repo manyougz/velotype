@@ -38,6 +38,7 @@ actions!(
         SaveDocument,
         NewWindow,
         OpenFile,
+        NoRecentFiles,
         SaveDocumentAs,
         ExportHtml,
         ExportPdf,
@@ -66,6 +67,15 @@ pub struct SelectTheme {
 pub struct SelectLanguage {
     /// Stable language id from the built-in language catalog.
     pub language_id: String,
+}
+
+/// Opens a previously recorded Markdown file path.
+#[derive(Clone, Debug, PartialEq, Deserialize, JsonSchema, gpui::Action)]
+#[action(namespace = velotype)]
+#[serde(deny_unknown_fields)]
+pub struct OpenRecentFile {
+    /// Path stored in Velotype's recent-file history.
+    pub path: String,
 }
 
 /// Register key bindings for the block editor.

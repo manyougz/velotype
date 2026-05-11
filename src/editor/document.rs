@@ -7,7 +7,6 @@
 use gpui::*;
 
 use super::Editor;
-use crate::components::parse_display_math_source;
 use crate::components::{
     BlockKind, BlockRecord, CalloutVariant, CodeFenceOpening, InlineTextTree,
     parse_footnote_definition_head,
@@ -18,6 +17,7 @@ use crate::components::{
     is_root_table_candidate_line, is_table_candidate_line, parse_root_table_region,
     parse_standalone_image, parse_table_region,
 };
+use crate::components::{is_mermaid_info_string, parse_display_math_source};
 
 /// Parsed opening code-fence metadata.
 ///
@@ -732,6 +732,14 @@ fn collect_fenced_code_block(
 ) -> Option<(Entity<super::Block>, usize)> {
     let fence = parse_opening_fence(&lines[start])?;
     let closing_index = find_matching_closing_fence(lines, start, &fence)?;
+    if is_mermaid_info_string(fence.language.as_ref().map(|language| language.as_ref())) {
+        let raw = lines[start..=closing_index].join("\n");
+        return Some((
+            Editor::new_block(cx, BlockRecord::mermaid(raw)),
+            closing_index + 1,
+        ));
+    }
+
     let mut code_lines = Vec::new();
     let mut content_index = start + 1;
     while content_index < closing_index {
@@ -3086,6 +3094,56 @@ mod tests {
             assert_eq!(visible.len(), 1);
             assert_eq!(visible[0].entity.read(cx).kind(), BlockKind::RawMarkdown);
             assert_eq!(editor.document.markdown_text(cx), markdown);
+        });
+    }
+
+    #[gpui::test]
+    async fn imports_mermaid_fence_as_native_mermaid_block(cx: &mut TestAppContext) {
+        let markdown = "before\n```mermaid\nflowchart LR\nA --> B\n```\nafter".to_string();
+        let editor = cx.new(|cx| Editor::from_markdown(cx, markdown, None));
+
+        editor.update(cx, |editor, cx| {
+            let visible = editor.document.visible_blocks();
+            assert_eq!(visible.len(), 3);
+            assert_eq!(visible[0].entity.read(cx).kind(), BlockKind::Paragraph);
+            assert_eq!(visible[1].entity.read(cx).kind(), BlockKind::MermaidBlock);
+            assert_eq!(
+                visible[1].entity.read(cx).display_text(),
+                "```mermaid\nflowchart LR\nA --> B\n```"
+            );
+            assert_eq!(visible[2].entity.read(cx).kind(), BlockKind::Paragraph);
+            assert_eq!(
+                editor.document.markdown_text(cx),
+                "before\n\n```mermaid\nflowchart LR\nA --> B\n```\n\nafter"
+            );
+        });
+    }
+
+    #[gpui::test]
+    async fn imports_tilde_mmd_fence_as_native_mermaid_block(cx: &mut TestAppContext) {
+        let markdown = "~~~MMD\nflowchart LR\nA --> B\n~~~".to_string();
+        let editor = cx.new(|cx| Editor::from_markdown(cx, markdown.clone(), None));
+
+        editor.update(cx, |editor, cx| {
+            let visible = editor.document.visible_blocks();
+            assert_eq!(visible.len(), 1);
+            assert_eq!(visible[0].entity.read(cx).kind(), BlockKind::MermaidBlock);
+            assert_eq!(editor.document.markdown_text(cx), markdown);
+        });
+    }
+
+    #[gpui::test]
+    async fn regular_fenced_code_is_not_mermaid(cx: &mut TestAppContext) {
+        let markdown = "```rust\nfn main() {}\n```".to_string();
+        let editor = cx.new(|cx| Editor::from_markdown(cx, markdown, None));
+
+        editor.update(cx, |editor, cx| {
+            let visible = editor.document.visible_blocks();
+            assert_eq!(visible.len(), 1);
+            assert!(matches!(
+                visible[0].entity.read(cx).kind(),
+                BlockKind::CodeBlock { .. }
+            ));
         });
     }
 

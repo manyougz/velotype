@@ -130,6 +130,8 @@ pub enum BlockKind {
     HtmlBlock,
     /// Display math block rendered with the LaTeX pipeline.
     MathBlock,
+    /// Mermaid fenced block rendered as SVG.
+    MermaidBlock,
     /// Raw Markdown fallback for syntax outside the native runtime subset.
     RawMarkdown,
 }
@@ -211,6 +213,7 @@ impl BlockKind {
                     | Self::Comment
                     | Self::HtmlBlock
                     | Self::MathBlock
+                    | Self::MermaidBlock
                     | Self::RawMarkdown
             )
     }
@@ -490,6 +493,13 @@ impl BlockRecord {
         record
     }
 
+    pub fn mermaid(markdown: impl Into<String>) -> Self {
+        let markdown = markdown.into();
+        let mut record = Self::with_plain_text(BlockKind::MermaidBlock, markdown.clone());
+        record.raw_fallback = Some(markdown);
+        record
+    }
+
     pub fn table(table: TableData) -> Self {
         let mut record = Self::new(BlockKind::Table, InlineTextTree::plain(String::new()));
         record.table = Some(table);
@@ -516,6 +526,7 @@ impl BlockRecord {
                 | BlockKind::Comment
                 | BlockKind::HtmlBlock
                 | BlockKind::MathBlock
+                | BlockKind::MermaidBlock
         )
     }
 
@@ -569,7 +580,8 @@ impl BlockRecord {
             BlockKind::RawMarkdown
             | BlockKind::Comment
             | BlockKind::HtmlBlock
-            | BlockKind::MathBlock => {
+            | BlockKind::MathBlock
+            | BlockKind::MermaidBlock => {
                 if depth == 0 {
                     self.raw_fallback.clone().unwrap_or(title_markdown)
                 } else {

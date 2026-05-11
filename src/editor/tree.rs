@@ -568,7 +568,8 @@ impl DocumentTree {
             BlockKind::RawMarkdown
             | BlockKind::Comment
             | BlockKind::HtmlBlock
-            | BlockKind::MathBlock => {
+            | BlockKind::MathBlock
+            | BlockKind::MermaidBlock => {
                 let indentation = "  ".repeat(list_depth);
                 let raw_markdown = block_ref
                     .record

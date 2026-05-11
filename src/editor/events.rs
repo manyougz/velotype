@@ -259,6 +259,15 @@ impl Editor {
         self.set_menu_panel_hovered(*hovered, cx);
     }
 
+    pub(crate) fn on_menu_submenu_panel_hover(
+        &mut self,
+        hovered: &bool,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.set_menu_submenu_panel_hovered(*hovered, cx);
+    }
+
     pub(crate) fn on_editor_mouse_down(
         &mut self,
         _event: &MouseDownEvent,
