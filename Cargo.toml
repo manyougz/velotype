@@ -51,6 +51,7 @@ directories = "6"
 ratex-layout = "0.1.4"
 ratex-parser = "0.1.4"
 ratex-svg = { version = "0.1.4", features = ["embed-fonts", "standalone"] }
+mermaid-rs-renderer = { version = "0.2.2", default-features = false }
 reqwest = { version = "0.13", default-features = false, features = ["blocking", "default-tls"] }
 sys-locale = "0.3"
 tree-sitter = { version = "0.26.8", optional = true }

@@ -94,6 +94,10 @@ pub struct I18nStrings {
     pub menu_new_window: String,
     /// File menu item for opening Markdown files.
     pub menu_open_file: String,
+    /// File menu item for opening a recent file submenu.
+    pub menu_open_recent_file: String,
+    /// Placeholder item shown when no recent files are recorded.
+    pub menu_no_recent_files: String,
     /// File menu item for saving the current document.
     pub menu_save: String,
     /// File menu item for saving the current document to a new path.
@@ -116,6 +120,10 @@ pub struct I18nStrings {
     pub add_theme_config_prompt: String,
     /// Title of the open-file failure prompt.
     pub open_failed_title: String,
+    /// Title shown when a recent file path no longer exists.
+    pub recent_file_missing_title: String,
+    /// Message template for missing recent files. Supports `{path}`.
+    pub recent_file_missing_message_template: String,
     /// Title of the save failure prompt.
     pub save_failed_title: String,
     /// Title of the export failure prompt.
@@ -221,6 +229,8 @@ struct I18nStringsDe {
     menu_add_theme_config: Option<String>,
     menu_new_window: Option<String>,
     menu_open_file: Option<String>,
+    menu_open_recent_file: Option<String>,
+    menu_no_recent_files: Option<String>,
     menu_save: Option<String>,
     menu_save_as: Option<String>,
     menu_quit: Option<String>,
@@ -232,6 +242,8 @@ struct I18nStringsDe {
     add_language_config_prompt: Option<String>,
     add_theme_config_prompt: Option<String>,
     open_failed_title: Option<String>,
+    recent_file_missing_title: Option<String>,
+    recent_file_missing_message_template: Option<String>,
     save_failed_title: Option<String>,
     export_failed_title: Option<String>,
     config_import_failed_title: Option<String>,
@@ -304,6 +316,8 @@ const I18N_STRING_KEYS: &[&str] = &[
     "menu_add_theme_config",
     "menu_new_window",
     "menu_open_file",
+    "menu_open_recent_file",
+    "menu_no_recent_files",
     "menu_save",
     "menu_save_as",
     "menu_quit",
@@ -315,6 +329,8 @@ const I18N_STRING_KEYS: &[&str] = &[
     "add_language_config_prompt",
     "add_theme_config_prompt",
     "open_failed_title",
+    "recent_file_missing_title",
+    "recent_file_missing_message_template",
     "save_failed_title",
     "export_failed_title",
     "config_import_failed_title",
@@ -443,6 +459,12 @@ impl I18nStringsDe {
                 .unwrap_or(defaults.menu_add_theme_config),
             menu_new_window: self.menu_new_window.unwrap_or(defaults.menu_new_window),
             menu_open_file: self.menu_open_file.unwrap_or(defaults.menu_open_file),
+            menu_open_recent_file: self
+                .menu_open_recent_file
+                .unwrap_or(defaults.menu_open_recent_file),
+            menu_no_recent_files: self
+                .menu_no_recent_files
+                .unwrap_or(defaults.menu_no_recent_files),
             menu_save: self.menu_save.unwrap_or(defaults.menu_save),
             menu_save_as: self.menu_save_as.unwrap_or(defaults.menu_save_as),
             menu_quit: self.menu_quit.unwrap_or(defaults.menu_quit),
@@ -462,6 +484,12 @@ impl I18nStringsDe {
                 .add_theme_config_prompt
                 .unwrap_or(defaults.add_theme_config_prompt),
             open_failed_title: self.open_failed_title.unwrap_or(defaults.open_failed_title),
+            recent_file_missing_title: self
+                .recent_file_missing_title
+                .unwrap_or(defaults.recent_file_missing_title),
+            recent_file_missing_message_template: self
+                .recent_file_missing_message_template
+                .unwrap_or(defaults.recent_file_missing_message_template),
             save_failed_title: self.save_failed_title.unwrap_or(defaults.save_failed_title),
             export_failed_title: self
                 .export_failed_title
@@ -602,6 +630,8 @@ impl I18nStrings {
             menu_add_theme_config: "添加主题配置".into(),
             menu_new_window: "新建窗口".into(),
             menu_open_file: "打开文件".into(),
+            menu_open_recent_file: "打开最近文件".into(),
+            menu_no_recent_files: "无最近文件".into(),
             menu_save: "保存".into(),
             menu_save_as: "另存为".into(),
             menu_quit: "退出".into(),
@@ -613,6 +643,9 @@ impl I18nStrings {
             add_language_config_prompt: "选择语言配置文件".into(),
             add_theme_config_prompt: "选择主题配置文件".into(),
             open_failed_title: "打开失败".into(),
+            recent_file_missing_title: "最近文件不存在".into(),
+            recent_file_missing_message_template: "此最近文件已经不存在，已从记录中移除：\n{path}"
+                .into(),
             save_failed_title: "保存失败".into(),
             export_failed_title: "导出失败".into(),
             config_import_failed_title: "配置导入失败".into(),
@@ -700,6 +733,8 @@ impl I18nStrings {
             menu_add_theme_config: "Add Theme Config".into(),
             menu_new_window: "New Window".into(),
             menu_open_file: "Open File".into(),
+            menu_open_recent_file: "Open Recent File".into(),
+            menu_no_recent_files: "No Recent Files".into(),
             menu_save: "Save".into(),
             menu_save_as: "Save As".into(),
             menu_quit: "Quit".into(),
@@ -711,6 +746,9 @@ impl I18nStrings {
             add_language_config_prompt: "Choose Language Config".into(),
             add_theme_config_prompt: "Choose Theme Config".into(),
             open_failed_title: "Open Failed".into(),
+            recent_file_missing_title: "Recent File Missing".into(),
+            recent_file_missing_message_template:
+                "This recent file no longer exists and has been removed:\n{path}".into(),
             save_failed_title: "Save Failed".into(),
             export_failed_title: "Export Failed".into(),
             config_import_failed_title: "Config Import Failed".into(),
@@ -1336,6 +1374,12 @@ mod tests {
         assert_eq!(pack.strings.menu_export, "Export");
         assert_eq!(pack.strings.info_dialog_ok, "OK");
         assert_eq!(pack.strings.update_open_release, "Open Releases");
+        assert_eq!(pack.strings.menu_open_recent_file, "Open Recent File");
+        assert_eq!(pack.strings.menu_no_recent_files, "No Recent Files");
+        assert_eq!(
+            pack.strings.recent_file_missing_title,
+            "Recent File Missing"
+        );
         assert_eq!(pack.strings.help_about_github_label, "GitHub");
         assert_eq!(
             pack.strings.help_about_star_message,

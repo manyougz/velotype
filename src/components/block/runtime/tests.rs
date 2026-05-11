@@ -166,6 +166,20 @@ async fn inline_math_focus_uses_markdown_source_then_reparses_on_blur(cx: &mut T
 }
 
 #[gpui::test]
+async fn mermaid_block_uses_raw_text_editing(cx: &mut TestAppContext) {
+    let cx = cx.add_empty_window();
+    let markdown = "```mermaid\nflowchart LR\nA --> B\n```";
+    let block = cx.new(|cx| Block::with_record(cx, BlockRecord::mermaid(markdown)));
+
+    block.update(cx, |block, _cx| {
+        assert_eq!(block.kind(), BlockKind::MermaidBlock);
+        assert!(block.uses_raw_text_editing());
+        assert_eq!(block.display_text(), markdown);
+        assert_eq!(block.record.markdown_line(0, None), markdown);
+    });
+}
+
+#[gpui::test]
 async fn enter_inside_projected_inline_code_inserts_hard_line_without_splitting(
     cx: &mut TestAppContext,
 ) {

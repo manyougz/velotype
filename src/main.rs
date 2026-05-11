@@ -41,7 +41,12 @@ fn main() {
 
         for path in &input_paths {
             let markdown = match std::fs::read_to_string(path) {
-                Ok(content) => content,
+                Ok(content) => {
+                    if let Err(err) = config::record_recent_file(path) {
+                        eprintln!("failed to update recent file history: {err}");
+                    }
+                    content
+                }
                 Err(err) => {
                     eprintln!(
                         "failed to read '{}': {err}. opened as empty document.",
@@ -52,5 +57,7 @@ fn main() {
             };
             open_editor_window(cx, markdown, Some(path.clone()));
         }
+        app_menu::install_menus(cx);
+        cx.refresh_windows();
     });
 }

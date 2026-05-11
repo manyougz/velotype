@@ -4,6 +4,7 @@ mod actions;
 mod block;
 pub(crate) mod latex;
 pub(crate) mod markdown;
+pub(crate) mod mermaid;
 
 pub use crate::editor::Editor;
 #[allow(unused_imports)]
@@ -25,3 +26,5 @@ pub use markdown::inline::*;
 #[allow(unused_imports)]
 pub(crate) use markdown::link::*;
 pub use markdown::table::*;
+#[allow(unused_imports)]
+pub(crate) use mermaid::*;

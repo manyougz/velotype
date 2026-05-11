@@ -9,7 +9,7 @@ use gpui::*;
 use super::{Editor, InfoDialogKind};
 use crate::app_menu::dispatch_menu_action_for_editor;
 use crate::components::CalloutVariant;
-use crate::components::{Block, BlockKind};
+use crate::components::{Block, BlockKind, NoRecentFiles};
 use crate::i18n::{I18nManager, I18nStrings};
 use crate::theme::{Theme, ThemeDimensions, ThemeManager};
 
@@ -155,6 +155,64 @@ fn menu_panel_left(open_index: usize, menu_labels: &[String], dimensions: &Theme
     dimensions.menu_bar_padding_x + prior_width + dimensions.menu_bar_gap * open_index as f32
 }
 
+fn menu_panel_width_for_labels(labels: &[String], dimensions: &ThemeDimensions) -> f32 {
+    let widest_label = labels
+        .iter()
+        .map(|label| estimated_menu_label_width(label, dimensions.menu_text_size))
+        .fold(0.0, f32::max);
+    let content_width = widest_label + dimensions.menu_item_padding_x * 2.0;
+    dimensions.menu_panel_width.max(content_width.ceil())
+}
+
+fn menu_item_visual_height(item: &OwnedMenuItem, dimensions: &ThemeDimensions) -> f32 {
+    match item {
+        OwnedMenuItem::Separator => {
+            dimensions.menu_separator_height + dimensions.menu_separator_margin_y * 2.0
+        }
+        OwnedMenuItem::Action { .. } | OwnedMenuItem::Submenu(_) | OwnedMenuItem::SystemMenu(_) => {
+            dimensions.menu_item_height
+        }
+    }
+}
+
+fn submenu_panel_top(
+    items: &[OwnedMenuItem],
+    item_index: usize,
+    dimensions: &ThemeDimensions,
+) -> f32 {
+    let prior_items_height: f32 = items
+        .iter()
+        .take(item_index)
+        .map(|item| menu_item_visual_height(item, dimensions))
+        .sum();
+    let prior_gaps = dimensions.menu_panel_gap * item_index as f32;
+    dimensions.menu_panel_top + dimensions.menu_panel_padding + prior_items_height + prior_gaps
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct MenuSubmenuBridgeGeometry {
+    left: f32,
+    top: f32,
+    width: f32,
+    height: f32,
+}
+
+fn submenu_bridge_geometry(
+    open_index: usize,
+    menu_labels: &[String],
+    items: &[OwnedMenuItem],
+    item_index: usize,
+    dimensions: &ThemeDimensions,
+) -> Option<MenuSubmenuBridgeGeometry> {
+    let item = items.get(item_index)?;
+    Some(MenuSubmenuBridgeGeometry {
+        left: menu_panel_left(open_index, menu_labels, dimensions) + dimensions.menu_panel_width,
+        top: submenu_panel_top(items, item_index, dimensions),
+        width: dimensions.menu_panel_gap,
+        height: menu_item_visual_height(item, dimensions),
+    })
+}
+
 fn footnote_group_shell(
     children: Vec<AnyElement>,
     theme: &Theme,
@@ -255,7 +313,9 @@ impl Editor {
         let Some(focused_block) = self.document.block_entity_by_id(focused_id) else {
             return true;
         };
-        if focused_block.read_with(cx, |block, _cx| block.kind() == BlockKind::MathBlock) {
+        if focused_block.read_with(cx, |block, _cx| {
+            matches!(block.kind(), BlockKind::MathBlock | BlockKind::MermaidBlock)
+        }) {
             return false;
         }
 
@@ -469,6 +529,7 @@ impl Editor {
         let open_index = self.menu_bar_open?;
         let menus = cx.get_menus()?;
         let menu = menus.get(open_index)?.clone();
+        let menu_items = menu.items.clone();
         let c = &theme.colors;
         let d = &theme.dimensions;
         let t = &theme.typography;
@@ -477,10 +538,173 @@ impl Editor {
             .iter()
             .map(|menu| menu.name.to_string())
             .collect::<Vec<_>>();
+        let submenu_bridge = self.menu_submenu_open.and_then(|submenu_index| {
+            match menu_items.get(submenu_index)? {
+                OwnedMenuItem::Submenu(_) => {
+                    let geometry = submenu_bridge_geometry(
+                        open_index,
+                        &menu_labels,
+                        &menu_items,
+                        submenu_index,
+                        d,
+                    )?;
+                    Some(
+                        div()
+                            .id(("windows-submenu-bridge", open_index * 1000 + submenu_index))
+                            .absolute()
+                            .occlude()
+                            .top(px(geometry.top))
+                            .left(px(geometry.left))
+                            .w(px(geometry.width))
+                            .h(px(geometry.height))
+                            .bg(hsla(0.0, 0.0, 0.0, 0.0))
+                            .on_hover(cx.listener(Self::on_menu_submenu_panel_hover))
+                            .into_any_element(),
+                    )
+                }
+                _ => None,
+            }
+        });
+        let submenu_panel =
+            self.menu_submenu_open.and_then(|submenu_index| {
+                match menu_items.get(submenu_index)? {
+                    OwnedMenuItem::Submenu(submenu) => {
+                        let submenu_labels = submenu
+                            .items
+                            .iter()
+                            .filter_map(|item| match item {
+                                OwnedMenuItem::Action { name, .. } => Some(name.to_string()),
+                                OwnedMenuItem::Submenu(menu) => Some(menu.name.to_string()),
+                                OwnedMenuItem::SystemMenu(menu) => Some(menu.name.to_string()),
+                                OwnedMenuItem::Separator => None,
+                            })
+                            .collect::<Vec<_>>();
+                        let left = menu_panel_left(open_index, &menu_labels, d)
+                            + d.menu_panel_width
+                            + d.menu_panel_gap;
+                        let top = submenu_panel_top(&menu_items, submenu_index, d);
+                        let submenu_width = menu_panel_width_for_labels(&submenu_labels, d);
+                        let submenu_items = submenu.items.clone().into_iter().enumerate().map(
+                            |(item_index, item)| match item {
+                                OwnedMenuItem::Separator => div()
+                                    .id((
+                                        "windows-submenu-separator",
+                                        submenu_index * 1000 + item_index,
+                                    ))
+                                    .mx(px(d.menu_separator_margin_x))
+                                    .my(px(d.menu_separator_margin_y))
+                                    .h(px(d.menu_separator_height))
+                                    .bg(c.dialog_border)
+                                    .into_any_element(),
+                                OwnedMenuItem::Action { name, action, .. } => {
+                                    let is_disabled =
+                                        action.as_ref().as_any().is::<NoRecentFiles>();
+                                    let editor = editor.clone();
+                                    let base = div()
+                                        .id((
+                                            "windows-submenu-item",
+                                            submenu_index * 1000 + item_index,
+                                        ))
+                                        .w_full()
+                                        .h(px(d.menu_item_height))
+                                        .px(px(d.menu_item_padding_x))
+                                        .flex()
+                                        .items_center()
+                                        .rounded(px(d.menu_item_radius))
+                                        .bg(c.dialog_surface)
+                                        .text_size(px(d.menu_text_size))
+                                        .font_weight(t.dialog_body_weight.to_font_weight())
+                                        .text_color(if is_disabled {
+                                            c.dialog_muted
+                                        } else {
+                                            c.dialog_secondary_button_text
+                                        })
+                                        .child(name);
 
-        let items = menu
-            .items
-            .into_iter()
+                                    if is_disabled {
+                                        base.into_any_element()
+                                    } else {
+                                        base.hover(|this| this.bg(c.dialog_secondary_button_hover))
+                                            .active(|this| this.opacity(0.92))
+                                            .cursor_pointer()
+                                            .on_click(move |_, window, cx| {
+                                                let _ = editor.update(cx, |editor, cx| {
+                                                    editor.close_menu_bar(cx)
+                                                });
+                                                dispatch_menu_action_for_editor(
+                                                    action.as_ref(),
+                                                    &editor,
+                                                    window,
+                                                    cx,
+                                                );
+                                            })
+                                            .into_any_element()
+                                    }
+                                }
+                                OwnedMenuItem::Submenu(submenu) => div()
+                                    .id((
+                                        "windows-submenu-nested",
+                                        submenu_index * 1000 + item_index,
+                                    ))
+                                    .w_full()
+                                    .h(px(d.menu_item_height))
+                                    .px(px(d.menu_item_padding_x))
+                                    .flex()
+                                    .items_center()
+                                    .rounded(px(d.menu_item_radius))
+                                    .bg(c.dialog_surface)
+                                    .text_size(px(d.menu_text_size))
+                                    .text_color(c.dialog_muted)
+                                    .child(submenu.name.to_string())
+                                    .into_any_element(),
+                                OwnedMenuItem::SystemMenu(os_menu) => div()
+                                    .id((
+                                        "windows-submenu-system",
+                                        submenu_index * 1000 + item_index,
+                                    ))
+                                    .w_full()
+                                    .h(px(d.menu_item_height))
+                                    .px(px(d.menu_item_padding_x))
+                                    .flex()
+                                    .items_center()
+                                    .rounded(px(d.menu_item_radius))
+                                    .bg(c.dialog_surface)
+                                    .text_size(px(d.menu_text_size))
+                                    .text_color(c.dialog_muted)
+                                    .child(os_menu.name.to_string())
+                                    .into_any_element(),
+                            },
+                        );
+
+                        Some(
+                            div()
+                                .id(("windows-submenu-panel", open_index * 1000 + submenu_index))
+                                .absolute()
+                                .occlude()
+                                .top(px(top))
+                                .left(px(left))
+                                .w(px(submenu_width))
+                                .p(px(d.menu_panel_padding))
+                                .flex()
+                                .flex_col()
+                                .gap(px(d.menu_panel_gap))
+                                .bg(c.dialog_surface)
+                                .border(px(d.dialog_border_width))
+                                .border_color(c.dialog_border)
+                                .rounded(px(d.menu_panel_radius))
+                                .shadow_lg()
+                                .on_hover(cx.listener(Self::on_menu_submenu_panel_hover))
+                                .children(submenu_items)
+                                .into_any_element(),
+                        )
+                    }
+                    _ => None,
+                }
+            });
+
+        let items = menu_items
+            .iter()
+            .cloned()
             .enumerate()
             .map(|(item_index, item)| match item {
                 OwnedMenuItem::Separator => div()
@@ -491,42 +715,87 @@ impl Editor {
                     .bg(c.dialog_border)
                     .into_any_element(),
                 OwnedMenuItem::Action { name, action, .. } => {
+                    let is_disabled = action.as_ref().as_any().is::<NoRecentFiles>();
                     let editor = editor.clone();
-                    div()
+                    let hover_editor = editor.clone();
+                    let base = div()
                         .id(("windows-menu-item", item_index))
+                        .w_full()
                         .h(px(d.menu_item_height))
                         .px(px(d.menu_item_padding_x))
                         .flex()
                         .items_center()
                         .rounded(px(d.menu_item_radius))
                         .bg(c.dialog_surface)
+                        .text_size(px(d.menu_text_size))
+                        .font_weight(t.dialog_body_weight.to_font_weight())
+                        .text_color(if is_disabled {
+                            c.dialog_muted
+                        } else {
+                            c.dialog_secondary_button_text
+                        })
+                        .child(name)
+                        .on_hover(move |hovered, _window, cx| {
+                            if *hovered {
+                                let _ = hover_editor
+                                    .update(cx, |editor, cx| editor.close_menu_submenu(cx));
+                            }
+                        });
+
+                    if is_disabled {
+                        base.into_any_element()
+                    } else {
+                        base.hover(|this| this.bg(c.dialog_secondary_button_hover))
+                            .active(|this| this.opacity(0.92))
+                            .cursor_pointer()
+                            .on_click(move |_, window, cx| {
+                                let _ = editor.update(cx, |editor, cx| editor.close_menu_bar(cx));
+                                dispatch_menu_action_for_editor(
+                                    action.as_ref(),
+                                    &editor,
+                                    window,
+                                    cx,
+                                );
+                            })
+                            .into_any_element()
+                    }
+                }
+                OwnedMenuItem::Submenu(submenu) => {
+                    let is_open = self.menu_submenu_open == Some(item_index);
+                    let hover_editor = editor.clone();
+                    div()
+                        .id(("windows-menu-submenu", item_index))
+                        .w_full()
+                        .h(px(d.menu_item_height))
+                        .px(px(d.menu_item_padding_x))
+                        .flex()
+                        .items_center()
+                        .justify_between()
+                        .rounded(px(d.menu_item_radius))
+                        .bg(if is_open {
+                            c.dialog_secondary_button_hover
+                        } else {
+                            c.dialog_surface
+                        })
                         .hover(|this| this.bg(c.dialog_secondary_button_hover))
-                        .active(|this| this.opacity(0.92))
                         .cursor_pointer()
                         .text_size(px(d.menu_text_size))
                         .font_weight(t.dialog_body_weight.to_font_weight())
                         .text_color(c.dialog_secondary_button_text)
-                        .child(name)
-                        .on_click(move |_, window, cx| {
-                            let _ = editor.update(cx, |editor, cx| editor.close_menu_bar(cx));
-                            dispatch_menu_action_for_editor(action.as_ref(), &editor, window, cx);
+                        .child(submenu.name.to_string())
+                        .child(">")
+                        .on_hover(move |hovered, _window, cx| {
+                            if *hovered {
+                                let _ = hover_editor.update(cx, |editor, cx| {
+                                    editor.open_menu_submenu(item_index, cx)
+                                });
+                            }
                         })
                         .into_any_element()
                 }
-                OwnedMenuItem::Submenu(submenu) => div()
-                    .id(("windows-menu-submenu", item_index))
-                    .h(px(d.menu_item_height))
-                    .px(px(d.menu_item_padding_x))
-                    .flex()
-                    .items_center()
-                    .rounded(px(d.menu_item_radius))
-                    .bg(c.dialog_surface)
-                    .text_size(px(d.menu_text_size))
-                    .text_color(c.dialog_muted)
-                    .child(submenu.name.to_string())
-                    .into_any_element(),
                 OwnedMenuItem::SystemMenu(os_menu) => div()
                     .id(("windows-menu-system", item_index))
+                    .w_full()
                     .h(px(d.menu_item_height))
                     .px(px(d.menu_item_padding_x))
                     .flex()
@@ -539,27 +808,46 @@ impl Editor {
                     .into_any_element(),
             });
 
-        Some(
-            div()
-                .id(("windows-menu-panel", open_index))
-                .absolute()
-                .occlude()
-                .top(px(d.menu_panel_top))
-                .left(px(menu_panel_left(open_index, &menu_labels, d)))
-                .w(px(d.menu_panel_width))
-                .p(px(d.menu_panel_padding))
-                .flex()
-                .flex_col()
-                .gap(px(d.menu_panel_gap))
-                .bg(c.dialog_surface)
-                .border(px(d.dialog_border_width))
-                .border_color(c.dialog_border)
-                .rounded(px(d.menu_panel_radius))
-                .shadow_lg()
-                .on_hover(cx.listener(Self::on_menu_panel_hover))
-                .children(items)
-                .into_any_element(),
-        )
+        let main_panel = div()
+            .id(("windows-menu-panel", open_index))
+            .absolute()
+            .occlude()
+            .top(px(d.menu_panel_top))
+            .left(px(menu_panel_left(open_index, &menu_labels, d)))
+            .w(px(d.menu_panel_width))
+            .p(px(d.menu_panel_padding))
+            .flex()
+            .flex_col()
+            .gap(px(d.menu_panel_gap))
+            .bg(c.dialog_surface)
+            .border(px(d.dialog_border_width))
+            .border_color(c.dialog_border)
+            .rounded(px(d.menu_panel_radius))
+            .shadow_lg()
+            .on_hover(cx.listener(Self::on_menu_panel_hover))
+            .children(items)
+            .into_any_element();
+
+        let layer = div()
+            .id(("windows-menu-panel-layer", open_index))
+            .absolute()
+            .top_0()
+            .left_0()
+            .right_0()
+            .bottom_0()
+            .child(main_panel);
+        let layer = if let Some(submenu_bridge) = submenu_bridge {
+            layer.child(submenu_bridge)
+        } else {
+            layer
+        };
+        let layer = if let Some(submenu_panel) = submenu_panel {
+            layer.child(submenu_panel)
+        } else {
+            layer
+        };
+
+        Some(layer.into_any_element())
     }
 
     /// Builds the unsaved-changes dialog with backdrop, message, and three
@@ -1478,9 +1766,10 @@ impl Render for Editor {
 mod tests {
     use super::{
         RenderedRowSpacingInfo, callout_row_top_gap, menu_bar_button_width, menu_panel_left,
-        rendered_row_top_gap,
+        menu_panel_width_for_labels, rendered_row_top_gap, submenu_bridge_geometry,
     };
     use crate::theme::Theme;
+    use gpui::{OwnedMenu, OwnedMenuItem};
     use uuid::Uuid;
 
     #[test]
@@ -1631,5 +1920,53 @@ mod tests {
 
         assert_eq!(left, expected);
         assert!(left > old_fixed_left);
+    }
+
+    #[test]
+    fn menu_panel_width_expands_for_long_recent_paths() {
+        let theme = Theme::default_theme();
+        let dimensions = &theme.dimensions;
+        let short_labels = vec!["Save".to_string()];
+        let long_labels = vec![r"C:\Users\someone\Documents\Very Long Folder\notes.md".to_string()];
+
+        assert_eq!(
+            menu_panel_width_for_labels(&short_labels, dimensions),
+            dimensions.menu_panel_width
+        );
+        assert!(
+            menu_panel_width_for_labels(&long_labels, dimensions) > dimensions.menu_panel_width
+        );
+    }
+
+    #[test]
+    fn submenu_bridge_spans_parent_child_menu_gap() {
+        let theme = Theme::default_theme();
+        let dimensions = &theme.dimensions;
+        let labels = vec!["File".to_string()];
+        let items = vec![
+            OwnedMenuItem::Separator,
+            OwnedMenuItem::Submenu(OwnedMenu {
+                name: "Recent".into(),
+                items: Vec::new(),
+            }),
+        ];
+
+        let bridge = submenu_bridge_geometry(0, &labels, &items, 1, dimensions)
+            .expect("submenu bridge geometry should be available");
+
+        assert_eq!(
+            bridge.left,
+            dimensions.menu_bar_padding_x + dimensions.menu_panel_width
+        );
+        assert_eq!(bridge.width, dimensions.menu_panel_gap);
+        assert_eq!(bridge.height, dimensions.menu_item_height);
+        assert_eq!(
+            bridge.top,
+            dimensions.menu_panel_top
+                + dimensions.menu_panel_padding
+                + dimensions.menu_separator_height
+                + dimensions.menu_separator_margin_y * 2.0
+                + dimensions.menu_panel_gap
+        );
     }
 }

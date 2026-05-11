@@ -12,8 +12,8 @@ use crate::components::{
     Editor, HtmlCssColor, HtmlDocument, HtmlNode, HtmlNodeKind, TableAxisHighlight, TableAxisKind,
     TableAxisMarker, TableCellInlineImageSegment, TableColumnLayout, attr_value,
     display_math_font_size, inline_math_font_size, parse_display_math_source,
-    parse_table_cell_inline_images, render_display_math_svg, render_inline_math_svg,
-    resolve_image_source, style_for_node,
+    parse_mermaid_fence_source, parse_table_cell_inline_images, render_display_math_svg,
+    render_inline_math_svg, render_mermaid_svg, resolve_image_source, style_for_node,
 };
 use crate::i18n::{I18nManager, I18nStrings};
 use crate::theme::{Theme, ThemeDimensions, ThemeManager};
@@ -548,6 +548,62 @@ impl Block {
                         .text_size(px(t.code_size))
                         .text_color(c.dialog_muted)
                         .child(SharedString::from(format!("LaTeX render error: {err}"))),
+                )
+                .into_any_element(),
+        }
+    }
+
+    fn render_mermaid_content(&self, theme: &Theme) -> AnyElement {
+        let c = &theme.colors;
+        let d = &theme.dimensions;
+        let t = &theme.typography;
+        let raw = self
+            .record
+            .raw_fallback
+            .as_deref()
+            .unwrap_or_else(|| self.display_text());
+
+        let Some(source) = parse_mermaid_fence_source(raw) else {
+            return div()
+                .w_full()
+                .text_size(px(t.text_size))
+                .line_height(rems(t.text_line_height))
+                .text_color(c.text_default)
+                .child(SharedString::from(raw.to_string()))
+                .into_any_element();
+        };
+
+        match render_mermaid_svg(&source) {
+            Ok(rendered) => div()
+                .w_full()
+                .flex()
+                .justify_center()
+                .py(px(d.block_padding_y.max(6.0)))
+                .child(
+                    img(rendered.path)
+                        .max_w(Length::Definite(relative(1.0)))
+                        .max_h(px(d.image_root_max_height))
+                        .object_fit(ObjectFit::Contain),
+                )
+                .into_any_element(),
+            Err(err) => div()
+                .w_full()
+                .flex()
+                .flex_col()
+                .gap(px(4.0))
+                .rounded_sm()
+                .bg(c.source_mode_block_bg)
+                .px(px(d.block_padding_x))
+                .py(px(d.block_padding_y))
+                .text_size(px(t.text_size))
+                .line_height(rems(t.text_line_height))
+                .text_color(c.text_default)
+                .child(SharedString::from(raw.to_string()))
+                .child(
+                    div()
+                        .text_size(px(t.code_size))
+                        .text_color(c.dialog_muted)
+                        .child(SharedString::from(format!("Mermaid render error: {err}"))),
                 )
                 .into_any_element(),
         }
@@ -1547,7 +1603,11 @@ impl Render for Block {
 
         // Source-mode rendering: raw text with no formatting.
         if self.is_source_raw_mode()
-            && (focused || !matches!(self.kind(), BlockKind::HtmlBlock | BlockKind::MathBlock))
+            && (focused
+                || !matches!(
+                    self.kind(),
+                    BlockKind::HtmlBlock | BlockKind::MathBlock | BlockKind::MermaidBlock
+                ))
         {
             if focused && self.cursor_blink_task.is_none() {
                 self.start_cursor_blink(cx);
@@ -2610,6 +2670,18 @@ impl Render for Block {
                     BlockTextElement::new(cx.entity(), is_placeholder).into_any_element()
                 } else {
                     self.render_math_content(&theme)
+                };
+                focused_base.w_full().child(child).into_any_element()
+            }
+            BlockKind::MermaidBlock => {
+                if !focused {
+                    self.last_layout = None;
+                    self.last_bounds = None;
+                }
+                let child = if focused {
+                    BlockTextElement::new(cx.entity(), is_placeholder).into_any_element()
+                } else {
+                    self.render_mermaid_content(&theme)
                 };
                 focused_base.w_full().child(child).into_any_element()
             }

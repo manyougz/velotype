@@ -403,6 +403,7 @@ impl Editor {
                     | BlockKind::Comment
                     | BlockKind::HtmlBlock
                     | BlockKind::MathBlock
+                    | BlockKind::MermaidBlock
                     | BlockKind::RawMarkdown
                     | BlockKind::Separator
             ))
@@ -430,7 +431,8 @@ impl Editor {
             BlockKind::RawMarkdown
             | BlockKind::Comment
             | BlockKind::HtmlBlock
-            | BlockKind::MathBlock => {
+            | BlockKind::MathBlock
+            | BlockKind::MermaidBlock => {
                 self.push_raw_block_mapping(block, quote_depth, absolute_start, mappings, cx)
             }
             BlockKind::Separator => {

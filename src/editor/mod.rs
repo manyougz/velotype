@@ -98,8 +98,11 @@ pub struct Editor {
     cross_block_drag: Option<CrossBlockDrag>,
     /// Open top-level menu in the Windows fallback menu bar.
     menu_bar_open: Option<usize>,
+    /// Open child submenu inside the Windows fallback menu panel.
+    menu_submenu_open: Option<usize>,
     menu_bar_hovered: bool,
     menu_panel_hovered: bool,
+    menu_submenu_panel_hovered: bool,
     menu_close_task: Option<Task<()>>,
     view_mode_toggle_hovered: bool,
     scrollbar_hovered: bool,
@@ -274,8 +277,10 @@ impl Editor {
             cross_block_selection: None,
             cross_block_drag: None,
             menu_bar_open: None,
+            menu_submenu_open: None,
             menu_bar_hovered: false,
             menu_panel_hovered: false,
+            menu_submenu_panel_hovered: false,
             menu_close_task: None,
             view_mode_toggle_hovered: false,
             scrollbar_hovered: false,
