@@ -24,8 +24,6 @@ pub struct I18nStrings {
     pub unsaved_changes_title: String,
     /// Body message of the unsaved-changes dialog.
     pub unsaved_changes_message: String,
-    /// Hint text in the unsaved-changes dialog.
-    pub unsaved_changes_hint: String,
     /// Label for the "save and close" button.
     pub unsaved_changes_save_and_close: String,
     /// Label for the "discard and close" button.
@@ -36,8 +34,6 @@ pub struct I18nStrings {
     pub drop_replace_title: String,
     /// Body message of the dropped-file replacement dialog.
     pub drop_replace_message: String,
-    /// Hint text in the dropped-file replacement dialog.
-    pub drop_replace_hint: String,
     /// Label for saving before replacing the current document.
     pub drop_replace_save_and_replace: String,
     /// Label for replacing the current document without saving.
@@ -194,13 +190,11 @@ struct I18nStringsDe {
     dirty_title_marker: Option<String>,
     unsaved_changes_title: Option<String>,
     unsaved_changes_message: Option<String>,
-    unsaved_changes_hint: Option<String>,
     unsaved_changes_save_and_close: Option<String>,
     unsaved_changes_discard_and_close: Option<String>,
     unsaved_changes_cancel: Option<String>,
     drop_replace_title: Option<String>,
     drop_replace_message: Option<String>,
-    drop_replace_hint: Option<String>,
     drop_replace_save_and_replace: Option<String>,
     drop_replace_discard_and_replace: Option<String>,
     drop_replace_cancel: Option<String>,
@@ -281,13 +275,11 @@ const I18N_STRING_KEYS: &[&str] = &[
     "dirty_title_marker",
     "unsaved_changes_title",
     "unsaved_changes_message",
-    "unsaved_changes_hint",
     "unsaved_changes_save_and_close",
     "unsaved_changes_discard_and_close",
     "unsaved_changes_cancel",
     "drop_replace_title",
     "drop_replace_message",
-    "drop_replace_hint",
     "drop_replace_save_and_replace",
     "drop_replace_discard_and_replace",
     "drop_replace_cancel",
@@ -376,9 +368,6 @@ impl I18nStringsDe {
             unsaved_changes_message: self
                 .unsaved_changes_message
                 .unwrap_or(defaults.unsaved_changes_message),
-            unsaved_changes_hint: self
-                .unsaved_changes_hint
-                .unwrap_or(defaults.unsaved_changes_hint),
             unsaved_changes_save_and_close: self
                 .unsaved_changes_save_and_close
                 .unwrap_or(defaults.unsaved_changes_save_and_close),
@@ -394,7 +383,6 @@ impl I18nStringsDe {
             drop_replace_message: self
                 .drop_replace_message
                 .unwrap_or(defaults.drop_replace_message),
-            drop_replace_hint: self.drop_replace_hint.unwrap_or(defaults.drop_replace_hint),
             drop_replace_save_and_replace: self
                 .drop_replace_save_and_replace
                 .unwrap_or(defaults.drop_replace_save_and_replace),
@@ -592,13 +580,11 @@ impl I18nStrings {
             dirty_title_marker: "\u{00B7}".into(),
             unsaved_changes_title: "不保存并关闭？".into(),
             unsaved_changes_message: "此文档有未保存的更改。关闭前保存可避免丢失最新编辑。".into(),
-            unsaved_changes_hint: "你可以保存并关闭、放弃更改，或继续编辑。".into(),
             unsaved_changes_save_and_close: "保存并关闭".into(),
             unsaved_changes_discard_and_close: "放弃并关闭".into(),
             unsaved_changes_cancel: "继续编辑".into(),
             drop_replace_title: "替换当前文档？".into(),
             drop_replace_message: "当前文档有未保存的更改。替换前保存可避免丢失最新编辑。".into(),
-            drop_replace_hint: "你可以保存并替换、直接替换，或取消这次拖拽。".into(),
             drop_replace_save_and_replace: "保存并替换".into(),
             drop_replace_discard_and_replace: "直接替换".into(),
             drop_replace_cancel: "取消".into(),
@@ -688,8 +674,6 @@ impl I18nStrings {
             unsaved_changes_message:
                 "This document has unsaved changes. Save before closing to avoid losing your latest edits."
                     .into(),
-            unsaved_changes_hint:
-                "You can save and close, discard the changes, or keep editing.".into(),
             unsaved_changes_save_and_close: "Save and Close".into(),
             unsaved_changes_discard_and_close: "Discard and Close".into(),
             unsaved_changes_cancel: "Keep Editing".into(),
@@ -697,8 +681,6 @@ impl I18nStrings {
             drop_replace_message:
                 "This document has unsaved changes. Save before replacing it with the dropped file to avoid losing edits."
                     .into(),
-            drop_replace_hint:
-                "You can save and replace, replace without saving, or cancel this drop.".into(),
             drop_replace_save_and_replace: "Save and Replace".into(),
             drop_replace_discard_and_replace: "Replace Without Saving".into(),
             drop_replace_cancel: "Cancel".into(),
@@ -1337,6 +1319,8 @@ mod tests {
                 "name": "简体中文",
                 "strings": {
                     "menu_file": "文件菜单",
+                    "unsaved_changes_hint": "legacy hint",
+                    "drop_replace_hint": "legacy hint",
                     "unknown_field": "ignored"
                 }
             }"#,

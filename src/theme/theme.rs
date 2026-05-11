@@ -374,11 +374,11 @@ pub struct ThemeDimensions {
     pub dialog_button_gap: f32,
     /// Horizontal padding inside dialog action buttons.
     pub dialog_button_padding_x: f32,
-    /// Height reserved for the Windows fallback menu bar.
+    /// Height reserved for the in-window fallback menu bar.
     pub menu_bar_height: f32,
-    /// Horizontal padding inside the Windows fallback menu bar.
+    /// Horizontal padding inside the in-window fallback menu bar.
     pub menu_bar_padding_x: f32,
-    /// Vertical padding inside the Windows fallback menu bar.
+    /// Vertical padding inside the in-window fallback menu bar.
     pub menu_bar_padding_y: f32,
     /// Gap between top-level menu buttons.
     pub menu_bar_gap: f32,
@@ -392,9 +392,9 @@ pub struct ThemeDimensions {
     pub menu_bar_button_radius: f32,
     /// Text size used by menu labels.
     pub menu_text_size: f32,
-    /// Top position of the Windows fallback floating menu panel.
+    /// Top position of the in-window fallback floating menu panel.
     pub menu_panel_top: f32,
-    /// Width of the Windows fallback floating menu panel.
+    /// Width of the in-window fallback floating menu panel.
     pub menu_panel_width: f32,
     /// Padding inside floating menu panels.
     pub menu_panel_padding: f32,
@@ -442,6 +442,8 @@ pub struct ThemeDimensions {
     pub view_mode_toggle_padding_x: f32,
     /// Vertical padding inside the view-mode toggle.
     pub view_mode_toggle_padding_y: f32,
+    /// Minimum width of the view-mode toggle.
+    pub view_mode_toggle_min_width: f32,
     /// Corner radius of the view-mode toggle.
     pub view_mode_toggle_radius: f32,
     /// Border width of the view-mode toggle.
@@ -903,6 +905,7 @@ struct ThemeDimensionsDe {
     view_mode_toggle_bottom: Option<f32>,
     view_mode_toggle_padding_x: Option<f32>,
     view_mode_toggle_padding_y: Option<f32>,
+    view_mode_toggle_min_width: Option<f32>,
     view_mode_toggle_radius: Option<f32>,
     view_mode_toggle_border_width: Option<f32>,
     view_mode_toggle_text_size: Option<f32>,
@@ -1025,6 +1028,7 @@ impl<'de> Deserialize<'de> for ThemeDimensions {
             view_mode_toggle_bottom: raw.view_mode_toggle_bottom.unwrap_or(12.0),
             view_mode_toggle_padding_x: raw.view_mode_toggle_padding_x.unwrap_or(8.0),
             view_mode_toggle_padding_y: raw.view_mode_toggle_padding_y.unwrap_or(4.0),
+            view_mode_toggle_min_width: raw.view_mode_toggle_min_width.unwrap_or(88.0),
             view_mode_toggle_radius: raw.view_mode_toggle_radius.unwrap_or(999.0),
             view_mode_toggle_border_width: raw.view_mode_toggle_border_width.unwrap_or(1.0),
             view_mode_toggle_text_size: raw.view_mode_toggle_text_size.unwrap_or(11.0),
@@ -1243,6 +1247,7 @@ impl Theme {
                 view_mode_toggle_bottom: 12.0,
                 view_mode_toggle_padding_x: 8.0,
                 view_mode_toggle_padding_y: 4.0,
+                view_mode_toggle_min_width: 88.0,
                 view_mode_toggle_radius: 999.0,
                 view_mode_toggle_border_width: 1.0,
                 view_mode_toggle_text_size: 11.0,
@@ -1867,6 +1872,7 @@ mod tests {
         dimensions.remove("menu_item_height");
         dimensions.remove("context_menu_panel_width");
         dimensions.remove("table_insert_dialog_width");
+        dimensions.remove("view_mode_toggle_min_width");
         dimensions.remove("view_mode_toggle_text_size");
 
         let json = serde_json::to_string(&object).expect("theme json should serialize");
@@ -1876,6 +1882,7 @@ mod tests {
         assert_eq!(theme.dimensions.menu_item_height, 28.0);
         assert_eq!(theme.dimensions.context_menu_panel_width, 132.0);
         assert_eq!(theme.dimensions.table_insert_dialog_width, 380.0);
+        assert_eq!(theme.dimensions.view_mode_toggle_min_width, 88.0);
         assert_eq!(theme.dimensions.view_mode_toggle_text_size, 11.0);
     }
 

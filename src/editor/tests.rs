@@ -764,7 +764,7 @@ async fn dismissing_menu_bar_from_body_clears_open_state(cx: &mut TestAppContext
 }
 
 #[gpui::test]
-async fn submenu_panel_hover_keeps_windows_menu_open(cx: &mut TestAppContext) {
+async fn submenu_panel_hover_keeps_in_window_menu_open(cx: &mut TestAppContext) {
     let editor = cx.new(|cx| Editor::from_markdown(cx, "alpha".to_string(), None));
 
     editor.update(cx, |editor, cx| {

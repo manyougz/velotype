@@ -407,6 +407,8 @@
       "view_mode_toggle_padding_x": null,
       // Vertical padding inside the view-mode toggle.
       "view_mode_toggle_padding_y": null,
+      // Minimum width of the view-mode toggle. Helps localized labels fit without wrapping.
+      "view_mode_toggle_min_width": null,
       // Corner radius of the view-mode toggle.
       "view_mode_toggle_radius": null,
       // Border width of the view-mode toggle.
