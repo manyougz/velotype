@@ -1,0 +1,126 @@
+name: Bug Report
+description: Report a bug in velotype
+title: "[Bug]: "
+labels: ["bug", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug.
+
+        Before submitting, please search existing issues, test the latest release,
+        and include the smallest reproduction you can provide.
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Checklist
+      options:
+        - label: I have searched the existing issues
+          required: true
+        - label: I have tested this on the latest release
+          required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: velotype version
+      description: Exact version number or commit hash.
+      placeholder: e.g. 0.3.2
+    validations:
+      required: true
+
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      description: Where did the issue happen?
+      options:
+        - Windows
+        - macOS
+        - Linux(Ubuntu / Debian / Fedora / Arch / Kali, Wayland or X11)
+        - Other(not currently supported)
+    validations:
+      required: true
+
+  - type: input
+    id: environment
+    attributes:
+      label: Environment details
+      description: Include OS version, Linux distro, desktop/session, scaling, display setup, IME, or other relevant context.
+      placeholder: e.g. Ubuntu 24.04, GNOME, Wayland, X11, etc
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Affected area
+      description: Which part of velotype is affected?
+      options:
+        - Rendering / layout
+        - Editing / IME / shortcuts
+        - Markdown parsing
+        - Menu / window / file operations
+        - Export
+        - Theme / i18n
+        - Crash / freeze / performance
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: What happened?
+      description: Describe the actual behavior.
+      placeholder: Tell us what you saw.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect to happen?
+      description: Describe the expected behavior.
+      placeholder: Tell us what should have happened.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: Please provide the shortest possible steps.
+      placeholder: |
+        1. Open velotype
+        2. Load a markdown file
+        3. Click ...
+        4. Observe ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: sample
+    attributes:
+      label: Minimal sample / reproduction file
+      description: Paste a minimal markdown snippet, or link to a repo / gist / file if needed.
+      placeholder: |
+        ```md
+        # Minimal example
+        ...
+        ```
+    validations:
+      required: false
+
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence / additional context
+      description: Add logs, panic messages, screenshots, recordings, theme/font details, or anything else that may help.
+      placeholder: |
+        - Logs:
+        - Screenshot:
+        - Video:
+    validations:
+      required: false

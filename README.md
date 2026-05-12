@@ -43,6 +43,8 @@ Velotype targets Windows, Linux, and macOS. The app is naturally suitable for di
 
 Download the Windows, Linux, or macOS build from the [Velotype Releases](https://github.com/manyougz/velotype/releases) page. Release artifacts are designed as portable desktop programs and can be run directly.
 
+> Note: macOS users need to sign the `app` file locally on their machine; otherwise, Velotype will not run properly.
+
 ### 2. Build from source
 
 Prerequisites:
@@ -72,6 +74,7 @@ Syntax support will continue to improve. Planned work includes:
 
 - [x] ~~Mind-map drawing and rendering support~~
 - [x] ~~LaTeX math syntax and rendering support~~
+- [ ] Workspace Mode and Outline Parsing
 - [ ] Built-in image hosting
 - [ ] More complete IME behavior
 
