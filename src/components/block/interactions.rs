@@ -205,6 +205,16 @@ impl Block {
             return;
         }
 
+        if self.editor_selection_range.is_some() {
+            cx.emit(BlockEvent::RequestReplaceCrossBlockSelection {
+                text: "\n".to_string(),
+                selected_range_relative: None,
+                mark_inserted_text: false,
+                undo_kind: UndoCaptureKind::NonCoalescible,
+            });
+            return;
+        }
+
         if self.is_source_raw_mode() {
             if !self.selected_range.is_empty() {
                 self.replace_text_in_range(None, "", window, cx);
@@ -610,6 +620,16 @@ impl Block {
         }
 
         if let Some(text) = cx.read_from_clipboard().and_then(|item| item.text()) {
+            if self.editor_selection_range.is_some() {
+                cx.emit(BlockEvent::RequestReplaceCrossBlockSelection {
+                    text,
+                    selected_range_relative: None,
+                    mark_inserted_text: false,
+                    undo_kind: UndoCaptureKind::NonCoalescible,
+                });
+                return;
+            }
+
             if self.is_table_cell() {
                 let flattened = text.replace("\r\n", " ").replace(['\r', '\n'], " ");
                 self.prepare_undo_capture(UndoCaptureKind::NonCoalescible, cx);

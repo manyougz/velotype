@@ -25,10 +25,8 @@ struct NormalizedCrossBlockSelection {
 }
 
 impl Editor {
-    pub(super) fn clear_cross_block_selection(&mut self, cx: &mut Context<Self>) {
-        let had_selection = self.cross_block_selection.take().is_some();
-        self.cross_block_drag = None;
-        let mut changed = had_selection;
+    fn clear_cross_block_selection_visuals(&mut self, cx: &mut Context<Self>) -> bool {
+        let mut changed = false;
         for visible in self.document.visible_blocks().to_vec() {
             visible.entity.update(cx, |block, cx| {
                 if block.editor_selection_range.take().is_some() {
@@ -37,6 +35,26 @@ impl Editor {
                 }
             });
         }
+        changed
+    }
+
+    pub(super) fn clear_cross_block_selection(&mut self, cx: &mut Context<Self>) {
+        let had_selection = self.cross_block_selection.take().is_some();
+        self.cross_block_drag = None;
+        let changed_visuals = self.clear_cross_block_selection_visuals(cx);
+        let changed = had_selection || changed_visuals;
+        if changed {
+            cx.notify();
+        }
+    }
+
+    fn begin_cross_block_drag_at_point(&mut self, position: Point<Pixels>, cx: &mut Context<Self>) {
+        let had_selection = self.cross_block_selection.take().is_some();
+        let changed_visuals = self.clear_cross_block_selection_visuals(cx);
+        let changed = had_selection || changed_visuals;
+        self.cross_block_drag = self
+            .cross_block_endpoint_for_point(position, cx)
+            .map(|anchor| CrossBlockDrag { anchor });
         if changed {
             cx.notify();
         }
@@ -53,10 +71,12 @@ impl Editor {
             return;
         }
 
-        self.cross_block_drag = self
-            .cross_block_endpoint_for_point(event.position, cx)
-            .map(|anchor| CrossBlockDrag { anchor });
-        self.clear_cross_block_selection(cx);
+        if self.view_mode != ViewMode::Rendered {
+            cx.propagate();
+            return;
+        }
+
+        self.begin_cross_block_drag_at_point(event.position, cx);
         cx.propagate();
     }
 
@@ -409,6 +429,110 @@ impl Editor {
         Some(start.min(end)..start.max(end))
     }
 
+    fn rebuild_after_cross_block_source_edit(&mut self, source: String, cx: &mut Context<Self>) {
+        match self.view_mode {
+            ViewMode::Rendered => {
+                let mut roots = Self::build_root_blocks_from_markdown(cx, &source);
+                if roots.is_empty() {
+                    roots.push(Self::new_block(
+                        cx,
+                        crate::components::BlockRecord::paragraph(String::new()),
+                    ));
+                }
+                self.document.replace_roots(roots, cx);
+                self.rebuild_table_runtimes(cx);
+                self.rebuild_image_runtimes(cx);
+            }
+            ViewMode::Source => {
+                let block = Self::new_block(
+                    cx,
+                    crate::components::BlockRecord::paragraph(source.clone()),
+                );
+                block.update(cx, |block, _cx| block.set_source_raw_mode());
+                self.document.replace_roots(vec![block], cx);
+                self.table_cells.clear();
+            }
+        }
+    }
+
+    fn apply_marked_source_range(&mut self, source_range: Range<usize>, cx: &mut Context<Self>) {
+        if source_range.is_empty() {
+            return;
+        }
+        let mappings = self.build_source_target_mappings(cx);
+        let Some(start) = self.endpoint_for_source_offset(source_range.start, &mappings, cx) else {
+            return;
+        };
+        let Some(end) = self.endpoint_for_source_offset(source_range.end, &mappings, cx) else {
+            return;
+        };
+        if start.entity_id != end.entity_id {
+            return;
+        }
+        let Some(block) = self.focusable_entity_by_id(start.entity_id) else {
+            return;
+        };
+        block.update(cx, |block, cx| {
+            block.marked_range = Some(start.offset.min(end.offset)..start.offset.max(end.offset));
+            cx.notify();
+        });
+    }
+
+    pub(super) fn replace_cross_block_selection_with_text(
+        &mut self,
+        new_text: &str,
+        selected_range_relative: Option<Range<usize>>,
+        mark_inserted_text: bool,
+        undo_kind: UndoCaptureKind,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        let Some(selection) = self.normalized_cross_block_selection(cx) else {
+            return false;
+        };
+        let Some(source_range) = self.cross_block_source_range_for_normalized(selection, cx) else {
+            return false;
+        };
+
+        self.prepare_undo_capture(undo_kind, cx);
+        let mut source = self.current_document_source(cx);
+        let start = source_range.start.min(source.len());
+        let end = source_range.end.min(source.len());
+        source.replace_range(start..end, new_text);
+        self.cross_block_selection = None;
+        self.cross_block_drag = None;
+
+        let inserted_start = start;
+        let inserted_end = inserted_start + new_text.len();
+        let selected_source_range = selected_range_relative
+            .map(|relative| {
+                inserted_start + relative.start.min(new_text.len())
+                    ..inserted_start + relative.end.min(new_text.len())
+            })
+            .unwrap_or(inserted_end..inserted_end);
+        let marked_source_range =
+            (mark_inserted_text && !new_text.is_empty()).then_some(inserted_start..inserted_end);
+
+        self.rebuild_after_cross_block_source_edit(source, cx);
+        self.apply_selection_snapshot_in_current_mode(
+            &UndoSelectionSnapshot {
+                range: selected_source_range,
+                reversed: false,
+            },
+            cx,
+        );
+        if let Some(marked_source_range) = marked_source_range {
+            self.apply_marked_source_range(marked_source_range, cx);
+        }
+        self.mark_dirty(cx);
+        self.finalize_pending_undo_capture(cx);
+        self.sync_table_axis_visuals(cx);
+        self.dismiss_contextual_overlays(cx);
+        self.sync_cross_block_selection_visuals(cx);
+        self.request_active_block_scroll_into_view(cx);
+        cx.notify();
+        true
+    }
+
     fn cross_block_selected_markdown(&self, cx: &App) -> Option<String> {
         let selection = self.normalized_cross_block_selection(cx)?;
         let source = self.current_document_source(cx);
@@ -530,29 +654,7 @@ impl Editor {
         self.cross_block_selection = None;
         self.cross_block_drag = None;
 
-        match self.view_mode {
-            ViewMode::Rendered => {
-                let mut roots = Self::build_root_blocks_from_markdown(cx, &source);
-                if roots.is_empty() {
-                    roots.push(Self::new_block(
-                        cx,
-                        crate::components::BlockRecord::paragraph(String::new()),
-                    ));
-                }
-                self.document.replace_roots(roots, cx);
-                self.rebuild_table_runtimes(cx);
-                self.rebuild_image_runtimes(cx);
-            }
-            ViewMode::Source => {
-                let block = Self::new_block(
-                    cx,
-                    crate::components::BlockRecord::paragraph(source.clone()),
-                );
-                block.update(cx, |block, _cx| block.set_source_raw_mode());
-                self.document.replace_roots(vec![block], cx);
-                self.table_cells.clear();
-            }
-        }
+        self.rebuild_after_cross_block_source_edit(source, cx);
 
         self.apply_selection_snapshot_in_current_mode(
             &UndoSelectionSnapshot {
@@ -573,10 +675,10 @@ impl Editor {
 
 #[cfg(test)]
 mod tests {
-    use gpui::{AppContext, Context, TestAppContext};
+    use gpui::{AppContext, Bounds, Context, TestAppContext, point, px, size};
 
     use super::{CrossBlockSelection, CrossBlockSelectionEndpoint, Editor};
-    use crate::components::{Cut, Undo};
+    use crate::components::{Cut, Undo, UndoCaptureKind};
     use crate::i18n::I18nManager;
     use crate::theme::ThemeManager;
 
@@ -615,6 +717,110 @@ mod tests {
             },
         });
         editor.sync_cross_block_selection_visuals(cx);
+    }
+
+    fn assign_visible_block_bounds(editor: &mut Editor, cx: &mut Context<Editor>) {
+        for (index, visible) in editor
+            .document
+            .visible_blocks()
+            .to_vec()
+            .into_iter()
+            .enumerate()
+        {
+            visible.entity.update(cx, move |block, _cx| {
+                block.last_bounds = Some(Bounds::new(
+                    point(px(0.0), px(index as f32 * 32.0)),
+                    size(px(400.0), px(24.0)),
+                ));
+            });
+        }
+    }
+
+    #[test]
+    fn mouse_down_starts_cross_block_drag_after_clearing_old_selection() {
+        let mut cx = TestAppContext::single();
+        init_editor_test_app(&mut cx);
+        let editor =
+            cx.new(|cx| Editor::from_markdown(cx, "alpha\n\nbeta\n\ngamma".to_string(), None));
+
+        editor.update(&mut cx, |editor, cx| {
+            assign_visible_block_bounds(editor, cx);
+            set_selection(editor, 0, 0, 2, 2, cx);
+            assert!(editor.cross_block_selection.is_some());
+            assert!(
+                editor
+                    .document
+                    .visible_blocks()
+                    .iter()
+                    .any(|visible| visible.entity.read(cx).editor_selection_range.is_some())
+            );
+
+            editor.begin_cross_block_drag_at_point(point(px(8.0), px(4.0)), cx);
+
+            assert!(editor.cross_block_selection.is_none());
+            assert!(editor.cross_block_drag.is_some());
+            assert!(
+                editor
+                    .document
+                    .visible_blocks()
+                    .iter()
+                    .all(|visible| visible.entity.read(cx).editor_selection_range.is_none())
+            );
+        });
+        cx.quit();
+    }
+
+    #[test]
+    fn typing_replaces_cross_block_selection_with_plain_text() {
+        let mut cx = TestAppContext::single();
+        init_editor_test_app(&mut cx);
+        let editor =
+            cx.new(|cx| Editor::from_markdown(cx, "alpha\n\nbeta\n\ngamma".to_string(), None));
+
+        editor.update(&mut cx, |editor, cx| {
+            set_selection(editor, 0, 2, 2, 2, cx);
+            assert!(editor.replace_cross_block_selection_with_text(
+                "X",
+                None,
+                false,
+                UndoCaptureKind::CoalescibleText,
+                cx
+            ));
+
+            assert_eq!(editor.document.markdown_text(cx), "alXmma");
+            assert!(editor.cross_block_selection.is_none());
+            assert!(editor.cross_block_drag.is_none());
+            let block = editor.document.visible_blocks()[0].entity.read(cx);
+            assert_eq!(block.selected_range, 3..3);
+            assert!(block.marked_range.is_none());
+        });
+        cx.quit();
+    }
+
+    #[test]
+    fn ime_composition_replaces_cross_block_selection_and_marks_inserted_text() {
+        let mut cx = TestAppContext::single();
+        init_editor_test_app(&mut cx);
+        let editor =
+            cx.new(|cx| Editor::from_markdown(cx, "alpha\n\nbeta\n\ngamma".to_string(), None));
+
+        editor.update(&mut cx, |editor, cx| {
+            set_selection(editor, 0, 2, 2, 2, cx);
+            assert!(editor.replace_cross_block_selection_with_text(
+                "ni",
+                Some(2..2),
+                true,
+                UndoCaptureKind::CoalescibleText,
+                cx
+            ));
+
+            assert_eq!(editor.document.markdown_text(cx), "alnimma");
+            let block = editor.document.visible_blocks()[0].entity.read(cx);
+            assert_eq!(block.selected_range, 4..4);
+            assert_eq!(block.marked_range, Some(2..4));
+            assert!(block.editor_selection_range.is_none());
+        });
+        cx.quit();
     }
 
     #[test]
