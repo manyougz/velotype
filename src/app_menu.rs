@@ -141,6 +141,15 @@ fn recent_files_for_menu() -> Vec<PathBuf> {
 }
 
 fn open_recent_file(cx: &mut App, path: PathBuf) {
+    let error_window = cx.active_window();
+    open_recent_file_with_error_window(cx, path, error_window);
+}
+
+fn open_recent_file_with_error_window(
+    cx: &mut App,
+    path: PathBuf,
+    error_window: Option<AnyWindowHandle>,
+) {
     if !path.is_file() {
         if let Err(err) = remove_recent_file(&path) {
             eprintln!("failed to remove missing recent file: {err}");
@@ -151,12 +160,7 @@ fn open_recent_file(cx: &mut App, path: PathBuf) {
         let detail = strings
             .recent_file_missing_message_template
             .replace("{path}", &path.to_string_lossy());
-        show_window_prompt(
-            cx.active_window(),
-            strings.recent_file_missing_title,
-            &detail,
-            cx,
-        );
+        show_window_prompt(error_window, strings.recent_file_missing_title, &detail, cx);
         return;
     }
 
@@ -166,7 +170,7 @@ fn open_recent_file(cx: &mut App, path: PathBuf) {
             .strings()
             .open_failed_title
             .clone();
-        show_window_prompt(cx.active_window(), title, &err.to_string(), cx);
+        show_window_prompt(error_window, title, &err.to_string(), cx);
     }
 }
 
@@ -178,6 +182,16 @@ fn is_editor_scoped_menu_action(action: &dyn Action) -> bool {
         || action.as_any().is::<QuitApplication>()
         || action.as_any().is::<CheckForUpdates>()
         || action.as_any().is::<ShowAbout>()
+}
+
+fn is_window_context_menu_action(action: &dyn Action) -> bool {
+    action.as_any().is::<NewWindow>()
+        || action.as_any().is::<OpenFile>()
+        || action.as_any().is::<OpenRecentFile>()
+        || action.as_any().is::<NoRecentFiles>()
+        || action.as_any().is::<AddLanguageConfig>()
+        || action.as_any().is::<AddThemeConfig>()
+        || is_editor_scoped_menu_action(action)
 }
 
 fn current_window_candidates(cx: &mut App) -> Vec<AnyWindowHandle> {
@@ -290,7 +304,7 @@ pub(crate) fn dispatch_menu_action_for_editor(
     window: &mut Window,
     cx: &mut App,
 ) {
-    if !is_editor_scoped_menu_action(action) {
+    if !is_window_context_menu_action(action) {
         let deferred_action = action.boxed_clone();
         cx.defer(move |cx| {
             dispatch_menu_action(deferred_action.as_ref(), cx);
@@ -298,7 +312,21 @@ pub(crate) fn dispatch_menu_action_for_editor(
         return;
     }
 
-    if action.as_any().is::<SaveDocument>() {
+    window.activate_window();
+    let current_window = Some(window.window_handle());
+
+    if action.as_any().is::<NewWindow>() {
+        open_editor_window(cx, String::new(), None);
+    } else if action.as_any().is::<OpenFile>() {
+        prompt_and_open_files_with_error_window(cx, current_window);
+    } else if let Some(action) = action.as_any().downcast_ref::<OpenRecentFile>() {
+        open_recent_file_with_error_window(cx, PathBuf::from(&action.path), current_window);
+    } else if action.as_any().is::<NoRecentFiles>() {
+    } else if action.as_any().is::<AddLanguageConfig>() {
+        prompt_and_import_language_config_with_error_window(cx, current_window);
+    } else if action.as_any().is::<AddThemeConfig>() {
+        prompt_and_import_theme_config_with_error_window(cx, current_window);
+    } else if action.as_any().is::<SaveDocument>() {
         let _ = target.update(cx, |editor, cx| editor.request_save_document(cx));
     } else if action.as_any().is::<SaveDocumentAs>() {
         let _ = target.update(cx, |editor, cx| editor.request_save_document_as(cx));
@@ -449,6 +477,11 @@ pub(crate) fn install_menus(cx: &mut App) {
 }
 
 fn prompt_and_open_files(cx: &mut App) {
+    let error_window = cx.active_window();
+    prompt_and_open_files_with_error_window(cx, error_window);
+}
+
+fn prompt_and_open_files_with_error_window(cx: &mut App, error_window: Option<AnyWindowHandle>) {
     let prompt_title = cx
         .global::<I18nManager>()
         .strings()
@@ -460,7 +493,6 @@ fn prompt_and_open_files(cx: &mut App) {
         multiple: true,
         prompt: Some(prompt_title.into()),
     });
-    let error_window = cx.active_window();
 
     cx.spawn(async move |cx| match prompt.await {
         Ok(Ok(Some(paths))) => {
@@ -494,6 +526,14 @@ fn prompt_and_open_files(cx: &mut App) {
 }
 
 fn prompt_and_import_language_config(cx: &mut App) {
+    let error_window = cx.active_window();
+    prompt_and_import_language_config_with_error_window(cx, error_window);
+}
+
+fn prompt_and_import_language_config_with_error_window(
+    cx: &mut App,
+    error_window: Option<AnyWindowHandle>,
+) {
     let prompt_title = cx
         .global::<I18nManager>()
         .strings()
@@ -505,7 +545,6 @@ fn prompt_and_import_language_config(cx: &mut App) {
         multiple: false,
         prompt: Some(prompt_title.into()),
     });
-    let error_window = cx.active_window();
 
     cx.spawn(async move |cx| match prompt.await {
         Ok(Ok(Some(paths))) => {
@@ -549,6 +588,14 @@ fn prompt_and_import_language_config(cx: &mut App) {
 }
 
 fn prompt_and_import_theme_config(cx: &mut App) {
+    let error_window = cx.active_window();
+    prompt_and_import_theme_config_with_error_window(cx, error_window);
+}
+
+fn prompt_and_import_theme_config_with_error_window(
+    cx: &mut App,
+    error_window: Option<AnyWindowHandle>,
+) {
     let prompt_title = cx
         .global::<I18nManager>()
         .strings()
@@ -560,7 +607,6 @@ fn prompt_and_import_theme_config(cx: &mut App) {
         multiple: false,
         prompt: Some(prompt_title.into()),
     });
-    let error_window = cx.active_window();
 
     cx.spawn(async move |cx| match prompt.await {
         Ok(Ok(Some(paths))) => {
@@ -669,8 +715,9 @@ pub(crate) fn init(cx: &mut App) {
 mod tests {
     use super::build_menus;
     use crate::components::{
-        AddLanguageConfig, AddThemeConfig, CheckForUpdates, ExportHtml, ExportPdf, NoRecentFiles,
-        OpenRecentFile, SelectLanguage, SelectTheme, ShowAbout,
+        AddLanguageConfig, AddThemeConfig, CheckForUpdates, ExportHtml, ExportPdf, NewWindow,
+        NoRecentFiles, OpenFile, OpenRecentFile, QuitApplication, SaveDocument, SelectLanguage,
+        SelectTheme, ShowAbout,
     };
     use crate::i18n::I18nManager;
     use crate::theme::ThemeManager;
@@ -819,6 +866,26 @@ mod tests {
             }
             _ => panic!("expected recent-file action item"),
         }
+    }
+
+    #[test]
+    fn fallback_menu_routes_window_context_actions_without_app_defer() {
+        assert!(super::is_window_context_menu_action(&NewWindow));
+        assert!(super::is_window_context_menu_action(&OpenFile));
+        assert!(super::is_window_context_menu_action(&OpenRecentFile {
+            path: "notes.md".into(),
+        }));
+        assert!(super::is_window_context_menu_action(&NoRecentFiles));
+        assert!(super::is_window_context_menu_action(&AddLanguageConfig));
+        assert!(super::is_window_context_menu_action(&AddThemeConfig));
+        assert!(super::is_window_context_menu_action(&SaveDocument));
+        assert!(super::is_window_context_menu_action(&QuitApplication));
+        assert!(!super::is_window_context_menu_action(&SelectTheme {
+            theme_id: "velotype".into(),
+        }));
+        assert!(!super::is_window_context_menu_action(&SelectLanguage {
+            language_id: "en-US".into(),
+        }));
     }
 
     #[test]

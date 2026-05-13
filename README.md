@@ -4,7 +4,7 @@
 
 ![Velotype banner](./assets/icon/velotype-banner.png)
 
-**A Rust + GPUI native Markdown editor with WYSIWYG and source editing modes.** 
+**A Rust + GPUI native Markdown editor with WYSIWYG and source editing modes.**
 
 [Editor Showcase](./assets/showcase/showcase.md)
 
@@ -43,6 +43,8 @@ Velotype targets Windows, Linux, and macOS. The app is naturally suitable for di
 
 Download the Windows, Linux, or macOS build from the [Velotype Releases](https://github.com/manyougz/velotype/releases) page. Release artifacts are designed as portable desktop programs and can be run directly.
 
+> Note: macOS users need to sign the `app` file locally on their machine; otherwise, Velotype will not run properly.
+
 ### 2. Build from source
 
 Prerequisites:
@@ -72,6 +74,8 @@ Syntax support will continue to improve. Planned work includes:
 
 - [x] ~~Mind-map drawing and rendering support~~
 - [x] ~~LaTeX math syntax and rendering support~~
+- [ ] Optimize the parsing and rendering capabilities for extremely large Markdown documents
+- [ ] Workspace Mode and Outline Parsing
 - [ ] Built-in image hosting
 - [ ] More complete IME behavior
 
@@ -88,7 +92,7 @@ Start with the example files:
 
 In the app, use `Theme -> Add Theme Config` or `Language -> Add Language Config` to import a `.json` or `.jsonc` file. JSONC comments are accepted for writing and sharing examples; normalized configuration files saved by the app are strict JSON.
 
-> Thank you for helping translate Velotype or enrich the Velotype theme ecosystem.
+> Thank you for helping translate Velotype or enrich the Velotype theme ecosystem. The project is evolving rapidly, so theme field changes may occur frequently.
 
 ## Architecture
 

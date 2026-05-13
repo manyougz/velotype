@@ -1,0 +1,60 @@
+name: Feature Request
+description: Suggest a new feature or improvement for velotype
+title: "[Feature]: "
+labels:
+  - enhancement
+  - needs-triage
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for suggesting a feature for velotype.
+
+        Before submitting, please search existing issues, keep the request focused,
+        and describe the real workflow or use case behind it.
+
+        If an existing feature is behaving incorrectly, please use the Bug Report template instead.
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Checklist
+      options:
+        - label: I have searched the existing issues
+          required: true
+        - label: This request is focused on a single feature or improvement
+          required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem / use case
+      description: Describe the limitation, missing workflow, or goal this request addresses.
+      placeholder: |
+        Example:
+        Editing large markdown documents currently becomes difficult because...
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+      description: Describe how you would like Velotype to behave.
+      placeholder: |
+        Example:
+        Add a floating outline panel that...
+    validations:
+      required: true
+
+  - type: textarea
+    id: additional_context
+    attributes:
+      label: Additional context
+      description: Add references, mockups, related tools, links, or sample Markdown if useful.
+      placeholder: |
+        Example:
+        Related tools, mockups, workflow notes, or Markdown examples...
+    validations:
+      required: false
