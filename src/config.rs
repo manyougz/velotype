@@ -81,6 +81,9 @@ pub(crate) fn record_recent_file_with_dirs(
     if path.to_string_lossy().trim().is_empty() {
         bail!("recent file path cannot be empty");
     }
+    if !is_recordable_recent_file_path(path) {
+        return read_recent_files_with_dirs(dirs);
+    }
 
     let mut paths = read_recent_files_with_dirs(dirs)?;
     let path = path.to_path_buf();
@@ -141,6 +144,9 @@ fn normalize_recent_files(paths: impl IntoIterator<Item = PathBuf>) -> Vec<PathB
             continue;
         }
         let path = PathBuf::from(trimmed);
+        if !is_recordable_recent_file_path(&path) {
+            continue;
+        }
         if normalized
             .iter()
             .any(|existing| same_recent_path(existing, &path))
@@ -153,6 +159,46 @@ fn normalize_recent_files(paths: impl IntoIterator<Item = PathBuf>) -> Vec<PathB
         }
     }
     normalized
+}
+
+fn is_recordable_recent_file_path(path: &Path) -> bool {
+    let text = path.to_string_lossy();
+    if text.trim().is_empty() {
+        return false;
+    }
+
+    !(is_inside_system_temp_dir(path) && has_velotype_temp_fixture_name(path))
+}
+
+fn is_inside_system_temp_dir(path: &Path) -> bool {
+    let temp_dir = std::env::temp_dir();
+    if cfg!(windows) {
+        let path_text = normalize_windows_path_text(path);
+        let mut temp_text = normalize_windows_path_text(&temp_dir);
+        if !temp_text.ends_with('\\') {
+            temp_text.push('\\');
+        }
+        return path_text.starts_with(&temp_text);
+    }
+
+    path.starts_with(temp_dir)
+}
+
+fn normalize_windows_path_text(path: &Path) -> String {
+    path.to_string_lossy()
+        .replace('/', "\\")
+        .trim_end_matches('\\')
+        .to_ascii_lowercase()
+}
+
+fn has_velotype_temp_fixture_name(path: &Path) -> bool {
+    path.file_name()
+        .and_then(|name| name.to_str())
+        .map(|name| {
+            let name = name.to_ascii_lowercase();
+            name.starts_with("velotype-drop-") || name.starts_with("velotypre-drop-")
+        })
+        .unwrap_or(false)
 }
 
 fn same_recent_path(left: &Path, right: &Path) -> bool {
@@ -446,6 +492,61 @@ mod tests {
             paths,
             vec![PathBuf::from("C:\\one.md"), PathBuf::from("C:\\two.md")]
         );
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn recent_history_filters_legacy_velotype_temp_fixture_paths() {
+        let root = std::env::temp_dir().join(format!("velotype-config-{}", uuid::Uuid::new_v4()));
+        let dirs = VelotypeConfigDirs::from_root(&root);
+        let fixture_path = std::env::temp_dir().join(format!(
+            "velotype-drop-save-replace-{}-123.md",
+            std::process::id()
+        ));
+        let real_path = PathBuf::from("C:\\notes\\real.md");
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(
+            dirs.history_file(),
+            format!("{}\n{}\n", fixture_path.display(), real_path.display()),
+        )
+        .unwrap();
+
+        let paths = read_recent_files_with_dirs(&dirs).unwrap();
+        assert_eq!(paths, vec![real_path]);
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn recording_velotype_temp_fixture_path_is_noop() {
+        let root = std::env::temp_dir().join(format!("velotype-config-{}", uuid::Uuid::new_v4()));
+        let dirs = VelotypeConfigDirs::from_root(&root);
+        let fixture_path = std::env::temp_dir().join(format!(
+            "velotype-drop-dirty-discard-{}-123.md",
+            std::process::id()
+        ));
+
+        assert!(
+            record_recent_file_with_dirs(&fixture_path, &dirs)
+                .unwrap()
+                .is_empty()
+        );
+        assert!(!dirs.history_file().exists());
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn ordinary_temp_markdown_file_can_still_be_recorded() {
+        let root = std::env::temp_dir().join(format!("velotype-config-{}", uuid::Uuid::new_v4()));
+        let dirs = VelotypeConfigDirs::from_root(&root);
+        let path = std::env::temp_dir().join(format!("manual-note-{}.md", std::process::id()));
+
+        let paths = record_recent_file_with_dirs(&path, &dirs).unwrap();
+
+        assert_eq!(paths, vec![path]);
+        assert!(dirs.history_file().exists());
 
         let _ = std::fs::remove_dir_all(root);
     }

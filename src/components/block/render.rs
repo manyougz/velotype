@@ -13,7 +13,7 @@ use crate::components::{
     TableAxisMarker, TableCellInlineImageSegment, TableColumnLayout, attr_value,
     display_math_font_size, inline_math_font_size, parse_display_math_source,
     parse_mermaid_fence_source, parse_table_cell_inline_images, render_display_math_svg,
-    render_inline_math_svg, render_mermaid_svg, resolve_image_source, style_for_node,
+    render_inline_math_svg, render_mermaid_svg_for_display, resolve_image_source, style_for_node,
 };
 use crate::i18n::{I18nManager, I18nStrings};
 use crate::theme::{Theme, ThemeDimensions, ThemeManager};
@@ -553,7 +553,7 @@ impl Block {
         }
     }
 
-    fn render_mermaid_content(&self, theme: &Theme) -> AnyElement {
+    fn render_mermaid_content(&self, theme: &Theme, window: &Window) -> AnyElement {
         let c = &theme.colors;
         let d = &theme.dimensions;
         let t = &theme.typography;
@@ -573,19 +573,44 @@ impl Block {
                 .into_any_element();
         };
 
-        match render_mermaid_svg(&source) {
-            Ok(rendered) => div()
-                .w_full()
-                .flex()
-                .justify_center()
-                .py(px(d.block_padding_y.max(6.0)))
-                .child(
-                    img(rendered.path)
-                        .max_w(Length::Definite(relative(1.0)))
-                        .max_h(px(d.image_root_max_height))
-                        .object_fit(ObjectFit::Contain),
-                )
-                .into_any_element(),
+        let viewport_width = f32::from(window.viewport_size().width.max(px(1.0)));
+        let available_width = effective_image_width(self, viewport_width, d);
+
+        match render_mermaid_svg_for_display(&source, available_width, viewport_width) {
+            Ok(rendered) => {
+                let display_width = rendered.display_width.max(1.0);
+                let display_height = rendered.display_height.max(1.0);
+                let image_path = rendered.path.clone();
+                let image = move || {
+                    img(image_path.clone())
+                        .w(px(display_width))
+                        .h(px(display_height))
+                };
+                let content = if display_width <= available_width + 0.5 {
+                    div()
+                        .w_full()
+                        .flex()
+                        .justify_center()
+                        .child(image())
+                        .into_any_element()
+                } else {
+                    div()
+                        .id(ElementId::Name(
+                            format!("mermaid-scroll-{}", self.record.id).into(),
+                        ))
+                        .w_full()
+                        .overflow_x_scroll()
+                        .scrollbar_width(px(0.0))
+                        .child(div().w(px(display_width)).child(image()))
+                        .into_any_element()
+                };
+
+                div()
+                    .w_full()
+                    .py(px(d.block_padding_y.max(6.0)))
+                    .child(content)
+                    .into_any_element()
+            }
             Err(err) => div()
                 .w_full()
                 .flex()
@@ -2681,7 +2706,7 @@ impl Render for Block {
                 let child = if focused {
                     BlockTextElement::new(cx.entity(), is_placeholder).into_any_element()
                 } else {
-                    self.render_mermaid_content(&theme)
+                    self.render_mermaid_content(&theme, window)
                 };
                 focused_base.w_full().child(child).into_any_element()
             }

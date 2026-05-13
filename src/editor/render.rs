@@ -184,6 +184,18 @@ fn menu_panel_width_for_labels(labels: &[String], dimensions: &ThemeDimensions) 
     dimensions.menu_panel_width.max(content_width.ceil())
 }
 
+fn owned_menu_item_labels(items: &[OwnedMenuItem]) -> Vec<String> {
+    items
+        .iter()
+        .filter_map(|item| match item {
+            OwnedMenuItem::Action { name, .. } => Some(name.to_string()),
+            OwnedMenuItem::Submenu(menu) => Some(menu.name.to_string()),
+            OwnedMenuItem::SystemMenu(menu) => Some(menu.name.to_string()),
+            OwnedMenuItem::Separator => None,
+        })
+        .collect()
+}
+
 fn menu_item_visual_height(item: &OwnedMenuItem, dimensions: &ThemeDimensions) -> f32 {
     match item {
         OwnedMenuItem::Separator => {
@@ -222,14 +234,21 @@ fn submenu_bridge_geometry(
     menu_labels: &[String],
     items: &[OwnedMenuItem],
     item_index: usize,
+    submenu_labels: &[String],
     dimensions: &ThemeDimensions,
 ) -> Option<MenuSubmenuBridgeGeometry> {
     let item = items.get(item_index)?;
+    let main_panel_left = menu_panel_left(open_index, menu_labels, dimensions);
+    let main_panel_width = menu_panel_width_for_labels(&owned_menu_item_labels(items), dimensions);
+    let submenu_width = menu_panel_width_for_labels(submenu_labels, dimensions);
+    let vertical_tolerance = dimensions.menu_panel_padding + dimensions.menu_panel_gap;
+    let item_top = submenu_panel_top(items, item_index, dimensions);
+    let top = (item_top - vertical_tolerance).max(dimensions.menu_panel_top);
     Some(MenuSubmenuBridgeGeometry {
-        left: menu_panel_left(open_index, menu_labels, dimensions) + dimensions.menu_panel_width,
-        top: submenu_panel_top(items, item_index, dimensions),
-        width: dimensions.menu_panel_gap,
-        height: menu_item_visual_height(item, dimensions),
+        left: main_panel_left + main_panel_width,
+        top,
+        width: dimensions.menu_panel_gap + submenu_width,
+        height: menu_item_visual_height(item, dimensions) + vertical_tolerance * 2.0,
     })
 }
 
@@ -562,14 +581,18 @@ impl Editor {
             .iter()
             .map(|menu| menu.name.to_string())
             .collect::<Vec<_>>();
+        let menu_item_labels = owned_menu_item_labels(&menu_items);
+        let menu_panel_width = menu_panel_width_for_labels(&menu_item_labels, d);
         let submenu_bridge = self.menu_submenu_open.and_then(|submenu_index| {
             match menu_items.get(submenu_index)? {
-                OwnedMenuItem::Submenu(_) => {
+                OwnedMenuItem::Submenu(submenu) => {
+                    let submenu_labels = owned_menu_item_labels(&submenu.items);
                     let geometry = submenu_bridge_geometry(
                         open_index,
                         &menu_labels,
                         &menu_items,
                         submenu_index,
+                        &submenu_labels,
                         d,
                     )?;
                     Some(
@@ -593,18 +616,9 @@ impl Editor {
             self.menu_submenu_open.and_then(|submenu_index| {
                 match menu_items.get(submenu_index)? {
                     OwnedMenuItem::Submenu(submenu) => {
-                        let submenu_labels = submenu
-                            .items
-                            .iter()
-                            .filter_map(|item| match item {
-                                OwnedMenuItem::Action { name, .. } => Some(name.to_string()),
-                                OwnedMenuItem::Submenu(menu) => Some(menu.name.to_string()),
-                                OwnedMenuItem::SystemMenu(menu) => Some(menu.name.to_string()),
-                                OwnedMenuItem::Separator => None,
-                            })
-                            .collect::<Vec<_>>();
+                        let submenu_labels = owned_menu_item_labels(&submenu.items);
                         let left = menu_panel_left(open_index, &menu_labels, d)
-                            + d.menu_panel_width
+                            + menu_panel_width
                             + d.menu_panel_gap;
                         let top = submenu_panel_top(&menu_items, submenu_index, d);
                         let submenu_width = menu_panel_width_for_labels(&submenu_labels, d);
@@ -829,7 +843,7 @@ impl Editor {
             .occlude()
             .top(px(d.menu_panel_top))
             .left(px(menu_panel_left(open_index, &menu_labels, d)))
-            .w(px(d.menu_panel_width))
+            .w(px(menu_panel_width))
             .p(px(d.menu_panel_padding))
             .flex()
             .flex_col()
@@ -1756,8 +1770,9 @@ impl Render for Editor {
 #[cfg(test)]
 mod tests {
     use super::{
-        RenderedRowSpacingInfo, callout_row_top_gap, in_window_menu_bar_height_for_target_os,
-        menu_bar_button_width, menu_panel_left, menu_panel_width_for_labels, rendered_row_top_gap,
+        NoRecentFiles, RenderedRowSpacingInfo, callout_row_top_gap,
+        in_window_menu_bar_height_for_target_os, menu_bar_button_width, menu_panel_left,
+        menu_panel_width_for_labels, owned_menu_item_labels, rendered_row_top_gap,
         submenu_bridge_geometry, supports_in_window_menu_for_target_os,
     };
     use crate::theme::Theme;
@@ -1984,26 +1999,59 @@ mod tests {
             OwnedMenuItem::Separator,
             OwnedMenuItem::Submenu(OwnedMenu {
                 name: "Recent".into(),
-                items: Vec::new(),
+                items: vec![OwnedMenuItem::Action {
+                    name: r"C:\Users\someone\Documents\notes.md".into(),
+                    action: Box::new(NoRecentFiles),
+                    os_action: None,
+                }],
             }),
         ];
+        let submenu_labels = match &items[1] {
+            OwnedMenuItem::Submenu(submenu) => owned_menu_item_labels(&submenu.items),
+            _ => Vec::new(),
+        };
 
-        let bridge = submenu_bridge_geometry(0, &labels, &items, 1, dimensions)
+        let bridge = submenu_bridge_geometry(0, &labels, &items, 1, &submenu_labels, dimensions)
             .expect("submenu bridge geometry should be available");
+        let submenu_width = menu_panel_width_for_labels(&submenu_labels, dimensions);
 
         assert_eq!(
             bridge.left,
             dimensions.menu_bar_padding_x + dimensions.menu_panel_width
         );
-        assert_eq!(bridge.width, dimensions.menu_panel_gap);
-        assert_eq!(bridge.height, dimensions.menu_item_height);
-        assert_eq!(
-            bridge.top,
-            dimensions.menu_panel_top
-                + dimensions.menu_panel_padding
-                + dimensions.menu_separator_height
-                + dimensions.menu_separator_margin_y * 2.0
-                + dimensions.menu_panel_gap
-        );
+        assert_eq!(bridge.width, dimensions.menu_panel_gap + submenu_width);
+        assert!(bridge.height > dimensions.menu_item_height);
+        let item_top = dimensions.menu_panel_top
+            + dimensions.menu_panel_padding
+            + dimensions.menu_separator_height
+            + dimensions.menu_separator_margin_y * 2.0
+            + dimensions.menu_panel_gap;
+        assert!(bridge.top < item_top);
+        assert!(bridge.top >= dimensions.menu_panel_top);
+    }
+
+    #[test]
+    fn submenu_bridge_uses_dynamic_main_menu_width() {
+        let theme = Theme::default_theme();
+        let dimensions = &theme.dimensions;
+        let labels = vec!["File".to_string()];
+        let items = vec![OwnedMenuItem::Submenu(OwnedMenu {
+            name: "Open Recently Used Markdown File".into(),
+            items: vec![OwnedMenuItem::Action {
+                name: r"C:\Users\someone\Documents\Very Long Folder\notes.md".into(),
+                action: Box::new(NoRecentFiles),
+                os_action: None,
+            }],
+        })];
+        let submenu_labels = match &items[0] {
+            OwnedMenuItem::Submenu(submenu) => owned_menu_item_labels(&submenu.items),
+            _ => Vec::new(),
+        };
+
+        let bridge = submenu_bridge_geometry(0, &labels, &items, 0, &submenu_labels, dimensions)
+            .expect("submenu bridge geometry should be available");
+
+        assert!(bridge.left > dimensions.menu_bar_padding_x + dimensions.menu_panel_width);
+        assert!(bridge.width > dimensions.menu_panel_gap + dimensions.menu_panel_width);
     }
 }
