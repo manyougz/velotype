@@ -101,6 +101,7 @@ In the app, use `Theme -> Add Theme Config` or `Language -> Add Language Config`
 | `editor` | Window-level editor state: view mode, save/close flow, undo, selection, source mapping, tree mutation, export, and file drop. |
 | `components::block` | Editable block runtime, GPUI input handling, block rendering, block events, image/table/code runtime state. |
 | `components::markdown` | Markdown data models and parse/serialize helpers for inline text, links, images, footnotes, tables, HTML, and code highlighting. |
+| `config` | Velotype behavior and theme configuration interfaces. |
 | `export` | HTML and PDF export pipelines. |
 | `theme` | Visual theme tokens, built-in theme defaults, imported custom themes, and the global theme manager. |
 | `i18n` | Built-in UI strings, imported language packs, system locale matching, and runtime language selection. |

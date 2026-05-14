@@ -92,6 +92,8 @@ pub struct I18nStrings {
     pub menu_open_file: String,
     /// File menu item for opening a recent file submenu.
     pub menu_open_recent_file: String,
+    /// File menu item for opening app preferences.
+    pub menu_preferences: String,
     /// Placeholder item shown when no recent files are recorded.
     pub menu_no_recent_files: String,
     /// File menu item for saving the current document.
@@ -126,6 +128,26 @@ pub struct I18nStrings {
     pub export_failed_title: String,
     /// Title of the custom configuration import failure prompt.
     pub config_import_failed_title: String,
+    /// Preferences window title.
+    pub preferences_window_title: String,
+    /// File preferences navigation label.
+    pub preferences_nav_file: String,
+    /// Theme preferences navigation label.
+    pub preferences_nav_theme: String,
+    /// Startup option field label.
+    pub preferences_startup_option: String,
+    /// Startup option for creating a new Markdown document.
+    pub preferences_startup_new_file: String,
+    /// Startup option for opening the last opened Markdown document.
+    pub preferences_startup_last_opened_file: String,
+    /// Theme preference field label.
+    pub preferences_local_theme: String,
+    /// Save button label in the preferences window.
+    pub preferences_save: String,
+    /// Cancel button label in the preferences window.
+    pub preferences_cancel: String,
+    /// Title shown when preferences cannot be saved.
+    pub preferences_save_failed_title: String,
     /// Title of the link-opening confirmation prompt.
     pub open_link_title: String,
     /// Confirm button for the link-opening prompt.
@@ -224,6 +246,7 @@ struct I18nStringsDe {
     menu_new_window: Option<String>,
     menu_open_file: Option<String>,
     menu_open_recent_file: Option<String>,
+    menu_preferences: Option<String>,
     menu_no_recent_files: Option<String>,
     menu_save: Option<String>,
     menu_save_as: Option<String>,
@@ -241,6 +264,16 @@ struct I18nStringsDe {
     save_failed_title: Option<String>,
     export_failed_title: Option<String>,
     config_import_failed_title: Option<String>,
+    preferences_window_title: Option<String>,
+    preferences_nav_file: Option<String>,
+    preferences_nav_theme: Option<String>,
+    preferences_startup_option: Option<String>,
+    preferences_startup_new_file: Option<String>,
+    preferences_startup_last_opened_file: Option<String>,
+    preferences_local_theme: Option<String>,
+    preferences_save: Option<String>,
+    preferences_cancel: Option<String>,
+    preferences_save_failed_title: Option<String>,
     open_link_title: Option<String>,
     open_link_open: Option<String>,
     open_link_cancel: Option<String>,
@@ -309,6 +342,7 @@ const I18N_STRING_KEYS: &[&str] = &[
     "menu_new_window",
     "menu_open_file",
     "menu_open_recent_file",
+    "menu_preferences",
     "menu_no_recent_files",
     "menu_save",
     "menu_save_as",
@@ -326,6 +360,16 @@ const I18N_STRING_KEYS: &[&str] = &[
     "save_failed_title",
     "export_failed_title",
     "config_import_failed_title",
+    "preferences_window_title",
+    "preferences_nav_file",
+    "preferences_nav_theme",
+    "preferences_startup_option",
+    "preferences_startup_new_file",
+    "preferences_startup_last_opened_file",
+    "preferences_local_theme",
+    "preferences_save",
+    "preferences_cancel",
+    "preferences_save_failed_title",
     "open_link_title",
     "open_link_open",
     "open_link_cancel",
@@ -450,6 +494,7 @@ impl I18nStringsDe {
             menu_open_recent_file: self
                 .menu_open_recent_file
                 .unwrap_or(defaults.menu_open_recent_file),
+            menu_preferences: self.menu_preferences.unwrap_or(defaults.menu_preferences),
             menu_no_recent_files: self
                 .menu_no_recent_files
                 .unwrap_or(defaults.menu_no_recent_files),
@@ -485,6 +530,34 @@ impl I18nStringsDe {
             config_import_failed_title: self
                 .config_import_failed_title
                 .unwrap_or(defaults.config_import_failed_title),
+            preferences_window_title: self
+                .preferences_window_title
+                .unwrap_or(defaults.preferences_window_title),
+            preferences_nav_file: self
+                .preferences_nav_file
+                .unwrap_or(defaults.preferences_nav_file),
+            preferences_nav_theme: self
+                .preferences_nav_theme
+                .unwrap_or(defaults.preferences_nav_theme),
+            preferences_startup_option: self
+                .preferences_startup_option
+                .unwrap_or(defaults.preferences_startup_option),
+            preferences_startup_new_file: self
+                .preferences_startup_new_file
+                .unwrap_or(defaults.preferences_startup_new_file),
+            preferences_startup_last_opened_file: self
+                .preferences_startup_last_opened_file
+                .unwrap_or(defaults.preferences_startup_last_opened_file),
+            preferences_local_theme: self
+                .preferences_local_theme
+                .unwrap_or(defaults.preferences_local_theme),
+            preferences_save: self.preferences_save.unwrap_or(defaults.preferences_save),
+            preferences_cancel: self
+                .preferences_cancel
+                .unwrap_or(defaults.preferences_cancel),
+            preferences_save_failed_title: self
+                .preferences_save_failed_title
+                .unwrap_or(defaults.preferences_save_failed_title),
             open_link_title: self.open_link_title.unwrap_or(defaults.open_link_title),
             open_link_open: self.open_link_open.unwrap_or(defaults.open_link_open),
             open_link_cancel: self.open_link_cancel.unwrap_or(defaults.open_link_cancel),
@@ -617,6 +690,7 @@ impl I18nStrings {
             menu_new_window: "新建窗口".into(),
             menu_open_file: "打开文件".into(),
             menu_open_recent_file: "打开最近文件".into(),
+            menu_preferences: "偏好设置".into(),
             menu_no_recent_files: "无最近文件".into(),
             menu_save: "保存".into(),
             menu_save_as: "另存为".into(),
@@ -635,6 +709,16 @@ impl I18nStrings {
             save_failed_title: "保存失败".into(),
             export_failed_title: "导出失败".into(),
             config_import_failed_title: "配置导入失败".into(),
+            preferences_window_title: "偏好设置".into(),
+            preferences_nav_file: "文件".into(),
+            preferences_nav_theme: "主题".into(),
+            preferences_startup_option: "启动选项".into(),
+            preferences_startup_new_file: "新 md 文件".into(),
+            preferences_startup_last_opened_file: "上一次打开的 md 文件".into(),
+            preferences_local_theme: "本地主题".into(),
+            preferences_save: "保存".into(),
+            preferences_cancel: "取消".into(),
+            preferences_save_failed_title: "保存偏好设置失败".into(),
             open_link_title: "打开链接？".into(),
             open_link_open: "打开".into(),
             open_link_cancel: "取消".into(),
@@ -716,6 +800,7 @@ impl I18nStrings {
             menu_new_window: "New Window".into(),
             menu_open_file: "Open File".into(),
             menu_open_recent_file: "Open Recent File".into(),
+            menu_preferences: "Preferences".into(),
             menu_no_recent_files: "No Recent Files".into(),
             menu_save: "Save".into(),
             menu_save_as: "Save As".into(),
@@ -734,6 +819,16 @@ impl I18nStrings {
             save_failed_title: "Save Failed".into(),
             export_failed_title: "Export Failed".into(),
             config_import_failed_title: "Config Import Failed".into(),
+            preferences_window_title: "Preferences".into(),
+            preferences_nav_file: "File".into(),
+            preferences_nav_theme: "Theme".into(),
+            preferences_startup_option: "Startup Option".into(),
+            preferences_startup_new_file: "New Markdown File".into(),
+            preferences_startup_last_opened_file: "Last Opened Markdown File".into(),
+            preferences_local_theme: "Local Theme".into(),
+            preferences_save: "Save".into(),
+            preferences_cancel: "Cancel".into(),
+            preferences_save_failed_title: "Save Preferences Failed".into(),
             open_link_title: "Open link?".into(),
             open_link_open: "Open".into(),
             open_link_cancel: "Cancel".into(),
@@ -944,15 +1039,24 @@ impl Default for I18nManager {
 }
 
 impl I18nManager {
-    /// Installs the detected UI language into GPUI's global state.
+    /// Installs the configured UI language into GPUI's global state.
+    #[allow(dead_code)]
     pub fn init(cx: &mut App) {
-        let language_id = language_id_for_locale_preferences(sys_locale::get_locales());
-        let mut manager = Self::new_with_language_id(language_id);
+        let language_id = crate::config::read_app_preferences()
+            .map(|preferences| preferences.default_language_id)
+            .unwrap_or_else(|_| BUILTIN_LANGUAGE_EN_US_ID.into());
+        Self::init_with_language_id(cx, &language_id);
+    }
+
+    /// Installs a specific UI language into GPUI's global state.
+    pub fn init_with_language_id(cx: &mut App, language_id: &str) {
+        let mut manager = Self::new_with_language_id(BUILTIN_LANGUAGE_EN_US_ID);
         if let Ok(dirs) = VelotypeConfigDirs::from_system() {
             if let Err(err) = manager.load_custom_languages_from_dirs(&dirs) {
                 eprintln!("failed to load custom languages: {err}");
             }
         }
+        let _ = manager.set_language_by_id(language_id);
         cx.set_global(manager);
     }
 

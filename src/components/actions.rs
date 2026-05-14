@@ -38,6 +38,7 @@ actions!(
         SaveDocument,
         NewWindow,
         OpenFile,
+        OpenPreferences,
         NoRecentFiles,
         SaveDocumentAs,
         ExportHtml,

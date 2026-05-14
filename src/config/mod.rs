@@ -1,10 +1,19 @@
-//! Shared user-configuration helpers for imported language and theme packs.
+//! Shared user-configuration helpers for app preferences and imported packs.
 
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context as _, bail};
 use directories::ProjectDirs;
 use serde_json::{Map, Value};
+
+pub(crate) mod preferences;
+
+pub(crate) use preferences::{
+    StartupOpenPreference, apply_configured_language, apply_configured_theme,
+    first_existing_recent_markdown_file, import_language_config_and_select,
+    import_theme_config_and_select, load_or_create_app_preferences, open_preferences_window,
+    read_app_preferences,
+};
 
 pub(crate) const RECENT_FILES_LIMIT: usize = 20;
 
@@ -44,6 +53,10 @@ impl VelotypeConfigDirs {
 
     pub(crate) fn history_file(&self) -> PathBuf {
         self.root.join(".history")
+    }
+
+    pub(crate) fn app_config_file(&self) -> PathBuf {
+        self.root.join("config.toml")
     }
 }
 
