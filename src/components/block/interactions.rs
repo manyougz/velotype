@@ -12,7 +12,7 @@ use super::{Block, BlockEvent, BlockKind, InlineFormat, InlineTextTree, UndoCapt
 use crate::components::{
     BoldSelection, CodeSelection, Copy, Cut, Delete, DeleteBack, DismissTransientUi, End,
     ExitCodeBlock, FocusNext, FocusPrev, Home, IndentBlock, ItalicSelection, MoveLeft, MoveRight,
-    Newline, OutdentBlock, Paste, SelectAll, SelectLeft, SelectRight, UnderlineSelection,
+    Newline, OutdentBlock, Paste, SelectAll, SelectEnd, SelectHome, SelectLeft, SelectRight, UnderlineSelection,
 };
 
 impl Block {
@@ -593,6 +593,25 @@ impl Block {
         cx: &mut Context<Self>,
     ) {
         self.move_to(0, cx);
+        self.select_to(self.visible_len(), cx);
+    }
+
+
+    pub(crate) fn on_select_home(
+        &mut self,
+        _: &SelectHome,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.select_to(0, cx);
+    }
+
+    pub(crate) fn on_select_end(
+        &mut self,
+        _: &SelectEnd,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         self.select_to(self.visible_len(), cx);
     }
 
