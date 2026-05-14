@@ -691,6 +691,24 @@ impl Editor {
             return;
         }
 
+        if let BlockEvent::RequestReplaceCrossBlockSelection {
+            text,
+            selected_range_relative,
+            mark_inserted_text,
+            undo_kind,
+        } = event
+        {
+            if self.replace_cross_block_selection_with_text(
+                text,
+                selected_range_relative.clone(),
+                *mark_inserted_text,
+                *undo_kind,
+                cx,
+            ) {
+                return;
+            }
+        }
+
         if let Some(binding) = self.table_cell_binding(block.entity_id()) {
             self.on_table_cell_event(binding, event, cx);
             return;
@@ -984,6 +1002,7 @@ impl Editor {
                 self.finalize_pending_undo_capture(cx);
                 cx.notify();
             }
+            BlockEvent::RequestReplaceCrossBlockSelection { .. } => {}
             BlockEvent::RequestIndent => {
                 if current_visible_index == 0 {
                     return;

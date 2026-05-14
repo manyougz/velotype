@@ -4,6 +4,8 @@
 //! from Markdown. Block-level parsing stays intentionally narrow: only syntax
 //! that the runtime tree can reconstruct is parsed into structured blocks.
 
+use std::ops::Range;
+
 use gpui::{Pixels, Point, SharedString};
 use uuid::Uuid;
 
@@ -674,6 +676,14 @@ pub enum BlockEvent {
         leading: InlineTextTree,
         lines: Vec<String>,
         trailing: InlineTextTree,
+    },
+    /// Replace the current editor-level cross-block selection with text
+    /// submitted through the focused block input handler.
+    RequestReplaceCrossBlockSelection {
+        text: String,
+        selected_range_relative: Option<Range<usize>>,
+        mark_inserted_text: bool,
+        undo_kind: UndoCaptureKind,
     },
     /// Tab pressed in list context; increase the current block's nesting when
     /// the previous visible block can adopt it.

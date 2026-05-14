@@ -11,7 +11,7 @@ use gpui::*;
 
 use super::Block;
 use super::element;
-use crate::components::UndoCaptureKind;
+use crate::components::{BlockEvent, UndoCaptureKind};
 
 impl EntityInputHandler for Block {
     fn text_for_range(
@@ -94,6 +94,16 @@ impl EntityInputHandler for Block {
             return;
         }
 
+        if self.editor_selection_range.is_some() {
+            cx.emit(BlockEvent::RequestReplaceCrossBlockSelection {
+                text: new_text.to_string(),
+                selected_range_relative: None,
+                mark_inserted_text: false,
+                undo_kind: UndoCaptureKind::CoalescibleText,
+            });
+            return;
+        }
+
         self.prepare_undo_capture(UndoCaptureKind::CoalescibleText, cx);
         let visible_range = range_utf16
             .as_ref()
@@ -130,6 +140,20 @@ impl EntityInputHandler for Block {
                 !sanitized_new_text.is_empty(),
                 cx,
             );
+            return;
+        }
+
+        if self.editor_selection_range.is_some() {
+            let selected_range_relative = new_selected_range_utf16
+                .as_ref()
+                .map(|range_utf16| Self::utf16_range_to_utf8_in(new_text, range_utf16))
+                .map(|relative| relative.start..relative.end);
+            cx.emit(BlockEvent::RequestReplaceCrossBlockSelection {
+                text: new_text.to_string(),
+                selected_range_relative,
+                mark_inserted_text: !new_text.is_empty(),
+                undo_kind: UndoCaptureKind::CoalescibleText,
+            });
             return;
         }
 
