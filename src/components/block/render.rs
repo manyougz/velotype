@@ -1441,6 +1441,8 @@ impl Block {
             .on_action(cx.listener(Self::on_end))
             .on_action(cx.listener(Self::on_select_left))
             .on_action(cx.listener(Self::on_select_right))
+            .on_action(cx.listener(Self::on_select_home))
+            .on_action(cx.listener(Self::on_select_end))
             .on_action(cx.listener(Self::on_select_all))
             .on_action(cx.listener(Self::on_copy))
             .on_action(cx.listener(Self::on_cut))
