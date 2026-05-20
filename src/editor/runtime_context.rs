@@ -1,5 +1,8 @@
 //! Runtime context synchronization for blocks, references, images, and focus.
 
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
+
 use super::*;
 
 impl Editor {
@@ -102,6 +105,111 @@ impl Editor {
         });
     }
 
+    fn reference_definition_source(&self, cx: &App) -> String {
+        let mut source = String::new();
+        for visible_block in self.document.visible_blocks() {
+            let block = visible_block.entity.read(cx);
+            if block.kind() != BlockKind::RawMarkdown {
+                continue;
+            }
+
+            let raw = block
+                .record
+                .raw_fallback
+                .clone()
+                .unwrap_or_else(|| block.record.title_markdown());
+            if !raw.as_bytes().windows(2).any(|window| window == b"]:") {
+                continue;
+            }
+
+            if !source.is_empty() {
+                source.push('\n');
+            }
+            source.push_str(&raw);
+        }
+        source
+    }
+
+    fn footnote_signature(&self, cx: &App) -> u64 {
+        let mut hasher = DefaultHasher::new();
+        for visible_block in self.document.visible_blocks() {
+            let block = visible_block.entity.read(cx);
+            block.record.id.hash(&mut hasher);
+            format!("{:?}", block.kind()).hash(&mut hasher);
+            if block.kind() == BlockKind::FootnoteDefinition {
+                block.record.title.visible_text().hash(&mut hasher);
+                block.record.parent.hash(&mut hasher);
+            }
+            for fragment in &block.record.title.fragments {
+                if let Some(footnote) = fragment.footnote.as_ref() {
+                    footnote.id.hash(&mut hasher);
+                }
+            }
+        }
+        hasher.finish()
+    }
+
+    fn refresh_reference_definition_cache(&mut self, cx: &App) -> bool {
+        let source = self.reference_definition_source(cx);
+        if source == self.runtime_reference_source_cache {
+            return false;
+        }
+
+        self.image_reference_definitions = Arc::new(parse_image_reference_definitions(&source));
+        self.link_reference_definitions = Arc::new(parse_link_reference_definitions(&source));
+        self.runtime_reference_source_cache = source;
+        true
+    }
+
+    fn refresh_footnote_registry_if_needed(&mut self, cx: &App) -> bool {
+        let signature = self.footnote_signature(cx);
+        if signature == self.runtime_footnote_signature {
+            return false;
+        }
+
+        self.rebuild_footnote_registry(cx);
+        self.runtime_footnote_signature = signature;
+        true
+    }
+
+    fn sync_runtime_context_for_table_cells(
+        &self,
+        table_block: &Entity<Block>,
+        base_dir: Option<&Path>,
+        cx: &mut Context<Self>,
+    ) {
+        let cells = table_block
+            .read(cx)
+            .table_runtime
+            .as_ref()
+            .map(|runtime| {
+                runtime
+                    .header
+                    .iter()
+                    .chain(runtime.rows.iter().flatten())
+                    .cloned()
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+
+        for cell in cells {
+            self.sync_runtime_context_for_block(&cell, base_dir, cx);
+        }
+    }
+
+    fn sync_runtime_context_for_visible_blocks(
+        &self,
+        base_dir: Option<&Path>,
+        cx: &mut Context<Self>,
+    ) {
+        for visible_block in self.document.visible_blocks() {
+            self.sync_runtime_context_for_block(&visible_block.entity, base_dir, cx);
+            if visible_block.entity.read(cx).kind() == BlockKind::Table {
+                self.sync_runtime_context_for_table_cells(&visible_block.entity, base_dir, cx);
+            }
+        }
+    }
+
     pub(super) fn rebuild_footnote_registry(&mut self, cx: &App) {
         let mut definitions = HashMap::new();
         let visible = self.document.visible_blocks();
@@ -190,35 +298,37 @@ impl Editor {
     }
 
     pub(super) fn rebuild_image_runtimes(&mut self, cx: &mut Context<Self>) {
+        self.rebuild_image_runtimes_inner(None, cx);
+    }
+
+    pub(super) fn rebuild_image_runtimes_for_block(
+        &mut self,
+        block: &Entity<Block>,
+        cx: &mut Context<Self>,
+    ) {
+        self.rebuild_image_runtimes_inner(Some(block), cx);
+    }
+
+    fn rebuild_image_runtimes_inner(
+        &mut self,
+        changed_block: Option<&Entity<Block>>,
+        cx: &mut Context<Self>,
+    ) {
         let base_dir = self.image_base_dir();
-        let markdown = self.document.markdown_text(cx);
-        self.image_reference_definitions = Arc::new(parse_image_reference_definitions(&markdown));
-        self.link_reference_definitions = Arc::new(parse_link_reference_definitions(&markdown));
-        self.rebuild_footnote_registry(cx);
-        for visible_block in self.document.visible_blocks() {
-            self.sync_runtime_context_for_block(&visible_block.entity, base_dir.as_deref(), cx);
-            let table_cells = {
-                let block = visible_block.entity.read(cx);
-                if block.kind() != BlockKind::Table {
-                    Vec::new()
-                } else {
-                    block
-                        .table_runtime
-                        .as_ref()
-                        .map(|runtime| {
-                            runtime
-                                .header
-                                .iter()
-                                .chain(runtime.rows.iter().flatten())
-                                .cloned()
-                                .collect::<Vec<_>>()
-                        })
-                        .unwrap_or_default()
-                }
-            };
-            for cell in table_cells {
-                self.sync_runtime_context_for_block(&cell, base_dir.as_deref(), cx);
-            }
+        let base_dir_changed = self.runtime_base_dir != base_dir;
+        let references_changed = self.refresh_reference_definition_cache(cx);
+        let footnotes_changed = self.refresh_footnote_registry_if_needed(cx);
+        self.runtime_base_dir = base_dir.clone();
+
+        if changed_block.is_none() || base_dir_changed || references_changed || footnotes_changed {
+            self.sync_runtime_context_for_visible_blocks(base_dir.as_deref(), cx);
+            return;
+        }
+
+        let changed_block = changed_block.expect("checked");
+        self.sync_runtime_context_for_block(changed_block, base_dir.as_deref(), cx);
+        if changed_block.read(cx).kind() == BlockKind::Table {
+            self.sync_runtime_context_for_table_cells(changed_block, base_dir.as_deref(), cx);
         }
     }
 

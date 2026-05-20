@@ -6,6 +6,7 @@
 //! order metadata.
 
 use std::collections::HashMap;
+use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -117,6 +118,9 @@ pub struct Editor {
     image_reference_definitions: Arc<ImageReferenceDefinitions>,
     link_reference_definitions: Arc<LinkReferenceDefinitions>,
     footnote_registry: Arc<FootnoteRegistry>,
+    runtime_reference_source_cache: String,
+    runtime_footnote_signature: u64,
+    runtime_base_dir: Option<PathBuf>,
 }
 
 /// Runtime binding between a table block and one cell editor.
@@ -199,9 +203,153 @@ pub(super) struct CrossBlockDrag {
 #[derive(Clone)]
 pub(super) struct SourceTargetMapping {
     entity: Entity<Block>,
-    full_source_range: std::ops::Range<usize>,
-    content_to_source: Vec<usize>,
-    source_to_content: Vec<usize>,
+    full_source_range: Range<usize>,
+    content_to_source: SourceOffsetMapping,
+    source_to_content: SourceOffsetMapping,
+}
+
+#[derive(Clone)]
+pub(super) enum SourceOffsetMapping {
+    Dense(Vec<usize>),
+    SparseLinePrefix {
+        content_len: usize,
+        base_offset: usize,
+        line_prefix_len: usize,
+        newline_offsets: Arc<Vec<usize>>,
+    },
+    SparseLinePrefixInverse {
+        content_len: usize,
+        base_offset: usize,
+        line_prefix_len: usize,
+        newline_offsets: Arc<Vec<usize>>,
+        full_len: usize,
+    },
+}
+
+impl SourceOffsetMapping {
+    fn offset(&self, offset: usize) -> usize {
+        match self {
+            Self::Dense(offsets) => offsets
+                .get(offset.min(offsets.len().saturating_sub(1)))
+                .copied()
+                .unwrap_or(0),
+            Self::SparseLinePrefix {
+                content_len,
+                base_offset,
+                line_prefix_len,
+                newline_offsets,
+            } => {
+                let offset = offset.min(*content_len);
+                let line_index = newline_offsets.partition_point(|newline| *newline <= offset);
+                base_offset + offset + line_index * line_prefix_len
+            }
+            Self::SparseLinePrefixInverse {
+                content_len,
+                base_offset,
+                line_prefix_len,
+                newline_offsets,
+                full_len,
+            } => {
+                let source_offset = offset.min(*full_len);
+                if source_offset <= *base_offset {
+                    return 0;
+                }
+
+                let line_count = newline_offsets.len() + 1;
+                let mut low = 0usize;
+                let mut high = line_count;
+                while low + 1 < high {
+                    let mid = (low + high) / 2;
+                    let line_start = if mid == 0 {
+                        0
+                    } else {
+                        newline_offsets[mid - 1]
+                    };
+                    let source_text_start = base_offset + line_start + mid * line_prefix_len;
+                    if source_text_start <= source_offset {
+                        low = mid;
+                    } else {
+                        high = mid;
+                    }
+                }
+
+                let content_start = if low == 0 {
+                    0
+                } else {
+                    newline_offsets[low - 1]
+                };
+                let content_end = newline_offsets.get(low).copied().unwrap_or(*content_len);
+                let source_text_start = base_offset + content_start + low * line_prefix_len;
+                if source_offset <= source_text_start {
+                    content_start
+                } else {
+                    (source_offset - base_offset - low * line_prefix_len)
+                        .min(content_end)
+                        .min(*content_len)
+                }
+            }
+        }
+    }
+
+    fn len(&self) -> usize {
+        match self {
+            Self::Dense(offsets) => offsets.len(),
+            Self::SparseLinePrefix { content_len, .. } => content_len + 1,
+            Self::SparseLinePrefixInverse { full_len, .. } => full_len + 1,
+        }
+    }
+}
+
+impl SourceTargetMapping {
+    fn dense(
+        entity: Entity<Block>,
+        full_source_range: Range<usize>,
+        content_to_source: Vec<usize>,
+        source_to_content: Vec<usize>,
+    ) -> Self {
+        Self {
+            entity,
+            full_source_range,
+            content_to_source: SourceOffsetMapping::Dense(content_to_source),
+            source_to_content: SourceOffsetMapping::Dense(source_to_content),
+        }
+    }
+
+    fn sparse_line_prefix(
+        entity: Entity<Block>,
+        full_source_range: Range<usize>,
+        content_len: usize,
+        base_offset: usize,
+        line_prefix_len: usize,
+        newline_offsets: Arc<Vec<usize>>,
+    ) -> Self {
+        let full_len = full_source_range.len();
+        Self {
+            entity,
+            full_source_range,
+            content_to_source: SourceOffsetMapping::SparseLinePrefix {
+                content_len,
+                base_offset,
+                line_prefix_len,
+                newline_offsets: newline_offsets.clone(),
+            },
+            source_to_content: SourceOffsetMapping::SparseLinePrefixInverse {
+                content_len,
+                base_offset,
+                line_prefix_len,
+                newline_offsets,
+                full_len,
+            },
+        }
+    }
+
+    fn content_source_offset(&self, offset: usize) -> usize {
+        self.content_to_source.offset(offset)
+    }
+
+    fn content_source_len(&self) -> usize {
+        self.content_to_source.len()
+    }
 }
 
 /// The two editing views the editor can present.
@@ -295,6 +443,9 @@ impl Editor {
             image_reference_definitions: Arc::default(),
             link_reference_definitions: Arc::default(),
             footnote_registry: Arc::default(),
+            runtime_reference_source_cache: String::new(),
+            runtime_footnote_signature: 0,
+            runtime_base_dir: None,
         };
         editor.rebuild_table_runtimes(cx);
         editor.rebuild_image_runtimes(cx);
@@ -302,5 +453,46 @@ impl Editor {
         editor.active_entity_id = editor.pending_focus;
         editor.refresh_stable_document_snapshot(cx);
         editor
+    }
+}
+
+#[cfg(test)]
+mod source_offset_mapping_tests {
+    use super::SourceOffsetMapping;
+    use std::sync::Arc;
+
+    #[test]
+    fn sparse_line_prefix_maps_content_offsets() {
+        let newlines = Arc::new(vec![3, 6]);
+        let mapping = SourceOffsetMapping::SparseLinePrefix {
+            content_len: 6,
+            base_offset: 2,
+            line_prefix_len: 2,
+            newline_offsets: newlines,
+        };
+
+        assert_eq!(mapping.offset(0), 2);
+        assert_eq!(mapping.offset(2), 4);
+        assert_eq!(mapping.offset(3), 7);
+        assert_eq!(mapping.offset(6), 12);
+    }
+
+    #[test]
+    fn sparse_line_prefix_inverse_maps_source_offsets() {
+        let newlines = Arc::new(vec![3, 6]);
+        let mapping = SourceOffsetMapping::SparseLinePrefixInverse {
+            content_len: 6,
+            base_offset: 2,
+            line_prefix_len: 2,
+            newline_offsets: newlines,
+            full_len: 12,
+        };
+
+        assert_eq!(mapping.offset(0), 0);
+        assert_eq!(mapping.offset(2), 0);
+        assert_eq!(mapping.offset(4), 2);
+        assert_eq!(mapping.offset(5), 3);
+        assert_eq!(mapping.offset(7), 3);
+        assert_eq!(mapping.offset(12), 6);
     }
 }

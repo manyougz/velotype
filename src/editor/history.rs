@@ -40,11 +40,11 @@ impl Editor {
         let content_range = target
             .read(cx)
             .current_range_to_markdown_range(selected_range);
-        let max_offset = mapping.content_to_source.len().saturating_sub(1);
+        let max_offset = mapping.content_source_len().saturating_sub(1);
         let start = mapping.full_source_range.start
-            + mapping.content_to_source[content_range.start.min(max_offset)];
+            + mapping.content_source_offset(content_range.start.min(max_offset));
         let end = mapping.full_source_range.start
-            + mapping.content_to_source[content_range.end.min(max_offset)];
+            + mapping.content_source_offset(content_range.end.min(max_offset));
 
         UndoSelectionSnapshot {
             range: start..end,
@@ -176,20 +176,22 @@ impl Editor {
                         .range
                         .end
                         .saturating_sub(mapping.full_source_range.start);
-                    let content_start = mapping.source_to_content
-                        [local_start.min(mapping.source_to_content.len().saturating_sub(1))];
-                    let content_end = mapping.source_to_content
-                        [local_end.min(mapping.source_to_content.len().saturating_sub(1))];
-                    let max_content = mapping.content_to_source.len().saturating_sub(1);
-                    mapping.content_to_source[content_start.min(max_content)] == local_start
-                        && mapping.content_to_source[content_end.min(max_content)] == local_end
+                    let content_start = mapping
+                        .source_to_content
+                        .offset(local_start.min(mapping.source_to_content.len().saturating_sub(1)));
+                    let content_end = mapping
+                        .source_to_content
+                        .offset(local_end.min(mapping.source_to_content.len().saturating_sub(1)));
+                    let max_content = mapping.content_source_len().saturating_sub(1);
+                    mapping.content_source_offset(content_start.min(max_content)) == local_start
+                        && mapping.content_source_offset(content_end.min(max_content)) == local_end
                 });
 
                 if let Some(mapping) = exact_mapping {
                     let local_start = snapshot.range.start - mapping.full_source_range.start;
                     let local_end = snapshot.range.end - mapping.full_source_range.start;
-                    let content_start = mapping.source_to_content[local_start];
-                    let content_end = mapping.source_to_content[local_end];
+                    let content_start = mapping.source_to_content.offset(local_start);
+                    let content_end = mapping.source_to_content.offset(local_end);
                     let selected_range = mapping
                         .entity
                         .read(cx)
@@ -223,8 +225,9 @@ impl Editor {
                 } else {
                     caret_offset - mapping.full_source_range.start
                 };
-                let content_offset = mapping.source_to_content
-                    [local_source.min(mapping.source_to_content.len().saturating_sub(1))];
+                let content_offset = mapping
+                    .source_to_content
+                    .offset(local_source.min(mapping.source_to_content.len().saturating_sub(1)));
                 let current_offset = mapping
                     .entity
                     .read(cx)

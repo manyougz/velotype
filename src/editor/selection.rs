@@ -390,7 +390,7 @@ impl Editor {
         let max_content = mapping.content_to_source.len().saturating_sub(1);
         Some(
             mapping.full_source_range.start
-                + mapping.content_to_source[markdown_offset.min(max_content)],
+                + mapping.content_source_offset(markdown_offset.min(max_content)),
         )
     }
 
@@ -410,8 +410,9 @@ impl Editor {
         } else {
             offset - mapping.full_source_range.start
         };
-        let content_offset =
-            mapping.source_to_content[local.min(mapping.source_to_content.len().saturating_sub(1))];
+        let content_offset = mapping
+            .source_to_content
+            .offset(local.min(mapping.source_to_content.len().saturating_sub(1)));
         let block = mapping.entity.read(cx);
         Some(CrossBlockSelectionEndpoint {
             entity_id: mapping.entity.entity_id(),

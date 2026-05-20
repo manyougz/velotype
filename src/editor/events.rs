@@ -472,7 +472,7 @@ impl Editor {
         match event {
             BlockEvent::Changed => {
                 self.sync_table_record_from_runtime(&binding.table_block, cx);
-                self.rebuild_image_runtimes(cx);
+                self.rebuild_image_runtimes_for_block(&binding.cell, cx);
                 self.mark_dirty(cx);
                 self.request_active_block_scroll_into_view(cx);
                 self.finalize_pending_undo_capture(cx);
@@ -770,7 +770,7 @@ impl Editor {
                 if should_normalize_quote {
                     self.normalize_rendered_quote_structure(cx);
                 } else {
-                    self.rebuild_image_runtimes(cx);
+                    self.rebuild_image_runtimes_for_block(&block, cx);
                 }
                 if let Some(focus_id) = callout_focus_target {
                     self.focus_block(focus_id);
@@ -957,7 +957,7 @@ impl Editor {
                     if quote_related {
                         self.normalize_rendered_quote_structure(cx);
                     } else {
-                        self.rebuild_image_runtimes(cx);
+                        self.rebuild_image_runtimes_for_block(&block, cx);
                     }
                     self.mark_dirty(cx);
                     self.finalize_pending_undo_capture(cx);

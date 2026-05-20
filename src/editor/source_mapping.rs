@@ -2,6 +2,8 @@
 
 use super::*;
 
+const SPARSE_SOURCE_MAPPING_THRESHOLD: usize = 256 * 1024;
+
 impl Editor {
     pub(super) fn current_document_source(&self, cx: &App) -> String {
         match self.view_mode {
@@ -137,6 +139,42 @@ impl Editor {
         (full, content_to_source, source_to_content)
     }
 
+    fn newline_offsets(content: &str) -> Arc<Vec<usize>> {
+        Arc::new(
+            content
+                .bytes()
+                .enumerate()
+                .filter_map(|(index, byte)| (byte == b'\n').then_some(index + 1))
+                .collect(),
+        )
+    }
+
+    fn push_sparse_line_prefix_mapping(
+        block: &Entity<Block>,
+        content: &str,
+        first_prefix: &str,
+        continuation_prefix: &str,
+        quote_depth: usize,
+        absolute_start: usize,
+        mappings: &mut Vec<SourceTargetMapping>,
+    ) -> usize {
+        let quote_prefix_len = quote_depth * 2;
+        let first_prefix_len = quote_prefix_len + first_prefix.len();
+        let continuation_prefix_len = quote_prefix_len + continuation_prefix.len();
+        let newline_offsets = Self::newline_offsets(content);
+        let full_len =
+            content.len() + first_prefix_len + newline_offsets.len() * continuation_prefix_len;
+        mappings.push(SourceTargetMapping::sparse_line_prefix(
+            block.clone(),
+            absolute_start..absolute_start + full_len,
+            content.len(),
+            first_prefix_len,
+            continuation_prefix_len,
+            newline_offsets,
+        ));
+        full_len
+    }
+
     pub(super) fn push_inline_block_mapping(
         &self,
         block: &Entity<Block>,
@@ -147,6 +185,18 @@ impl Editor {
         absolute_start: usize,
         mappings: &mut Vec<SourceTargetMapping>,
     ) -> usize {
+        if content_markdown.len() > SPARSE_SOURCE_MAPPING_THRESHOLD {
+            return Self::push_sparse_line_prefix_mapping(
+                block,
+                &content_markdown,
+                &first_prefix,
+                &continuation_prefix,
+                quote_depth,
+                absolute_start,
+                mappings,
+            );
+        }
+
         let (full_text, content_to_source, source_to_content) =
             Self::build_prefixed_content_mapping(
                 &content_markdown,
@@ -160,12 +210,12 @@ impl Editor {
                 source_to_content,
                 quote_depth,
             );
-        mappings.push(SourceTargetMapping {
-            entity: block.clone(),
-            full_source_range: absolute_start..absolute_start + full_text.len(),
+        mappings.push(SourceTargetMapping::dense(
+            block.clone(),
+            absolute_start..absolute_start + full_text.len(),
             content_to_source,
             source_to_content,
-        });
+        ));
         full_text.len()
     }
 
@@ -205,12 +255,12 @@ impl Editor {
                 source_to_content,
                 quote_depth,
             );
-        mappings.push(SourceTargetMapping {
-            entity: block.clone(),
-            full_source_range: absolute_start..absolute_start + full_text.len(),
+        mappings.push(SourceTargetMapping::dense(
+            block.clone(),
+            absolute_start..absolute_start + full_text.len(),
             content_to_source,
             source_to_content,
-        });
+        ));
         full_text.len()
     }
 
@@ -233,6 +283,18 @@ impl Editor {
                 },
             )
         };
+        if content.len() > SPARSE_SOURCE_MAPPING_THRESHOLD {
+            return Self::push_sparse_line_prefix_mapping(
+                block,
+                &content,
+                &indentation,
+                &indentation,
+                quote_depth,
+                absolute_start,
+                mappings,
+            );
+        }
+
         let (full_text, content_to_source, source_to_content) =
             Self::build_prefixed_content_mapping(&content, &indentation, &indentation);
         let (full_text, content_to_source, source_to_content) =
@@ -242,12 +304,12 @@ impl Editor {
                 source_to_content,
                 quote_depth,
             );
-        mappings.push(SourceTargetMapping {
-            entity: block.clone(),
-            full_source_range: absolute_start..absolute_start + full_text.len(),
+        mappings.push(SourceTargetMapping::dense(
+            block.clone(),
+            absolute_start..absolute_start + full_text.len(),
             content_to_source,
             source_to_content,
-        });
+        ));
         full_text.len()
     }
 
@@ -271,6 +333,34 @@ impl Editor {
             )
         };
 
+        if content.len() > SPARSE_SOURCE_MAPPING_THRESHOLD {
+            let fence = self::persistence::safe_code_fence_with_info(
+                &content,
+                language.as_ref().map(|language| language.as_ref()),
+            );
+            let quote_prefix_len = quote_depth * 2;
+            let language_len = language
+                .as_ref()
+                .map(|language| language.len())
+                .unwrap_or(0);
+            let opening_line_len = quote_prefix_len + fence.len() + language_len + 1;
+            let content_line_prefix_len = quote_prefix_len + indentation.len();
+            let newline_offsets = Self::newline_offsets(&content);
+            let content_source_len =
+                content.len() + content_line_prefix_len * (newline_offsets.len() + 1);
+            let full_len =
+                opening_line_len + content_source_len + 1 + quote_prefix_len + fence.len();
+            mappings.push(SourceTargetMapping::sparse_line_prefix(
+                block.clone(),
+                absolute_start..absolute_start + full_len,
+                content.len(),
+                opening_line_len + content_line_prefix_len,
+                content_line_prefix_len,
+                newline_offsets,
+            ));
+            return full_len;
+        }
+
         let (full_text, content_to_source, source_to_content) =
             Self::build_code_block_content_mapping(&content, &indentation, language.as_ref());
         let (full_text, content_to_source, source_to_content) =
@@ -280,12 +370,12 @@ impl Editor {
                 source_to_content,
                 quote_depth,
             );
-        mappings.push(SourceTargetMapping {
-            entity: block.clone(),
-            full_source_range: absolute_start..absolute_start + full_text.len(),
+        mappings.push(SourceTargetMapping::dense(
+            block.clone(),
+            absolute_start..absolute_start + full_text.len(),
             content_to_source,
             source_to_content,
-        });
+        ));
         full_text.len()
     }
 
@@ -350,12 +440,12 @@ impl Editor {
                 let cell_markdown = serialize_table_cell_markdown(tree);
                 let start = line_start + line_cursor;
                 let len = cell_markdown.len();
-                mappings.push(SourceTargetMapping {
-                    entity: cell.clone(),
-                    full_source_range: start..start + len,
-                    content_to_source: (0..=len).collect(),
-                    source_to_content: (0..=len).collect(),
-                });
+                mappings.push(SourceTargetMapping::dense(
+                    cell.clone(),
+                    start..start + len,
+                    (0..=len).collect(),
+                    (0..=len).collect(),
+                ));
                 line_cursor += len + 3;
             }
             line_start += line_prefix_len + header_line.len() + 1;
@@ -381,12 +471,12 @@ impl Editor {
                 let cell_markdown = serialize_table_cell_markdown(tree);
                 let start = line_start + line_cursor;
                 let len = cell_markdown.len();
-                mappings.push(SourceTargetMapping {
-                    entity: cell.clone(),
-                    full_source_range: start..start + len,
-                    content_to_source: (0..=len).collect(),
-                    source_to_content: (0..=len).collect(),
-                });
+                mappings.push(SourceTargetMapping::dense(
+                    cell.clone(),
+                    start..start + len,
+                    (0..=len).collect(),
+                    (0..=len).collect(),
+                ));
                 line_cursor += len + 3;
             }
             line_start += line_prefix_len + row_line.len() + 1;
@@ -552,12 +642,12 @@ impl Editor {
                         quote_depth + 1,
                     )
                     .0;
-                    mappings.push(SourceTargetMapping {
-                        entity: block.clone(),
-                        full_source_range: absolute_start..absolute_start + full_text.len(),
-                        content_to_source: vec![full_text.len()],
-                        source_to_content: vec![0; full_text.len() + 1],
-                    });
+                    mappings.push(SourceTargetMapping::dense(
+                        block.clone(),
+                        absolute_start..absolute_start + full_text.len(),
+                        vec![full_text.len()],
+                        vec![0; full_text.len() + 1],
+                    ));
                     full_text.len()
                 } else {
                     self.push_inline_block_mapping(
