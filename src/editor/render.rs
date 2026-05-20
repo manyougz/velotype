@@ -9,7 +9,10 @@ use gpui::*;
 use super::{Editor, InfoDialogKind};
 use crate::app_menu::dispatch_menu_action_for_editor;
 use crate::components::CalloutVariant;
-use crate::components::{Block, BlockKind, NoRecentFiles};
+use crate::components::{
+    Block, BlockKind, NoRecentFiles, mermaid_clamp_zoom, mermaid_zoom_in, mermaid_zoom_label,
+    mermaid_zoom_out,
+};
 use crate::i18n::{I18nManager, I18nStrings};
 use crate::theme::{Theme, ThemeDimensions, ThemeManager};
 
@@ -1380,6 +1383,269 @@ impl Editor {
                     ),
             )
     }
+
+    fn on_mermaid_viewer_close(
+        &mut self,
+        _: &ClickEvent,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.mermaid_viewer = None;
+        cx.stop_propagation();
+        cx.notify();
+    }
+
+    fn on_mermaid_viewer_backdrop_mouse_down(
+        &mut self,
+        _: &MouseDownEvent,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.mermaid_viewer = None;
+        cx.stop_propagation();
+        cx.notify();
+    }
+
+    fn on_mermaid_viewer_panel_mouse_down(
+        &mut self,
+        _: &MouseDownEvent,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        cx.stop_propagation();
+    }
+
+    fn on_mermaid_viewer_scroll_wheel(
+        &mut self,
+        _: &ScrollWheelEvent,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        cx.stop_propagation();
+    }
+
+    fn on_mermaid_viewer_zoom_out(
+        &mut self,
+        _: &ClickEvent,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if let Some(viewer) = self.mermaid_viewer.as_mut() {
+            viewer.zoom = mermaid_zoom_out(viewer.zoom);
+            cx.stop_propagation();
+            cx.notify();
+        }
+    }
+
+    fn on_mermaid_viewer_zoom_in(
+        &mut self,
+        _: &ClickEvent,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if let Some(viewer) = self.mermaid_viewer.as_mut() {
+            viewer.zoom = mermaid_zoom_in(viewer.zoom);
+            cx.stop_propagation();
+            cx.notify();
+        }
+    }
+
+    fn on_mermaid_viewer_zoom_reset(
+        &mut self,
+        _: &ClickEvent,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if let Some(viewer) = self.mermaid_viewer.as_mut() {
+            viewer.zoom = 1.0;
+            cx.stop_propagation();
+            cx.notify();
+        }
+    }
+
+    fn on_mermaid_viewer_zoom_fit(
+        &mut self,
+        _: &ClickEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if let Some(viewer) = self.mermaid_viewer.as_mut() {
+            let viewport = window.viewport_size();
+            let width = f32::from(viewport.width.max(px(1.0))) * 0.82;
+            let height = f32::from(viewport.height.max(px(1.0))) * 0.68;
+            let width_zoom = width / viewer.display_width.max(1.0);
+            let height_zoom = height / viewer.display_height.max(1.0);
+            viewer.zoom = mermaid_clamp_zoom(width_zoom.min(height_zoom));
+            cx.stop_propagation();
+            cx.notify();
+        }
+    }
+
+    fn render_mermaid_viewer_overlay(
+        &self,
+        theme: &Theme,
+        window: &Window,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let Some(viewer) = self.mermaid_viewer.as_ref() else {
+            return div().into_any_element();
+        };
+        let c = &theme.colors;
+        let d = &theme.dimensions;
+        let t = &theme.typography;
+        let viewport = window.viewport_size();
+        let panel_width =
+            (f32::from(viewport.width.max(px(1.0))) - d.editor_padding * 2.0).max(320.0);
+        let panel_height =
+            (f32::from(viewport.height.max(px(1.0))) - d.editor_padding * 2.0).max(240.0);
+        let zoom = mermaid_clamp_zoom(viewer.zoom);
+        let image_width = viewer.display_width * zoom;
+        let image_height = viewer.display_height * zoom;
+        let toolbar_button = |id: &'static str, label: SharedString| {
+            div()
+                .id(id)
+                .h(px(28.0))
+                .px(px(10.0))
+                .flex()
+                .items_center()
+                .justify_center()
+                .rounded(px(7.0))
+                .bg(c.dialog_surface)
+                .hover(|this| this.bg(c.dialog_secondary_button_hover))
+                .active(|this| this.opacity(0.92))
+                .border(px(1.0))
+                .border_color(c.dialog_border)
+                .cursor_pointer()
+                .occlude()
+                .text_size(px(t.code_size))
+                .text_color(c.dialog_secondary_button_text)
+                .child(label)
+        };
+
+        div()
+            .id("mermaid-viewer-overlay")
+            .absolute()
+            .top_0()
+            .left_0()
+            .right_0()
+            .bottom_0()
+            .occlude()
+            .flex()
+            .items_center()
+            .justify_center()
+            .bg(c.dialog_backdrop)
+            .on_mouse_down(
+                MouseButton::Left,
+                cx.listener(Self::on_mermaid_viewer_backdrop_mouse_down),
+            )
+            .child(
+                div()
+                    .id("mermaid-viewer-panel")
+                    .w(px(panel_width))
+                    .h(px(panel_height))
+                    .max_w(relative(1.0))
+                    .max_h(relative(1.0))
+                    .flex()
+                    .flex_col()
+                    .gap(px(10.0))
+                    .p(px(d.dialog_padding))
+                    .bg(c.dialog_surface)
+                    .border(px(d.dialog_border_width))
+                    .border_color(c.dialog_border)
+                    .rounded(px(d.dialog_radius))
+                    .shadow_lg()
+                    .on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(Self::on_mermaid_viewer_panel_mouse_down),
+                    )
+                    .child(
+                        div()
+                            .w_full()
+                            .flex()
+                            .items_center()
+                            .justify_between()
+                            .gap(px(8.0))
+                            .child(
+                                div()
+                                    .text_size(px(t.dialog_title_size))
+                                    .font_weight(t.dialog_title_weight.to_font_weight())
+                                    .text_color(c.dialog_title)
+                                    .child("Mermaid diagram"),
+                            )
+                            .child(
+                                div()
+                                    .flex()
+                                    .items_center()
+                                    .gap(px(6.0))
+                                    .child(
+                                        toolbar_button("mermaid-viewer-zoom-out", "−".into())
+                                            .on_click(
+                                                cx.listener(Self::on_mermaid_viewer_zoom_out),
+                                            ),
+                                    )
+                                    .child(
+                                        div()
+                                            .h(px(28.0))
+                                            .px(px(10.0))
+                                            .flex()
+                                            .items_center()
+                                            .justify_center()
+                                            .rounded(px(7.0))
+                                            .bg(c.image_placeholder_bg)
+                                            .text_size(px(t.code_size))
+                                            .text_color(c.dialog_muted)
+                                            .child(SharedString::from(mermaid_zoom_label(zoom))),
+                                    )
+                                    .child(
+                                        toolbar_button("mermaid-viewer-zoom-in", "+".into())
+                                            .on_click(cx.listener(Self::on_mermaid_viewer_zoom_in)),
+                                    )
+                                    .child(
+                                        toolbar_button("mermaid-viewer-fit", "Fit".into())
+                                            .on_click(
+                                                cx.listener(Self::on_mermaid_viewer_zoom_fit),
+                                            ),
+                                    )
+                                    .child(
+                                        toolbar_button("mermaid-viewer-reset", "100%".into())
+                                            .on_click(
+                                                cx.listener(Self::on_mermaid_viewer_zoom_reset),
+                                            ),
+                                    )
+                                    .child(
+                                        toolbar_button("mermaid-viewer-close", "Close".into())
+                                            .on_click(cx.listener(Self::on_mermaid_viewer_close)),
+                                    ),
+                            ),
+                    )
+                    .child(
+                        div()
+                            .id("mermaid-viewer-scroll")
+                            .w_full()
+                            .flex_grow()
+                            .min_h(px(0.0))
+                            .rounded(px(d.image_radius))
+                            .border(px(1.0))
+                            .border_color(c.image_placeholder_border)
+                            .bg(c.image_placeholder_bg)
+                            .overflow_x_scroll()
+                            .overflow_y_scroll()
+                            .scrollbar_width(px(d.scrollbar_width))
+                            .on_scroll_wheel(cx.listener(Self::on_mermaid_viewer_scroll_wheel))
+                            .child(
+                                div()
+                                    .w(px(image_width.max(1.0)))
+                                    .h(px(image_height.max(1.0)))
+                                    .child(
+                                        img(viewer.path.clone())
+                                            .w(px(image_width.max(1.0)))
+                                            .h(px(image_height.max(1.0))),
+                                    ),
+                            ),
+                    ),
+            )
+            .into_any_element()
+    }
 }
 
 impl Render for Editor {
@@ -1931,6 +2197,11 @@ impl Render for Editor {
         };
         let base = if let Some(table_dialog) = self.render_table_insert_dialog_overlay(&theme, cx) {
             base.child(table_dialog)
+        } else {
+            base
+        };
+        let base = if self.mermaid_viewer.is_some() {
+            base.child(self.render_mermaid_viewer_overlay(&theme, window, cx))
         } else {
             base
         };

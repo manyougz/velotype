@@ -22,7 +22,7 @@ use crate::components::{
 };
 use crate::components::{
     TableAxisHighlight, TableAxisKind, TableAxisMarker, TableCellPosition, TableColumnAlignment,
-    TableData, TableRuntime, UndoCaptureKind, serialize_table_cell_markdown,
+    TableData, TableRuntime, UndoCaptureKind, mermaid_clamp_zoom, serialize_table_cell_markdown,
 };
 mod close;
 mod context_menu;
@@ -95,6 +95,7 @@ pub struct Editor {
     context_menu_submenu_close_task: Option<Task<()>>,
     table_axis_preview: Option<TableAxisSelection>,
     table_axis_selection: Option<TableAxisSelection>,
+    mermaid_viewer: Option<MermaidViewerState>,
     cross_block_selection: Option<CrossBlockSelection>,
     cross_block_drag: Option<CrossBlockDrag>,
     /// Open top-level menu in the in-window fallback menu bar.
@@ -137,6 +138,25 @@ pub(super) struct TableAxisSelection {
     table_block_id: EntityId,
     kind: TableAxisKind,
     index: usize,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub(super) struct MermaidViewerState {
+    path: PathBuf,
+    display_width: f32,
+    display_height: f32,
+    zoom: f32,
+}
+
+impl MermaidViewerState {
+    fn new(path: PathBuf, display_width: f32, display_height: f32, zoom: f32) -> Self {
+        Self {
+            path,
+            display_width: display_width.max(1.0),
+            display_height: display_height.max(1.0),
+            zoom: mermaid_clamp_zoom(zoom),
+        }
+    }
 }
 
 /// Pixel geometry for the custom editor scrollbar.
@@ -422,6 +442,7 @@ impl Editor {
             context_menu_submenu_close_task: None,
             table_axis_preview: None,
             table_axis_selection: None,
+            mermaid_viewer: None,
             cross_block_selection: None,
             cross_block_drag: None,
             menu_bar_open: None,

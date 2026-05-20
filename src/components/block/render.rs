@@ -11,7 +11,8 @@ use super::{Block, BlockEvent, BlockKind, ImageResolvedSource, ImageRuntime};
 use crate::components::{
     Editor, HtmlCssColor, HtmlDocument, HtmlNode, HtmlNodeKind, InlineScript, TableAxisHighlight,
     TableAxisKind, TableAxisMarker, TableCellInlineImageSegment, TableColumnLayout, attr_value,
-    display_math_font_size, inline_math_font_size, parse_display_math_source,
+    display_math_font_size, inline_math_font_size, mermaid_clamp_zoom, mermaid_display_viewport,
+    mermaid_zoom_in, mermaid_zoom_label, mermaid_zoom_out, parse_display_math_source,
     parse_mermaid_fence_source, parse_table_cell_inline_images, render_display_math_svg,
     render_inline_math_svg, render_mermaid_svg_for_display, resolve_image_source, style_for_node,
 };
@@ -23,6 +24,10 @@ const BULLET_FILLED: &str = "\u{2022}";
 const BULLET_HOLLOW: &str = "\u{25E6}";
 const BULLET_SQUARE: &str = "\u{25A1}";
 const TASK_CHECKMARK: &str = "\u{2713}";
+const TABLE_VIEWPORT_HEIGHT_RATIO: f32 = 0.68;
+const TABLE_VIEWPORT_VERTICAL_INSET: f32 = 96.0;
+const TABLE_MIN_SCROLL_VIEWPORT_HEIGHT: f32 = 180.0;
+const TABLE_PREFERRED_SCROLL_VIEWPORT_HEIGHT: f32 = 260.0;
 
 fn bulleted_list_marker(depth: usize) -> &'static str {
     match depth {
@@ -213,6 +218,27 @@ fn effective_list_item_image_width(block: &Block, viewport_width: f32, d: &Theme
         - marker_width
         - d.list_marker_gap)
         .max(160.0)
+}
+
+fn table_scroll_viewport_max_height(viewport_height: f32) -> f32 {
+    let viewport_height = viewport_height.max(1.0);
+    let viewport_cap =
+        (viewport_height - TABLE_VIEWPORT_VERTICAL_INSET).max(TABLE_MIN_SCROLL_VIEWPORT_HEIGHT);
+    (viewport_height * TABLE_VIEWPORT_HEIGHT_RATIO)
+        .max(TABLE_PREFERRED_SCROLL_VIEWPORT_HEIGHT)
+        .min(viewport_cap)
+        .max(TABLE_MIN_SCROLL_VIEWPORT_HEIGHT)
+}
+
+fn scroll_wheel_has_horizontal_intent(event: &ScrollWheelEvent) -> bool {
+    if event.modifiers.shift {
+        return true;
+    }
+
+    match event.delta {
+        ScrollDelta::Pixels(delta) => f32::from(delta.x).abs() > f32::from(delta.y).abs(),
+        ScrollDelta::Lines(delta) => delta.x.abs() > delta.y.abs(),
+    }
 }
 
 /// Returns a human-readable list ordinal: numbers at depth 0, lowercase
@@ -553,7 +579,72 @@ impl Block {
         }
     }
 
-    fn render_mermaid_content(&self, theme: &Theme, window: &Window) -> AnyElement {
+    fn on_mermaid_scroll_wheel(
+        &mut self,
+        _: &ScrollWheelEvent,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        cx.stop_propagation();
+    }
+
+    fn on_mermaid_surface_mouse_down(
+        &mut self,
+        _: &MouseDownEvent,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        cx.stop_propagation();
+    }
+
+    fn on_table_surface_mouse_down(
+        &mut self,
+        _: &MouseDownEvent,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        cx.stop_propagation();
+    }
+
+    fn on_mermaid_zoom_out(
+        &mut self,
+        _: &ClickEvent,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.mermaid_zoom = mermaid_zoom_out(self.mermaid_zoom);
+        cx.stop_propagation();
+        cx.notify();
+    }
+
+    fn on_mermaid_zoom_in(&mut self, _: &ClickEvent, _window: &mut Window, cx: &mut Context<Self>) {
+        self.mermaid_zoom = mermaid_zoom_in(self.mermaid_zoom);
+        cx.stop_propagation();
+        cx.notify();
+    }
+
+    fn on_mermaid_zoom_reset(
+        &mut self,
+        _: &ClickEvent,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.mermaid_zoom = 1.0;
+        cx.stop_propagation();
+        cx.notify();
+    }
+
+    fn on_mermaid_edit(&mut self, _: &ClickEvent, _window: &mut Window, cx: &mut Context<Self>) {
+        cx.stop_propagation();
+        cx.emit(BlockEvent::RequestFocus);
+    }
+
+    fn render_mermaid_content(
+        &self,
+        theme: &Theme,
+        window: &Window,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
         let c = &theme.colors;
         let d = &theme.dimensions;
         let t = &theme.typography;
@@ -573,41 +664,193 @@ impl Block {
                 .into_any_element();
         };
 
-        let viewport_width = f32::from(window.viewport_size().width.max(px(1.0)));
+        let viewport_size = window.viewport_size();
+        let viewport_width = f32::from(viewport_size.width.max(px(1.0)));
+        let viewport_height = f32::from(viewport_size.height.max(px(1.0)));
         let available_width = effective_image_width(self, viewport_width, d);
 
         match render_mermaid_svg_for_display(&source, available_width, viewport_width) {
             Ok(rendered) => {
-                let display_width = rendered.display_width.max(1.0);
-                let display_height = rendered.display_height.max(1.0);
+                let base_display_width = rendered.display_width.max(1.0);
+                let base_display_height = rendered.display_height.max(1.0);
+                let zoom = mermaid_clamp_zoom(self.mermaid_zoom);
+                let display_width = base_display_width * zoom;
+                let display_height = base_display_height * zoom;
                 let image_path = rendered.path.clone();
+                let viewer_path = rendered.path.clone();
+                let viewer_zoom = zoom;
+                let viewer_width = base_display_width;
+                let viewer_height = base_display_height;
+                let viewer_block = cx.entity().downgrade();
                 let image = move || {
                     img(image_path.clone())
                         .w(px(display_width))
                         .h(px(display_height))
                 };
-                let content = if display_width <= available_width + 0.5 {
+                let toolbar_button = |id: String, label: SharedString| {
+                    div()
+                        .id(ElementId::Name(id.into()))
+                        .h(px(24.0))
+                        .px(px(8.0))
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .rounded(px(6.0))
+                        .bg(c.dialog_surface)
+                        .hover(|this| this.bg(c.dialog_secondary_button_hover))
+                        .active(|this| this.opacity(0.92))
+                        .border(px(1.0))
+                        .border_color(c.dialog_border)
+                        .cursor_pointer()
+                        .occlude()
+                        .on_mouse_down(
+                            MouseButton::Left,
+                            cx.listener(Self::on_mermaid_surface_mouse_down),
+                        )
+                        .text_size(px(t.code_size))
+                        .text_color(c.dialog_secondary_button_text)
+                        .child(label)
+                };
+                let toolbar = div()
+                    .w_full()
+                    .flex()
+                    .justify_end()
+                    .items_center()
+                    .gap(px(4.0))
+                    .on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(Self::on_mermaid_surface_mouse_down),
+                    )
+                    .child(
+                        toolbar_button(
+                            format!("mermaid-zoom-out-{}", self.record.id),
+                            SharedString::from("−"),
+                        )
+                        .on_click(cx.listener(Self::on_mermaid_zoom_out)),
+                    )
+                    .child(
+                        div()
+                            .h(px(24.0))
+                            .px(px(8.0))
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .rounded(px(6.0))
+                            .bg(c.image_placeholder_bg)
+                            .text_size(px(t.code_size))
+                            .text_color(c.dialog_muted)
+                            .child(SharedString::from(mermaid_zoom_label(zoom))),
+                    )
+                    .child(
+                        toolbar_button(
+                            format!("mermaid-zoom-in-{}", self.record.id),
+                            SharedString::from("+"),
+                        )
+                        .on_click(cx.listener(Self::on_mermaid_zoom_in)),
+                    )
+                    .child(
+                        toolbar_button(
+                            format!("mermaid-zoom-reset-{}", self.record.id),
+                            SharedString::from("Reset"),
+                        )
+                        .on_click(cx.listener(Self::on_mermaid_zoom_reset)),
+                    )
+                    .child(
+                        toolbar_button(
+                            format!("mermaid-open-{}", self.record.id),
+                            SharedString::from("Open"),
+                        )
+                        .on_click(move |_, _window, cx| {
+                            let viewer_path = viewer_path.clone();
+                            let _ = viewer_block.update(cx, move |_block, cx| {
+                                cx.stop_propagation();
+                                cx.emit(BlockEvent::RequestOpenMermaidViewer {
+                                    path: viewer_path,
+                                    display_width: viewer_width,
+                                    display_height: viewer_height,
+                                    zoom: viewer_zoom,
+                                });
+                            });
+                        }),
+                    )
+                    .child(
+                        toolbar_button(
+                            format!("mermaid-edit-{}", self.record.id),
+                            SharedString::from("Edit"),
+                        )
+                        .on_click(cx.listener(Self::on_mermaid_edit)),
+                    );
+                let viewport = mermaid_display_viewport(
+                    display_width,
+                    display_height,
+                    available_width,
+                    viewport_height,
+                );
+                let content = if !viewport.overflows_width && !viewport.overflows_height {
                     div()
                         .w_full()
                         .flex()
                         .justify_center()
                         .child(image())
+                        .on_scroll_wheel(cx.listener(Self::on_mermaid_scroll_wheel))
+                        .on_mouse_down(
+                            MouseButton::Left,
+                            cx.listener(Self::on_mermaid_surface_mouse_down),
+                        )
                         .into_any_element()
                 } else {
-                    div()
+                    let body = if viewport.overflows_width {
+                        div().w(px(display_width)).child(image())
+                    } else {
+                        div().w_full().flex().justify_center().child(image())
+                    };
+                    let mut scroll = div()
                         .id(ElementId::Name(
                             format!("mermaid-scroll-{}", self.record.id).into(),
                         ))
                         .w_full()
+                        .rounded(px(d.image_radius))
+                        .border(px(1.0))
+                        .border_color(c.image_placeholder_border)
+                        .bg(c.image_placeholder_bg)
                         .overflow_x_scroll()
-                        .scrollbar_width(px(0.0))
-                        .child(div().w(px(display_width)).child(image()))
+                        .overflow_y_scroll()
+                        .scrollbar_width(px(d.scrollbar_width))
+                        .on_scroll_wheel(cx.listener(Self::on_mermaid_scroll_wheel))
+                        .on_mouse_down(
+                            MouseButton::Left,
+                            cx.listener(Self::on_mermaid_surface_mouse_down),
+                        )
+                        .child(body);
+                    if viewport.overflows_height {
+                        scroll = scroll.max_h(px(viewport.max_height));
+                    }
+                    div()
+                        .w_full()
+                        .flex()
+                        .flex_col()
+                        .gap(px(4.0))
+                        .child(
+                            div()
+                                .w_full()
+                                .text_center()
+                                .text_size(px(t.code_size))
+                                .text_color(c.dialog_muted)
+                                .child(SharedString::from(
+                                    "Scroll to view the full Mermaid diagram",
+                                )),
+                        )
+                        .child(scroll)
                         .into_any_element()
                 };
 
                 div()
                     .w_full()
                     .py(px(d.block_padding_y.max(6.0)))
+                    .flex()
+                    .flex_col()
+                    .gap(px(6.0))
+                    .child(toolbar)
                     .child(content)
                     .into_any_element()
             }
@@ -2304,14 +2547,22 @@ impl Render for Block {
                         .into_any_element();
                 };
 
-                let viewport_width = f32::from(window.viewport_size().width.max(px(1.0)));
+                let viewport_size = window.viewport_size();
+                let viewport_width = f32::from(viewport_size.width.max(px(1.0)));
+                let viewport_height = f32::from(viewport_size.height.max(px(1.0)));
                 let table_width = effective_table_width(self, viewport_width, d);
+                let column_count = runtime.header.len().max(1);
+                let table_min_column_width = d.table_cell_padding_x * 2.0 + t.text_size * 5.5;
+                let table_render_width =
+                    table_width.max(table_min_column_width * column_count as f32);
                 let column_layout = self
                     .record
                     .table
                     .as_ref()
-                    .map(|table| TableColumnLayout::measure(table, table_width, window, &theme))
-                    .unwrap_or_else(|| TableColumnLayout::equal(runtime.header.len()));
+                    .map(|table| {
+                        TableColumnLayout::measure(table, table_render_width, window, &theme)
+                    })
+                    .unwrap_or_else(|| TableColumnLayout::equal(column_count));
                 let preview_marker = self.table_axis_preview;
                 let selected_marker = self.table_axis_selection;
                 let body_row_count = runtime.rows.len();
@@ -2682,9 +2933,9 @@ impl Render for Block {
                         }
                     };
 
-                    div()
+                    let table_content = div()
                         .id(block_id)
-                        .w_full()
+                        .w(px(table_render_width))
                         .relative()
                         .flex()
                         .flex_col()
@@ -2695,8 +2946,41 @@ impl Render for Block {
                         .child(column_edge_band)
                         .child(row_edge_band)
                         .child(column_control)
-                        .child(row_control)
-                        .into_any_element()
+                        .child(row_control);
+                    let estimated_table_height = d.table_cell_min_height
+                        * (body_row_count as f32 + 1.0)
+                        + f32::from(top_gutter)
+                        + f32::from(bottom_gutter);
+                    let table_max_height = table_scroll_viewport_max_height(viewport_height);
+                    let overflows_x = table_render_width > table_width + 0.5;
+                    let overflows_y = estimated_table_height > table_max_height + 0.5;
+
+                    if overflows_x || overflows_y {
+                        let mut scroller = div()
+                            .id(ElementId::Name(
+                                format!("table-scroll-{}", self.record.id).into(),
+                            ))
+                            .w_full()
+                            .rounded(px(6.0))
+                            .overflow_x_scroll()
+                            .scrollbar_width(px(d.scrollbar_width))
+                            .on_scroll_wheel(move |event, _window, cx| {
+                                if overflows_y || scroll_wheel_has_horizontal_intent(event) {
+                                    cx.stop_propagation();
+                                }
+                            })
+                            .on_mouse_down(
+                                MouseButton::Left,
+                                cx.listener(Self::on_table_surface_mouse_down),
+                            )
+                            .child(table_content);
+                        if overflows_y {
+                            scroller = scroller.overflow_y_scroll().max_h(px(table_max_height));
+                        }
+                        scroller.into_any_element()
+                    } else {
+                        table_content.into_any_element()
+                    }
                 }
             }
             BlockKind::HtmlBlock => {
@@ -2735,7 +3019,7 @@ impl Render for Block {
                 let child = if focused {
                     BlockTextElement::new(cx.entity(), is_placeholder).into_any_element()
                 } else {
-                    self.render_mermaid_content(&theme, window)
+                    self.render_mermaid_content(&theme, window, cx)
                 };
                 focused_base.w_full().child(child).into_any_element()
             }

@@ -734,6 +734,23 @@ impl Editor {
             }
         }
 
+        if let BlockEvent::RequestOpenMermaidViewer {
+            path,
+            display_width,
+            display_height,
+            zoom,
+        } = event
+        {
+            self.mermaid_viewer = Some(super::MermaidViewerState::new(
+                path.clone(),
+                *display_width,
+                *display_height,
+                *zoom,
+            ));
+            cx.notify();
+            return;
+        }
+
         if let Some(binding) = self.table_cell_binding(block.entity_id()) {
             self.on_table_cell_event(binding, event, cx);
             return;
@@ -1231,6 +1248,7 @@ impl Editor {
                     self.open_table_axis_menu(block.entity_id(), *kind, *index, *position, cx);
                 }
             }
+            BlockEvent::RequestOpenMermaidViewer { .. } => {}
             BlockEvent::RequestTableCellMoveHorizontal { .. }
             | BlockEvent::RequestTableCellMoveVertical { .. } => {}
             BlockEvent::RequestFocusPrev { preferred_x } => {

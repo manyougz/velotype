@@ -4,7 +4,7 @@
 //! from Markdown. Block-level parsing stays intentionally narrow: only syntax
 //! that the runtime tree can reconstruct is parsed into structured blocks.
 
-use std::ops::Range;
+use std::{ops::Range, path::PathBuf};
 
 use gpui::{Pixels, Point, SharedString};
 use uuid::Uuid;
@@ -728,6 +728,12 @@ pub enum BlockEvent {
         kind: TableAxisKind,
         index: usize,
         position: Point<Pixels>,
+    },
+    RequestOpenMermaidViewer {
+        path: PathBuf,
+        display_width: f32,
+        display_height: f32,
+        zoom: f32,
     },
     /// Cursor reached the top of this block; move focus to the previous
     /// visible block, preserving the preferred horizontal position.

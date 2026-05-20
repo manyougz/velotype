@@ -13,6 +13,13 @@ const MERMAID_COMPLEX_TARGET_WIDTH_RATIO: f32 = 0.9;
 const MERMAID_MAX_VIEWPORT_WIDTH_RATIO: f32 = 1.15;
 const MERMAID_SCALE_PER_EXTRA_LINE: f32 = 0.035;
 const MERMAID_MAX_SCALE: f32 = 1.75;
+const MERMAID_VIEWPORT_HEIGHT_RATIO: f32 = 0.72;
+const MERMAID_VIEWPORT_VERTICAL_INSET: f32 = 96.0;
+const MERMAID_MIN_SCROLL_VIEWPORT_HEIGHT: f32 = 160.0;
+const MERMAID_PREFERRED_SCROLL_VIEWPORT_HEIGHT: f32 = 240.0;
+const MERMAID_USER_ZOOM_MIN: f32 = 0.25;
+const MERMAID_USER_ZOOM_MAX: f32 = 4.0;
+const MERMAID_USER_ZOOM_STEP: f32 = 0.25;
 
 /// Opening fence metadata for a Mermaid fenced code block.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -54,6 +61,13 @@ pub(crate) struct MermaidSvgRender {
 pub(crate) struct MermaidSvgSize {
     pub(crate) width: f32,
     pub(crate) height: f32,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct MermaidDisplayViewport {
+    pub(crate) max_height: f32,
+    pub(crate) overflows_width: bool,
+    pub(crate) overflows_height: bool,
 }
 
 /// Returns true when a fenced code info string declares Mermaid content.
@@ -296,6 +310,50 @@ pub(crate) fn mermaid_display_scale(
         .min(height_sanity_scale)
         .min(MERMAID_MAX_SCALE)
         .max(1.0)
+}
+
+pub(crate) fn mermaid_display_viewport(
+    display_width: f32,
+    display_height: f32,
+    available_width: f32,
+    viewport_height: f32,
+) -> MermaidDisplayViewport {
+    let display_width = display_width.max(1.0);
+    let display_height = display_height.max(1.0);
+    let available_width = available_width.max(1.0);
+    let viewport_height = viewport_height.max(1.0);
+    let viewport_cap =
+        (viewport_height - MERMAID_VIEWPORT_VERTICAL_INSET).max(MERMAID_MIN_SCROLL_VIEWPORT_HEIGHT);
+    let max_height = (viewport_height * MERMAID_VIEWPORT_HEIGHT_RATIO)
+        .max(MERMAID_PREFERRED_SCROLL_VIEWPORT_HEIGHT)
+        .min(viewport_cap)
+        .max(MERMAID_MIN_SCROLL_VIEWPORT_HEIGHT);
+
+    MermaidDisplayViewport {
+        max_height,
+        overflows_width: display_width > available_width + 0.5,
+        overflows_height: display_height > max_height + 0.5,
+    }
+}
+
+pub(crate) fn mermaid_clamp_zoom(zoom: f32) -> f32 {
+    if zoom.is_finite() {
+        zoom.clamp(MERMAID_USER_ZOOM_MIN, MERMAID_USER_ZOOM_MAX)
+    } else {
+        1.0
+    }
+}
+
+pub(crate) fn mermaid_zoom_in(zoom: f32) -> f32 {
+    mermaid_clamp_zoom(zoom + MERMAID_USER_ZOOM_STEP)
+}
+
+pub(crate) fn mermaid_zoom_out(zoom: f32) -> f32 {
+    mermaid_clamp_zoom(zoom - MERMAID_USER_ZOOM_STEP)
+}
+
+pub(crate) fn mermaid_zoom_label(zoom: f32) -> String {
+    format!("{:.0}%", mermaid_clamp_zoom(zoom) * 100.0)
 }
 
 fn strip_fence_indent(line: &str) -> Option<&str> {
@@ -695,6 +753,30 @@ mod tests {
         let scale = mermaid_display_scale(&complex, 1400.0, 400.0, 720.0, 960.0);
 
         assert_eq!(scale, 1.0);
+    }
+
+    #[test]
+    fn display_viewport_detects_oversized_diagrams() {
+        let normal = mermaid_display_viewport(400.0, 180.0, 720.0, 900.0);
+        assert!(!normal.overflows_width);
+        assert!(!normal.overflows_height);
+
+        let wide = mermaid_display_viewport(900.0, 180.0, 720.0, 900.0);
+        assert!(wide.overflows_width);
+        assert!(!wide.overflows_height);
+
+        let tall = mermaid_display_viewport(400.0, 900.0, 720.0, 900.0);
+        assert!(!tall.overflows_width);
+        assert!(tall.overflows_height);
+        assert!(tall.max_height < 900.0);
+    }
+
+    #[test]
+    fn user_zoom_helpers_clamp_and_label() {
+        assert_eq!(mermaid_clamp_zoom(f32::NAN), 1.0);
+        assert_eq!(mermaid_zoom_out(0.25), 0.25);
+        assert_eq!(mermaid_zoom_in(4.0), 4.0);
+        assert_eq!(mermaid_zoom_label(1.25), "125%");
     }
 
     #[test]
