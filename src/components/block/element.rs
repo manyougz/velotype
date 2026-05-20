@@ -61,8 +61,11 @@ fn build_text_runs(
     code_bg: Hsla,
     show_inline_code_backgrounds: bool,
 ) -> Vec<TextRun> {
-    let mut boundaries = vec![0, display_text.len()];
-    for span in input.inline_spans() {
+    let inline_spans = input.inline_spans();
+    let mut boundaries = Vec::with_capacity(inline_spans.len() * 2 + 4);
+    boundaries.push(0);
+    boundaries.push(display_text.len());
+    for span in inline_spans {
         boundaries.push(span.range.start);
         boundaries.push(span.range.end);
     }
@@ -74,7 +77,7 @@ fn build_text_runs(
     boundaries.dedup();
 
     let marked_range = input.marked_range.clone();
-    let mut runs = Vec::new();
+    let mut runs = Vec::with_capacity(boundaries.len().saturating_sub(1));
     for boundary_pair in boundaries.windows(2) {
         let start = boundary_pair[0];
         let end = boundary_pair[1];
@@ -168,8 +171,14 @@ fn build_code_text_runs(
     underline_thickness: Pixels,
     colors: &ThemeColors,
 ) -> Vec<TextRun> {
-    let mut boundaries = vec![0, display_text.len()];
-    if let Some(highlight_result) = input.code_highlight_result() {
+    let highlight_result = input.code_highlight_result();
+    let highlight_span_count = highlight_result
+        .map(|highlight_result| highlight_result.spans.len())
+        .unwrap_or(0);
+    let mut boundaries = Vec::with_capacity(highlight_span_count * 2 + 4);
+    boundaries.push(0);
+    boundaries.push(display_text.len());
+    if let Some(highlight_result) = highlight_result {
         for span in &highlight_result.spans {
             boundaries.push(span.range.start);
             boundaries.push(span.range.end);
@@ -183,7 +192,7 @@ fn build_code_text_runs(
     boundaries.dedup();
 
     let marked_range = input.marked_range.clone();
-    let mut runs = Vec::new();
+    let mut runs = Vec::with_capacity(boundaries.len().saturating_sub(1));
     for boundary_pair in boundaries.windows(2) {
         let start = boundary_pair[0];
         let end = boundary_pair[1];

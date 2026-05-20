@@ -25,9 +25,18 @@ impl Editor {
         first_prefix: &str,
         continuation_prefix: &str,
     ) -> (String, Vec<usize>, Vec<usize>) {
-        let mut full = String::new();
+        let estimated_len = first_prefix.len()
+            + content.len()
+            + content
+                .as_bytes()
+                .iter()
+                .filter(|byte| **byte == b'\n')
+                .count()
+                * continuation_prefix.len();
+        let mut full = String::with_capacity(estimated_len);
         let mut content_to_source = vec![0; content.len() + 1];
-        let mut source_to_content = vec![0];
+        let mut source_to_content = Vec::with_capacity(estimated_len + 1);
+        source_to_content.push(0);
 
         full.push_str(first_prefix);
         source_to_content.resize(full.len() + 1, 0);
@@ -41,18 +50,14 @@ impl Editor {
                 .expect("content offset should stay on char boundaries");
             let start = full.len();
             full.push(ch);
+            source_to_content.truncate(start);
             source_to_content.resize(full.len() + 1, content_offset);
-            for index in start..=full.len() {
-                source_to_content[index] = content_offset;
-            }
             content_offset += ch.len_utf8();
             if ch == '\n' {
                 let prefix_start = full.len();
                 full.push_str(continuation_prefix);
+                source_to_content.truncate(prefix_start);
                 source_to_content.resize(full.len() + 1, content_offset);
-                for index in prefix_start..=full.len() {
-                    source_to_content[index] = content_offset;
-                }
             }
         }
         content_to_source[content.len()] = full.len();
@@ -70,9 +75,24 @@ impl Editor {
             content,
             language.map(|language| language.as_ref()),
         );
-        let mut full = String::new();
+        let language_len = language.map(|language| language.len()).unwrap_or(0);
+        let estimated_len = fence.len()
+            + language_len
+            + 1
+            + indentation.len()
+            + content.len()
+            + content
+                .as_bytes()
+                .iter()
+                .filter(|byte| **byte == b'\n')
+                .count()
+                * indentation.len()
+            + 1
+            + fence.len();
+        let mut full = String::with_capacity(estimated_len);
         let mut content_to_source = vec![0; content.len() + 1];
-        let mut source_to_content = vec![0];
+        let mut source_to_content = Vec::with_capacity(estimated_len + 1);
+        source_to_content.push(0);
 
         full.push_str(&fence);
         if let Some(language) = language {
@@ -83,10 +103,8 @@ impl Editor {
 
         let prefix_start = full.len();
         full.push_str(indentation);
+        source_to_content.truncate(prefix_start);
         source_to_content.resize(full.len() + 1, 0);
-        for index in prefix_start..=full.len() {
-            source_to_content[index] = 0;
-        }
 
         let mut content_offset = 0usize;
         while content_offset < content.len() {
@@ -97,18 +115,14 @@ impl Editor {
                 .expect("content offset should stay on char boundaries");
             let start = full.len();
             full.push(ch);
+            source_to_content.truncate(start);
             source_to_content.resize(full.len() + 1, content_offset);
-            for index in start..=full.len() {
-                source_to_content[index] = content_offset;
-            }
             content_offset += ch.len_utf8();
             if ch == '\n' {
                 let line_prefix_start = full.len();
                 full.push_str(indentation);
+                source_to_content.truncate(line_prefix_start);
                 source_to_content.resize(full.len() + 1, content_offset);
-                for index in line_prefix_start..=full.len() {
-                    source_to_content[index] = content_offset;
-                }
             }
         }
         content_to_source[content.len()] = full.len();
@@ -313,14 +327,15 @@ impl Editor {
         mappings: &mut Vec<SourceTargetMapping>,
         cx: &App,
     ) -> usize {
-        let Some(table) = block.read(cx).record.table.clone() else {
+        let block_ref = block.read(cx);
+        let Some(table) = block_ref.record.table.as_ref() else {
             return 0;
         };
-        let Some(runtime) = block.read(cx).table_runtime.clone() else {
+        let Some(runtime) = block_ref.table_runtime.as_ref() else {
             return 0;
         };
 
-        let lines = crate::components::serialize_table_markdown_lines(&table);
+        let lines = crate::components::serialize_table_markdown_lines(table);
         let indentation = "  ".repeat(list_depth);
         let quote_prefix = "> ".repeat(quote_depth);
         let line_prefix_len = indentation.len() + quote_prefix.len();
@@ -697,5 +712,62 @@ impl Editor {
         }
 
         mappings
+    }
+
+    pub(super) fn source_target_mapping_for_entity(
+        &self,
+        entity_id: EntityId,
+        cx: &App,
+    ) -> Option<SourceTargetMapping> {
+        let mut absolute = 0usize;
+        let mut pending_empty_roots = 0usize;
+        let mut wrote_non_empty_root = false;
+        let mut previous_was_list_item = false;
+
+        for block in self.document.root_blocks() {
+            let (is_empty_root, current_is_list_item) = {
+                let block_ref = block.read(cx);
+                (
+                    Self::is_empty_root_paragraph(&block_ref),
+                    block_ref.kind().is_list_item(),
+                )
+            };
+            if is_empty_root {
+                pending_empty_roots += 1;
+                continue;
+            }
+
+            if wrote_non_empty_root {
+                let separator_count = if previous_was_list_item && current_is_list_item {
+                    if pending_empty_roots == 0 {
+                        0
+                    } else {
+                        pending_empty_roots + 1
+                    }
+                } else {
+                    pending_empty_roots + 1
+                };
+                absolute += separator_count;
+            } else if pending_empty_roots > 0 {
+                absolute += pending_empty_roots;
+            }
+
+            let mut mappings = Vec::new();
+            let root_len =
+                self.collect_single_block_source_mappings(block, 0, 0, absolute, &mut mappings, cx);
+            if let Some(mapping) = mappings
+                .into_iter()
+                .find(|mapping| mapping.entity.entity_id() == entity_id)
+            {
+                return Some(mapping);
+            }
+
+            absolute += root_len + 1;
+            wrote_non_empty_root = true;
+            pending_empty_roots = 0;
+            previous_was_list_item = current_is_list_item;
+        }
+
+        None
     }
 }

@@ -305,6 +305,10 @@ fn is_link_wrapped_inline_image(markdown: &str, start: usize, end: usize) -> boo
 }
 
 pub(crate) fn parse_image_reference_definitions(markdown: &str) -> ImageReferenceDefinitions {
+    if !markdown.as_bytes().windows(2).any(|window| window == b"]:") {
+        return ImageReferenceDefinitions::new();
+    }
+
     let lines = markdown.split('\n').collect::<Vec<_>>();
     let normalized_lines = lines
         .iter()

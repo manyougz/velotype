@@ -718,7 +718,8 @@ impl Block {
     ) -> Vec<AnyElement> {
         let cache = tree.render_cache();
         let text = cache.visible_text();
-        let mut children = Vec::new();
+        let mut children =
+            Vec::with_capacity(cache.spans().len().saturating_mul(2).saturating_add(1));
         let mut cursor = 0usize;
 
         for span in cache.spans() {

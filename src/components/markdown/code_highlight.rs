@@ -236,6 +236,7 @@ const HIGHLIGHT_NAMES: &[&str] = &[
     "variable.builtin",
     "variable.parameter",
 ];
+const MAX_HIGHLIGHT_SOURCE_BYTES: usize = 256 * 1024;
 
 /// Lazily built tree-sitter highlighter registry.
 #[cfg(feature = "code-highlight-core")]
@@ -582,6 +583,12 @@ pub(crate) fn highlight_code_block(
     source: &str,
 ) -> Option<CodeHighlightResult> {
     let key = resolve_code_language_key(language)?;
+    if source.len() > MAX_HIGHLIGHT_SOURCE_BYTES {
+        return Some(CodeHighlightResult {
+            language: key,
+            spans: Vec::new(),
+        });
+    }
 
     #[cfg(feature = "code-highlight-core")]
     if let Some(config) = CODE_HIGHLIGHT_REGISTRY.config_for(key) {
@@ -768,6 +775,15 @@ mod tests {
             .expect("plain text should still produce a result");
         assert_eq!(text.language, CodeLanguageKey::PlainText);
         assert!(text.spans.is_empty());
+    }
+
+    #[test]
+    fn very_large_code_blocks_skip_highlight_spans() {
+        let source = "fn main() {}\n".repeat((super::MAX_HIGHLIGHT_SOURCE_BYTES / 12) + 2);
+        let result = highlight_code_block(Some("rust"), &source).expect("known language");
+
+        assert_eq!(result.language, CodeLanguageKey::Rust);
+        assert!(result.spans.is_empty());
     }
 
     #[cfg(all(feature = "code-highlight-core", feature = "code-highlight-official"))]

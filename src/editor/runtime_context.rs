@@ -31,7 +31,7 @@ impl Editor {
             });
         }
 
-        for visible in self.document.visible_blocks().to_vec() {
+        for visible in self.document.visible_blocks() {
             visible.entity.update(cx, |block, _cx| {
                 changed |= block.end_pointer_selection_session();
             });
@@ -104,8 +104,8 @@ impl Editor {
 
     pub(super) fn rebuild_footnote_registry(&mut self, cx: &App) {
         let mut definitions = HashMap::new();
-        let visible = self.document.visible_blocks().to_vec();
-        for visible_block in &visible {
+        let visible = self.document.visible_blocks();
+        for visible_block in visible {
             let block = visible_block.entity.read(cx);
             if block.kind() != BlockKind::FootnoteDefinition {
                 continue;
@@ -195,22 +195,29 @@ impl Editor {
         self.image_reference_definitions = Arc::new(parse_image_reference_definitions(&markdown));
         self.link_reference_definitions = Arc::new(parse_link_reference_definitions(&markdown));
         self.rebuild_footnote_registry(cx);
-        let visible = self.document.visible_blocks().to_vec();
-        for visible_block in visible {
+        for visible_block in self.document.visible_blocks() {
             self.sync_runtime_context_for_block(&visible_block.entity, base_dir.as_deref(), cx);
-            if visible_block.entity.read(cx).kind() != BlockKind::Table {
-                continue;
-            }
-            let Some(runtime) = visible_block.entity.read(cx).table_runtime.clone() else {
-                continue;
-            };
-            for cell in runtime.header {
-                self.sync_runtime_context_for_block(&cell, base_dir.as_deref(), cx);
-            }
-            for row in runtime.rows {
-                for cell in row {
-                    self.sync_runtime_context_for_block(&cell, base_dir.as_deref(), cx);
+            let table_cells = {
+                let block = visible_block.entity.read(cx);
+                if block.kind() != BlockKind::Table {
+                    Vec::new()
+                } else {
+                    block
+                        .table_runtime
+                        .as_ref()
+                        .map(|runtime| {
+                            runtime
+                                .header
+                                .iter()
+                                .chain(runtime.rows.iter().flatten())
+                                .cloned()
+                                .collect::<Vec<_>>()
+                        })
+                        .unwrap_or_default()
                 }
+            };
+            for cell in table_cells {
+                self.sync_runtime_context_for_block(&cell, base_dir.as_deref(), cx);
             }
         }
     }

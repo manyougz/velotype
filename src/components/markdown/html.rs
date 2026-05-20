@@ -11,6 +11,8 @@ use cssparser::color::{parse_hash_color, parse_named_color};
 #[cfg(feature = "html-native")]
 use tree_sitter::Parser;
 
+const MAX_SEMANTIC_HTML_BYTES: usize = 256 * 1024;
+
 /// Safety classification for an HTML fragment.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum HtmlSafetyClass {
@@ -245,6 +247,9 @@ struct TagToken {
 /// preserves `raw_source` exactly, even when semantic parsing succeeds.
 pub(crate) fn parse_html_document(raw_source: &str) -> HtmlDocument {
     if raw_source.trim().is_empty() {
+        return HtmlDocument::raw(raw_source);
+    }
+    if raw_source.len() > MAX_SEMANTIC_HTML_BYTES {
         return HtmlDocument::raw(raw_source);
     }
 
@@ -1100,6 +1105,15 @@ mod tests {
     fn malformed_html_falls_back_to_raw_text() {
         let doc = parse_html_document("<details><summary>x</details>");
         assert_eq!(doc.safety, HtmlSafetyClass::RawTextBlock);
+    }
+
+    #[test]
+    fn very_large_html_falls_back_without_semantic_parse() {
+        let raw = format!("<div>{}</div>", "x".repeat(super::MAX_SEMANTIC_HTML_BYTES));
+        let doc = parse_html_document(&raw);
+
+        assert_eq!(doc.safety, HtmlSafetyClass::RawTextBlock);
+        assert_eq!(doc.raw_source, raw);
     }
 
     #[test]

@@ -37,6 +37,10 @@ pub(crate) struct LinkReferenceDefinition {
 pub(crate) type LinkReferenceDefinitions = HashMap<String, LinkReferenceDefinition>;
 
 pub(crate) fn parse_link_reference_definitions(markdown: &str) -> LinkReferenceDefinitions {
+    if !markdown.as_bytes().windows(2).any(|window| window == b"]:") {
+        return LinkReferenceDefinitions::new();
+    }
+
     let lines = markdown.split('\n').collect::<Vec<_>>();
     let normalized_lines = lines
         .iter()

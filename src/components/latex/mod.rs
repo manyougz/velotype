@@ -89,13 +89,18 @@ fn render_latex_svg_to_cache(
     text_color: Hsla,
     font_size: f32,
 ) -> anyhow::Result<LatexSvgRender> {
-    let svg = render_latex_to_svg(latex, text_color, font_size)?;
     let key = latex_cache_key(latex, text_color, font_size);
     let path = latex_cache_dir()?.join(format!("{key}.svg"));
-    if !path.exists() {
-        fs::write(&path, &svg)
-            .with_context(|| format!("failed to write LaTeX SVG cache '{}'", path.display()))?;
+
+    if path.exists() {
+        let svg = fs::read_to_string(&path)
+            .with_context(|| format!("failed to read LaTeX SVG cache '{}'", path.display()))?;
+        return Ok(LatexSvgRender { path, svg });
     }
+
+    let svg = render_latex_to_svg(latex, text_color, font_size)?;
+    fs::write(&path, &svg)
+        .with_context(|| format!("failed to write LaTeX SVG cache '{}'", path.display()))?;
     Ok(LatexSvgRender { path, svg })
 }
 

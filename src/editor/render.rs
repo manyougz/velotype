@@ -14,6 +14,9 @@ use crate::i18n::{I18nManager, I18nStrings};
 use crate::theme::{Theme, ThemeDimensions, ThemeManager};
 
 pub(crate) const ABOUT_GITHUB_URL: &str = "https://github.com/manyougz/velotype";
+const VIRTUALIZED_ROW_THRESHOLD: usize = 80;
+const VIRTUALIZED_ROW_HEIGHT: f32 = 36.0;
+const VIRTUALIZED_OVERSCAN_VIEWPORTS: f32 = 2.0;
 
 pub(crate) fn open_about_github_url(cx: &mut App) {
     cx.open_url(ABOUT_GITHUB_URL);
@@ -274,6 +277,65 @@ fn footnote_group_shell(
 }
 
 impl Editor {
+    fn should_virtualize_document_rows(&self) -> bool {
+        self.view_mode == super::ViewMode::Rendered
+            && self.document.visible_blocks().len() > VIRTUALIZED_ROW_THRESHOLD
+    }
+
+    fn estimated_virtualized_content_height(&self) -> f32 {
+        self.document.visible_blocks().len() as f32 * VIRTUALIZED_ROW_HEIGHT
+    }
+
+    fn virtualized_max_scroll_y(&self) -> f32 {
+        let viewport_height = f32::from(self.scroll_handle.bounds().size.height.max(px(1.0)));
+        (self.estimated_virtualized_content_height() - viewport_height).max(0.0)
+    }
+
+    fn virtualized_row_range(
+        &self,
+        current_scroll_y: f32,
+        viewport_height: f32,
+    ) -> (usize, usize, f32, f32) {
+        let total = self.document.visible_blocks().len();
+        if total == 0 {
+            return (0, 0, 0.0, 0.0);
+        }
+
+        let overscan = (viewport_height * VIRTUALIZED_OVERSCAN_VIEWPORTS).max(240.0);
+        let start_y = (current_scroll_y - overscan).max(0.0);
+        let end_y = current_scroll_y + viewport_height + overscan;
+        let start = (start_y / VIRTUALIZED_ROW_HEIGHT).floor() as usize;
+        let end = ((end_y / VIRTUALIZED_ROW_HEIGHT).ceil() as usize).min(total);
+        let start = start.min(end);
+        (
+            start,
+            end,
+            start as f32 * VIRTUALIZED_ROW_HEIGHT,
+            total.saturating_sub(end) as f32 * VIRTUALIZED_ROW_HEIGHT,
+        )
+    }
+
+    fn scroll_virtualized_item_into_view(&mut self, index: usize) {
+        let viewport_height = f32::from(self.scroll_handle.bounds().size.height.max(px(1.0)));
+        let current_scroll_y = -f32::from(self.scroll_handle.offset().y);
+        let item_top = index as f32 * VIRTUALIZED_ROW_HEIGHT;
+        let item_bottom = item_top + VIRTUALIZED_ROW_HEIGHT;
+        let next_scroll_y = if item_top < current_scroll_y {
+            item_top
+        } else if item_bottom > current_scroll_y + viewport_height {
+            item_bottom - viewport_height
+        } else {
+            current_scroll_y
+        }
+        .clamp(0.0, self.virtualized_max_scroll_y());
+
+        if (next_scroll_y - current_scroll_y).abs() > 0.5 {
+            let mut offset = self.scroll_handle.offset();
+            offset.y = -px(next_scroll_y);
+            self.scroll_handle.set_offset(offset);
+        }
+    }
+
     pub(crate) fn install_close_guard(&mut self, cx: &mut Context<Self>, window: &mut Window) {
         if self.close_guard_installed {
             return;
@@ -379,7 +441,11 @@ impl Editor {
         if use_item_scroll {
             if let Some(focused_id) = self.focused_edit_target_entity_id(window, cx) {
                 if let Some(focused_idx) = self.document.visible_index_for_entity_id(focused_id) {
-                    self.scroll_handle.scroll_to_item(focused_idx);
+                    if self.should_virtualize_document_rows() {
+                        self.scroll_virtualized_item_into_view(focused_idx);
+                    } else {
+                        self.scroll_handle.scroll_to_item(focused_idx);
+                    }
                 }
             }
         }
@@ -1337,7 +1403,7 @@ impl Render for Editor {
 
         let d = &theme.dimensions;
         let c = &theme.colors;
-        let visible_blocks = self.document.visible_blocks().to_vec();
+        let visible_blocks = self.document.visible_blocks();
         let editor = cx.entity().downgrade();
         let has_menus = cx
             .get_menus()
@@ -1349,7 +1415,13 @@ impl Render for Editor {
             d,
         ));
         let scroll_trigger_padding = (d.block_min_height * 0.75).max(16.0);
-        let max_scroll_y = f32::from(self.scroll_handle.max_offset().height.max(px(0.0)));
+        let use_virtualized_rows = self.should_virtualize_document_rows();
+        let physical_max_scroll_y = f32::from(self.scroll_handle.max_offset().height.max(px(0.0)));
+        let max_scroll_y = if use_virtualized_rows {
+            physical_max_scroll_y.max(self.virtualized_max_scroll_y())
+        } else {
+            physical_max_scroll_y
+        };
         let viewport_height = f32::from(viewport_bounds.size.height.max(px(1.0)));
         let viewport_width = f32::from(viewport_bounds.size.width.max(px(1.0)));
         let has_overflow = max_scroll_y > 0.5;
@@ -1367,199 +1439,308 @@ impl Render for Editor {
                 || self.scrollbar_hovered
                 || Instant::now() <= self.scrollbar_visible_until);
 
-        let spacing_infos = visible_blocks
-            .iter()
-            .map(|visible| {
-                visible
-                    .entity
-                    .read_with(cx, |block, _cx| RenderedRowSpacingInfo::from_block(block))
-            })
-            .collect::<Vec<_>>();
-        let mut previous_row_spacing = None;
         let mut block_rows = Vec::new();
-        let mut index = 0usize;
-        while index < visible_blocks.len() {
-            let first_visible = visible_blocks[index].clone();
-            let first_spacing = spacing_infos[index];
-            let top_gap = rendered_row_top_gap(previous_row_spacing, first_spacing, d.block_gap);
+        if use_virtualized_rows {
+            let (row_start, row_end, top_spacer, bottom_spacer) =
+                self.virtualized_row_range(current_scroll_y, viewport_height);
+            if top_spacer > 0.0 {
+                block_rows.push(div().h(px(top_spacer)).flex_shrink_0().into_any_element());
+            }
 
-            if let (Some(callout_anchor), Some(callout_variant)) =
-                (first_spacing.callout_anchor, first_spacing.callout_variant)
-            {
-                let mut group_children = Vec::new();
-                let mut group_end = index;
-                let mut previous_callout_row = None;
-                while group_end < visible_blocks.len()
-                    && spacing_infos[group_end].callout_anchor == Some(callout_anchor)
+            let mut previous_row_spacing = row_start.checked_sub(1).and_then(|index| {
+                visible_blocks.get(index).map(|visible| {
+                    visible
+                        .entity
+                        .read_with(cx, |block, _cx| RenderedRowSpacingInfo::from_block(block))
+                })
+            });
+
+            for index in row_start..row_end {
+                let entity = visible_blocks[index].entity.clone();
+                let row_spacing =
+                    entity.read_with(cx, |block, _cx| RenderedRowSpacingInfo::from_block(block));
+                let top_gap = if previous_row_spacing.is_some_and(|previous| {
+                    previous.callout_anchor.is_some()
+                        && previous.callout_anchor == row_spacing.callout_anchor
+                }) {
+                    callout_row_top_gap(previous_row_spacing, row_spacing, d)
+                } else if previous_row_spacing.is_some_and(|previous| {
+                    previous.footnote_anchor.is_some()
+                        && previous.footnote_anchor == row_spacing.footnote_anchor
+                }) {
+                    footnote_row_top_gap(previous_row_spacing, d.block_gap)
+                } else {
+                    rendered_row_top_gap(previous_row_spacing, row_spacing, d.block_gap)
+                };
+
+                let row = div().w_full().flex_shrink_0().child(entity.clone());
+                let row = if self.view_mode == super::ViewMode::Rendered {
+                    let row_editor = editor.clone();
+                    let entity_id = entity.entity_id();
+                    row.on_mouse_down(MouseButton::Right, move |event, window, cx| {
+                        let _ = row_editor.update(cx, |editor, cx| {
+                            editor.on_block_context_menu_mouse_down(entity_id, event, window, cx);
+                        });
+                    })
+                } else {
+                    row
+                };
+
+                let row = if let (Some(_callout_anchor), Some(callout_variant)) =
+                    (row_spacing.callout_anchor, row_spacing.callout_variant)
                 {
-                    let row_spacing = spacing_infos[group_end];
-                    if let Some(footnote_anchor) = row_spacing.footnote_anchor {
-                        let mut footnote_children = Vec::new();
-                        let mut footnote_end = group_end;
-                        let mut previous_footnote_row = None;
-                        while footnote_end < visible_blocks.len()
-                            && spacing_infos[footnote_end].callout_anchor == Some(callout_anchor)
-                            && spacing_infos[footnote_end].footnote_anchor == Some(footnote_anchor)
-                        {
-                            let footnote_spacing = spacing_infos[footnote_end];
-                            let entity = visible_blocks[footnote_end].entity.clone();
-                            let row = div()
-                                .w_full()
-                                .flex_shrink_0()
-                                .mt(px(footnote_row_top_gap(previous_footnote_row, d.block_gap)))
-                                .child(entity.clone());
-                            let row = if self.view_mode == super::ViewMode::Rendered {
-                                let row_editor = editor.clone();
-                                let entity_id = entity.entity_id();
-                                row.on_mouse_down(MouseButton::Right, move |event, window, cx| {
-                                    let _ = row_editor.update(cx, |editor, cx| {
-                                        editor.on_block_context_menu_mouse_down(
-                                            entity_id, event, window, cx,
-                                        );
-                                    });
-                                })
-                            } else {
-                                row
-                            };
-                            footnote_children.push(row.into_any_element());
-                            previous_footnote_row = Some(footnote_spacing);
-                            footnote_end += 1;
-                        }
-
-                        group_children.push(
-                            div()
-                                .w_full()
-                                .flex_shrink_0()
-                                .mt(px(callout_row_top_gap(
-                                    previous_callout_row,
-                                    row_spacing,
-                                    d,
-                                )))
-                                .child(footnote_group_shell(footnote_children, &theme, d))
-                                .into_any_element(),
-                        );
-                        previous_callout_row = Some(spacing_infos[footnote_end - 1]);
-                        group_end = footnote_end;
-                        continue;
-                    }
-
-                    let entity = visible_blocks[group_end].entity.clone();
-                    let row = div()
-                        .w_full()
-                        .flex_shrink_0()
-                        .mt(px(callout_row_top_gap(
-                            previous_callout_row,
-                            row_spacing,
-                            d,
-                        )))
-                        .child(entity.clone());
-                    let row = if self.view_mode == super::ViewMode::Rendered {
-                        let row_editor = editor.clone();
-                        let entity_id = entity.entity_id();
-                        row.on_mouse_down(MouseButton::Right, move |event, window, cx| {
-                            let _ = row_editor.update(cx, |editor, cx| {
-                                editor
-                                    .on_block_context_menu_mouse_down(entity_id, event, window, cx);
-                            });
-                        })
-                    } else {
-                        row
-                    };
-                    group_children.push(row.into_any_element());
-                    previous_callout_row = Some(row_spacing);
-                    group_end += 1;
-                }
-
-                let (accent, background) = callout_colors(callout_variant, &theme);
-                block_rows.push(
+                    let (accent, background) = callout_colors(callout_variant, &theme);
                     div()
                         .w(px(centered_width))
                         .max_w(relative(1.0))
                         .flex_shrink_0()
                         .mt(px(top_gap))
-                        .flex()
-                        .flex_col()
-                        .gap(px(0.0))
                         .px(px(d.callout_padding_x))
                         .py(px(d.callout_padding_y))
                         .rounded(px(d.callout_radius))
                         .border_l(px(d.callout_border_width))
                         .border_color(accent)
                         .bg(background)
-                        .children(group_children)
-                        .into_any_element(),
-                );
-                previous_row_spacing = Some(spacing_infos[group_end - 1]);
-                index = group_end;
-                continue;
-            }
-
-            if let Some(footnote_anchor) = first_spacing.footnote_anchor {
-                let mut group_children = Vec::new();
-                let mut group_end = index;
-                let mut previous_footnote_row = None;
-                while group_end < visible_blocks.len()
-                    && spacing_infos[group_end].footnote_anchor == Some(footnote_anchor)
-                {
-                    let row_spacing = spacing_infos[group_end];
-                    let entity = visible_blocks[group_end].entity.clone();
-                    let row = div()
-                        .w_full()
-                        .flex_shrink_0()
-                        .mt(px(footnote_row_top_gap(previous_footnote_row, d.block_gap)))
-                        .child(entity.clone());
-                    let row = if self.view_mode == super::ViewMode::Rendered {
-                        let row_editor = editor.clone();
-                        let entity_id = entity.entity_id();
-                        row.on_mouse_down(MouseButton::Right, move |event, window, cx| {
-                            let _ = row_editor.update(cx, |editor, cx| {
-                                editor
-                                    .on_block_context_menu_mouse_down(entity_id, event, window, cx);
-                            });
-                        })
-                    } else {
-                        row
-                    };
-                    group_children.push(row.into_any_element());
-                    previous_footnote_row = Some(row_spacing);
-                    group_end += 1;
-                }
-
-                block_rows.push(
+                        .child(row)
+                        .into_any_element()
+                } else if row_spacing.footnote_anchor.is_some() {
                     div()
                         .w(px(centered_width))
                         .max_w(relative(1.0))
                         .flex_shrink_0()
                         .mt(px(top_gap))
-                        .child(footnote_group_shell(group_children, &theme, d))
-                        .into_any_element(),
-                );
-                previous_row_spacing = Some(spacing_infos[group_end - 1]);
-                index = group_end;
-                continue;
+                        .child(footnote_group_shell(
+                            vec![row.into_any_element()],
+                            &theme,
+                            d,
+                        ))
+                        .into_any_element()
+                } else {
+                    div()
+                        .w(px(centered_width))
+                        .max_w(relative(1.0))
+                        .flex_shrink_0()
+                        .mt(px(top_gap))
+                        .child(row)
+                        .into_any_element()
+                };
+                block_rows.push(row);
+                previous_row_spacing = Some(row_spacing);
             }
 
-            let entity = first_visible.entity.clone();
-            let row = div()
-                .w(px(centered_width))
-                .max_w(relative(1.0))
-                .flex_shrink_0()
-                .mt(px(top_gap))
-                .child(entity.clone());
-            let row = if self.view_mode == super::ViewMode::Rendered {
-                let row_editor = editor.clone();
-                let entity_id = entity.entity_id();
-                row.on_mouse_down(MouseButton::Right, move |event, window, cx| {
-                    let _ = row_editor.update(cx, |editor, cx| {
-                        editor.on_block_context_menu_mouse_down(entity_id, event, window, cx);
-                    });
+            if bottom_spacer > 0.0 {
+                block_rows.push(
+                    div()
+                        .h(px(bottom_spacer + scroll_trigger_padding))
+                        .flex_shrink_0()
+                        .into_any_element(),
+                );
+            }
+        } else {
+            let spacing_infos = visible_blocks
+                .iter()
+                .map(|visible| {
+                    visible
+                        .entity
+                        .read_with(cx, |block, _cx| RenderedRowSpacingInfo::from_block(block))
                 })
-            } else {
-                row
-            };
-            block_rows.push(row.into_any_element());
-            previous_row_spacing = Some(first_spacing);
-            index += 1;
+                .collect::<Vec<_>>();
+            let mut previous_row_spacing = None;
+            let mut index = 0usize;
+            while index < visible_blocks.len() {
+                let first_visible = visible_blocks[index].clone();
+                let first_spacing = spacing_infos[index];
+                let top_gap =
+                    rendered_row_top_gap(previous_row_spacing, first_spacing, d.block_gap);
+
+                if let (Some(callout_anchor), Some(callout_variant)) =
+                    (first_spacing.callout_anchor, first_spacing.callout_variant)
+                {
+                    let mut group_children = Vec::new();
+                    let mut group_end = index;
+                    let mut previous_callout_row = None;
+                    while group_end < visible_blocks.len()
+                        && spacing_infos[group_end].callout_anchor == Some(callout_anchor)
+                    {
+                        let row_spacing = spacing_infos[group_end];
+                        if let Some(footnote_anchor) = row_spacing.footnote_anchor {
+                            let mut footnote_children = Vec::new();
+                            let mut footnote_end = group_end;
+                            let mut previous_footnote_row = None;
+                            while footnote_end < visible_blocks.len()
+                                && spacing_infos[footnote_end].callout_anchor
+                                    == Some(callout_anchor)
+                                && spacing_infos[footnote_end].footnote_anchor
+                                    == Some(footnote_anchor)
+                            {
+                                let footnote_spacing = spacing_infos[footnote_end];
+                                let entity = visible_blocks[footnote_end].entity.clone();
+                                let row = div()
+                                    .w_full()
+                                    .flex_shrink_0()
+                                    .mt(px(footnote_row_top_gap(
+                                        previous_footnote_row,
+                                        d.block_gap,
+                                    )))
+                                    .child(entity.clone());
+                                let row = if self.view_mode == super::ViewMode::Rendered {
+                                    let row_editor = editor.clone();
+                                    let entity_id = entity.entity_id();
+                                    row.on_mouse_down(
+                                        MouseButton::Right,
+                                        move |event, window, cx| {
+                                            let _ = row_editor.update(cx, |editor, cx| {
+                                                editor.on_block_context_menu_mouse_down(
+                                                    entity_id, event, window, cx,
+                                                );
+                                            });
+                                        },
+                                    )
+                                } else {
+                                    row
+                                };
+                                footnote_children.push(row.into_any_element());
+                                previous_footnote_row = Some(footnote_spacing);
+                                footnote_end += 1;
+                            }
+
+                            group_children.push(
+                                div()
+                                    .w_full()
+                                    .flex_shrink_0()
+                                    .mt(px(callout_row_top_gap(
+                                        previous_callout_row,
+                                        row_spacing,
+                                        d,
+                                    )))
+                                    .child(footnote_group_shell(footnote_children, &theme, d))
+                                    .into_any_element(),
+                            );
+                            previous_callout_row = Some(spacing_infos[footnote_end - 1]);
+                            group_end = footnote_end;
+                            continue;
+                        }
+
+                        let entity = visible_blocks[group_end].entity.clone();
+                        let row = div()
+                            .w_full()
+                            .flex_shrink_0()
+                            .mt(px(callout_row_top_gap(
+                                previous_callout_row,
+                                row_spacing,
+                                d,
+                            )))
+                            .child(entity.clone());
+                        let row = if self.view_mode == super::ViewMode::Rendered {
+                            let row_editor = editor.clone();
+                            let entity_id = entity.entity_id();
+                            row.on_mouse_down(MouseButton::Right, move |event, window, cx| {
+                                let _ = row_editor.update(cx, |editor, cx| {
+                                    editor.on_block_context_menu_mouse_down(
+                                        entity_id, event, window, cx,
+                                    );
+                                });
+                            })
+                        } else {
+                            row
+                        };
+                        group_children.push(row.into_any_element());
+                        previous_callout_row = Some(row_spacing);
+                        group_end += 1;
+                    }
+
+                    let (accent, background) = callout_colors(callout_variant, &theme);
+                    block_rows.push(
+                        div()
+                            .w(px(centered_width))
+                            .max_w(relative(1.0))
+                            .flex_shrink_0()
+                            .mt(px(top_gap))
+                            .flex()
+                            .flex_col()
+                            .gap(px(0.0))
+                            .px(px(d.callout_padding_x))
+                            .py(px(d.callout_padding_y))
+                            .rounded(px(d.callout_radius))
+                            .border_l(px(d.callout_border_width))
+                            .border_color(accent)
+                            .bg(background)
+                            .children(group_children)
+                            .into_any_element(),
+                    );
+                    previous_row_spacing = Some(spacing_infos[group_end - 1]);
+                    index = group_end;
+                    continue;
+                }
+
+                if let Some(footnote_anchor) = first_spacing.footnote_anchor {
+                    let mut group_children = Vec::new();
+                    let mut group_end = index;
+                    let mut previous_footnote_row = None;
+                    while group_end < visible_blocks.len()
+                        && spacing_infos[group_end].footnote_anchor == Some(footnote_anchor)
+                    {
+                        let row_spacing = spacing_infos[group_end];
+                        let entity = visible_blocks[group_end].entity.clone();
+                        let row = div()
+                            .w_full()
+                            .flex_shrink_0()
+                            .mt(px(footnote_row_top_gap(previous_footnote_row, d.block_gap)))
+                            .child(entity.clone());
+                        let row = if self.view_mode == super::ViewMode::Rendered {
+                            let row_editor = editor.clone();
+                            let entity_id = entity.entity_id();
+                            row.on_mouse_down(MouseButton::Right, move |event, window, cx| {
+                                let _ = row_editor.update(cx, |editor, cx| {
+                                    editor.on_block_context_menu_mouse_down(
+                                        entity_id, event, window, cx,
+                                    );
+                                });
+                            })
+                        } else {
+                            row
+                        };
+                        group_children.push(row.into_any_element());
+                        previous_footnote_row = Some(row_spacing);
+                        group_end += 1;
+                    }
+
+                    block_rows.push(
+                        div()
+                            .w(px(centered_width))
+                            .max_w(relative(1.0))
+                            .flex_shrink_0()
+                            .mt(px(top_gap))
+                            .child(footnote_group_shell(group_children, &theme, d))
+                            .into_any_element(),
+                    );
+                    previous_row_spacing = Some(spacing_infos[group_end - 1]);
+                    index = group_end;
+                    continue;
+                }
+
+                let entity = first_visible.entity.clone();
+                let row = div()
+                    .w(px(centered_width))
+                    .max_w(relative(1.0))
+                    .flex_shrink_0()
+                    .mt(px(top_gap))
+                    .child(entity.clone());
+                let row = if self.view_mode == super::ViewMode::Rendered {
+                    let row_editor = editor.clone();
+                    let entity_id = entity.entity_id();
+                    row.on_mouse_down(MouseButton::Right, move |event, window, cx| {
+                        let _ = row_editor.update(cx, |editor, cx| {
+                            editor.on_block_context_menu_mouse_down(entity_id, event, window, cx);
+                        });
+                    })
+                } else {
+                    row
+                };
+                block_rows.push(row.into_any_element());
+                previous_row_spacing = Some(first_spacing);
+                index += 1;
+            }
         }
 
         let scroll_content = div()

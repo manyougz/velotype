@@ -460,6 +460,10 @@ impl InlineTextTree {
         markdown: &str,
         reference_definitions: &LinkReferenceDefinitions,
     ) -> Self {
+        if !contains_inline_syntax_candidate(markdown) {
+            return Self::plain(markdown);
+        }
+
         let mut tree = Self::plain(markdown)
             .normalize_inline_syntax_with_link_references(reference_definitions)
             .tree;
@@ -723,6 +727,15 @@ impl InlineTextTree {
             markdown_to_visible,
         }
     }
+}
+
+fn contains_inline_syntax_candidate(markdown: &str) -> bool {
+    markdown.as_bytes().iter().any(|byte| {
+        matches!(
+            byte,
+            b'\\' | b'`' | b'*' | b'_' | b'<' | b'[' | b'$' | b'~' | b'^'
+        )
+    })
 }
 
 fn serialize_fragment_run_markdown_with_offset_map(
@@ -1128,6 +1141,13 @@ impl InlineTextTree {
         reference_definitions: &LinkReferenceDefinitions,
     ) -> InlineEditResult {
         let visible_text = self.visible_text();
+        if !contains_inline_syntax_candidate(&visible_text) {
+            return InlineEditResult {
+                tree: InlineTextTree::from_fragments(self.fragments.clone()),
+                visible_to_normalized: (0..=visible_text.len()).collect(),
+            };
+        }
+
         let tokens = flatten_tokens(&self.fragments);
         let mut builder = NormalizeBuilder::new(visible_text.len());
         let _ = parse_until(
@@ -1290,7 +1310,44 @@ impl Delimiter {
     fn token_len(self) -> usize {
         match self {
             Self::CodeMarkdown { run_len } => run_len,
-            other => other.open().chars().count(),
+            Self::BoldMarkdown { .. } => 2,
+            Self::ItalicMarkdown { .. } | Self::SuperscriptMarkdown | Self::SubscriptMarkdown => 1,
+            Self::StrikethroughMarkdown => 2,
+            Self::Underline => 3,
+            Self::SuperscriptHtml => 5,
+            Self::SubscriptHtml => 5,
+            Self::BoldHtml => 8,
+            Self::ItalicHtml => 4,
+        }
+    }
+
+    fn open_len(self) -> usize {
+        match self {
+            Self::BoldMarkdown { marker } => marker.len_utf8() * 2,
+            Self::ItalicMarkdown { marker } => marker.len_utf8(),
+            Self::StrikethroughMarkdown => 2,
+            Self::SuperscriptMarkdown | Self::SubscriptMarkdown => 1,
+            Self::Underline => 3,
+            Self::SuperscriptHtml => 5,
+            Self::SubscriptHtml => 5,
+            Self::BoldHtml => 8,
+            Self::ItalicHtml => 4,
+            Self::CodeMarkdown { run_len } => run_len,
+        }
+    }
+
+    fn close_len(self) -> usize {
+        match self {
+            Self::BoldMarkdown { marker } => marker.len_utf8() * 2,
+            Self::ItalicMarkdown { marker } => marker.len_utf8(),
+            Self::StrikethroughMarkdown => 2,
+            Self::SuperscriptMarkdown | Self::SubscriptMarkdown => 1,
+            Self::Underline => 4,
+            Self::SuperscriptHtml => 6,
+            Self::SubscriptHtml => 6,
+            Self::BoldHtml => 9,
+            Self::ItalicHtml => 5,
+            Self::CodeMarkdown { run_len } => run_len,
         }
     }
 
@@ -2557,15 +2614,14 @@ fn is_single_tilde_delimiter(tokens: &[CharToken], index: usize) -> bool {
 }
 
 fn matches_sequence(tokens: &[CharToken], index: usize, sequence: &str) -> bool {
-    let chars = sequence.chars().collect::<Vec<_>>();
-    if index + chars.len() > tokens.len() {
-        return false;
+    let mut cursor = index;
+    for ch in sequence.chars() {
+        if cursor >= tokens.len() || tokens[cursor].ch != ch {
+            return false;
+        }
+        cursor += 1;
     }
-
-    chars
-        .iter()
-        .enumerate()
-        .all(|(offset, ch)| tokens[index + offset].ch == *ch)
+    true
 }
 
 fn escaped_sequence_token_len(tokens: &[CharToken], index: usize) -> Option<usize> {
@@ -3016,11 +3072,11 @@ fn stack_transition_len(from: &[Delimiter], to: &[Delimiter]) -> usize {
     let close_len = from[common..]
         .iter()
         .rev()
-        .map(|delimiter| delimiter.close().len())
+        .map(|delimiter| delimiter.close_len())
         .sum::<usize>();
     let open_len = to[common..]
         .iter()
-        .map(|delimiter| delimiter.open().len())
+        .map(|delimiter| delimiter.open_len())
         .sum::<usize>();
     close_len + open_len
 }
@@ -3030,9 +3086,8 @@ fn stack_transition_len(from: &[Delimiter], to: &[Delimiter]) -> usize {
 /// `*` characters, which Markdown parsers may interpret ambiguously.
 fn stack_transition_cost(from: &[Delimiter], to: &[Delimiter]) -> usize {
     let marker_len = stack_transition_len(from, to);
-    let marker_string = stack_transition_string(from, to);
     let ambiguity_penalty =
-        if !from.is_empty() && !to.is_empty() && longest_star_run(&marker_string) >= 4 {
+        if !from.is_empty() && !to.is_empty() && stack_transition_star_run(from, to) >= 4 {
             1_000
         } else {
             0
@@ -3048,8 +3103,38 @@ fn stack_variant_penalty(stack: &[Delimiter]) -> usize {
     }
 }
 
+fn stack_transition_star_run(from: &[Delimiter], to: &[Delimiter]) -> usize {
+    let common = common_prefix_len(from, to);
+    let mut current = 0usize;
+    let mut longest = 0usize;
+
+    for delimiter in from[common..].iter().rev() {
+        feed_delimiter_stars(*delimiter, &mut current, &mut longest);
+    }
+    for delimiter in &to[common..] {
+        feed_delimiter_stars(*delimiter, &mut current, &mut longest);
+    }
+
+    longest
+}
+
+fn feed_delimiter_stars(delimiter: Delimiter, current: &mut usize, longest: &mut usize) {
+    let star_count = match delimiter {
+        Delimiter::BoldMarkdown { marker: '*' } => 2,
+        Delimiter::ItalicMarkdown { marker: '*' } => 1,
+        _ => 0,
+    };
+    if star_count == 0 {
+        *current = 0;
+        return;
+    }
+    *current += star_count;
+    *longest = (*longest).max(*current);
+}
+
 fn write_stack_transition(output: &mut String, from: &[Delimiter], to: &[Delimiter]) {
     let common = common_prefix_len(from, to);
+    output.reserve(stack_transition_len(from, to));
     for delimiter in from[common..].iter().rev() {
         output.push_str(&delimiter.close());
     }
@@ -3077,20 +3162,6 @@ fn stack_preference_key(stack: &[Delimiter]) -> Vec<u8> {
         .iter()
         .map(|delimiter| delimiter.preference_rank())
         .collect()
-}
-
-fn longest_star_run(text: &str) -> usize {
-    let mut max_run = 0;
-    let mut current_run = 0;
-    for ch in text.chars() {
-        if ch == '*' {
-            current_run += 1;
-            max_run = max_run.max(current_run);
-        } else {
-            current_run = 0;
-        }
-    }
-    max_run
 }
 
 fn style_flag_enabled(style: InlineStyle, flag: StyleFlag) -> bool {
