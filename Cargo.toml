@@ -1,6 +1,6 @@
 [package]
 name = "velotype"
-version = "0.4.8"
+version = "0.4.9"
 edition = "2024"
 license = "Apache-2.0"
 
@@ -54,8 +54,8 @@ ratex-svg = { version = "0.1.9", features = ["embed-fonts", "standalone"] }
 mermaid-rs-renderer = { version = "0.2.2", default-features = false }
 reqwest = { version = "0.13", default-features = false, features = ["blocking", "default-tls"] }
 sys-locale = "0.3"
-tree-sitter = { version = "0.26.8", optional = true }
-tree-sitter-highlight = { version = "0.26.8", optional = true }
+tree-sitter = { version = "0.26.9", optional = true }
+tree-sitter-highlight = { version = "0.26.9", optional = true }
 tree-sitter-rust = { version = "0.24", optional = true }
 tree-sitter-javascript = { version = "0.25", optional = true }
 tree-sitter-typescript = { version = "0.23", optional = true }
