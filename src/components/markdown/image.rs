@@ -628,16 +628,12 @@ fn is_reference_definition_title_continuation(line: &str) -> bool {
 
 fn find_open_title_quote(input: &str, close_quote: usize) -> Option<usize> {
     let bytes = input.as_bytes();
-    for index in (0..close_quote).rev() {
-        if bytes[index] == b'"'
+    (0..close_quote).rev().find(|&index| {
+        bytes[index] == b'"'
             && !is_escaped(input, index)
             && index > 0
             && bytes[index - 1].is_ascii_whitespace()
-        {
-            return Some(index);
-        }
-    }
-    None
+    })
 }
 
 fn normalize_image_source(source: String) -> String {

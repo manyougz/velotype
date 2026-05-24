@@ -1493,7 +1493,7 @@ impl Block {
             .pr(px(padding_right))
             .cursor(cursor_style);
 
-        let base = if source_mode {
+        if source_mode {
             base
         } else {
             base.on_action(cx.listener(Self::on_indent_block))
@@ -1502,9 +1502,7 @@ impl Block {
                 .on_action(cx.listener(Self::on_italic_selection))
                 .on_action(cx.listener(Self::on_underline_selection))
                 .on_action(cx.listener(Self::on_code_selection))
-        };
-
-        base
+        }
     }
 }
 

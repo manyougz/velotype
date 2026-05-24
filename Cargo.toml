@@ -4,6 +4,25 @@ version = "0.4.9"
 edition = "2024"
 license = "Apache-2.0"
 
+[lints.clippy]
+# Allow stylistic patterns the project doesn't enforce. These mirror the
+# spirit of gpui-component's workspace lints — categorically silence
+# noise (range-loop indexing, identical-block flagging, helper-arg
+# counts, "future detached via let _") while keeping real correctness
+# lints active.
+if_same_then_else = "allow"
+needless_range_loop = "allow"
+too_many_arguments = "allow"
+let_underscore_future = "allow"
+manual_div_ceil = "allow"
+manual_checked_ops = "allow"
+manual_clamp = "allow"
+module_inception = "allow"
+obfuscated_if_else = "allow"
+question_mark = "allow"
+collapsible_if = "allow"
+collapsible_else_if = "allow"
+
 [features]
 default = ["code-highlight-core", "code-highlight-official", "code-highlight-config", "html-native"]
 code-highlight-core = ["dep:tree-sitter", "dep:tree-sitter-highlight"]
@@ -95,7 +114,7 @@ strip = true
 # block in a long document costs hundreds of µs/frame purely from O0 code.
 [profile.dev.package]
 gpui = { opt-level = 3 }
-gpui_macros = { opt-level = 3 }
+gpui-macros = { opt-level = 3 }
 gpui_http_client = { opt-level = 3 }
 gpui_sum_tree = { opt-level = 3 }
 gpui_util = { opt-level = 3 }

@@ -1406,10 +1406,10 @@ impl I18nManager {
     /// Installs a specific UI language into GPUI's global state.
     pub fn init_with_language_id(cx: &mut App, language_id: &str) {
         let mut manager = Self::new_with_language_id(BUILTIN_LANGUAGE_EN_US_ID);
-        if let Ok(dirs) = VelotypeConfigDirs::from_system() {
-            if let Err(err) = manager.load_custom_languages_from_dirs(&dirs) {
-                eprintln!("failed to load custom languages: {err}");
-            }
+        if let Ok(dirs) = VelotypeConfigDirs::from_system()
+            && let Err(err) = manager.load_custom_languages_from_dirs(&dirs)
+        {
+            eprintln!("failed to load custom languages: {err}");
         }
         let _ = manager.set_language_by_id(language_id);
         cx.set_global(manager);

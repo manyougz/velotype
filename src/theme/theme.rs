@@ -1470,10 +1470,10 @@ impl ThemeManager {
     /// Installs a specific theme into GPUI's global state.
     pub fn init_with_theme_id(cx: &mut App, theme_id: &str) {
         let mut manager = Self::default();
-        if let Ok(dirs) = VelotypeConfigDirs::from_system() {
-            if let Err(err) = manager.load_custom_themes_from_dirs(&dirs) {
-                eprintln!("failed to load custom themes: {err}");
-            }
+        if let Ok(dirs) = VelotypeConfigDirs::from_system()
+            && let Err(err) = manager.load_custom_themes_from_dirs(&dirs)
+        {
+            eprintln!("failed to load custom themes: {err}");
         }
         let _ = manager.set_theme_by_id(theme_id);
         cx.set_global(manager);

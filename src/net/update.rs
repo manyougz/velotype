@@ -143,7 +143,7 @@ pub(crate) struct UpdateVersionInfo {
 pub(crate) fn check_latest_version(
     current_version: &str,
 ) -> Result<UpdateCheckResult, UpdateCheckError> {
-    check_latest_version_with(current_version, |source| fetch_remote_cargo_toml(source))
+    check_latest_version_with(current_version, fetch_remote_cargo_toml)
 }
 
 fn check_latest_version_with<F>(
@@ -225,7 +225,7 @@ fn fetch_remote_cargo_toml(source: UpdateSource) -> Result<String, RemoteFetchFa
 
     let response = client.get(source.url()).send().map_err(|err| {
         if err.is_timeout() {
-            RemoteFetchFailure::timeout(source, format!("request timed out after 5 seconds"))
+            RemoteFetchFailure::timeout(source, "request timed out after 5 seconds".to_string())
         } else {
             RemoteFetchFailure::new(source, RemoteFetchFailureKind::Network, err.to_string())
         }

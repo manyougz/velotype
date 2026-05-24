@@ -328,10 +328,10 @@ impl Editor {
     }
 
     fn apply_pending_focus(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if let Some(entity_id) = self.pending_focus.take() {
-            if let Some(block) = self.focusable_entity_by_id(entity_id) {
-                block.read(cx).focus_handle.focus(window);
-            }
+        if let Some(entity_id) = self.pending_focus.take()
+            && let Some(block) = self.focusable_entity_by_id(entity_id)
+        {
+            block.read(cx).focus_handle.focus(window);
         }
     }
 
@@ -407,12 +407,11 @@ impl Editor {
         }
 
         let use_item_scroll = self.should_use_item_scroll(window, cx);
-        if use_item_scroll {
-            if let Some(focused_id) = self.focused_edit_target_entity_id(window, cx) {
-                if let Some(focused_idx) = self.document.visible_index_for_entity_id(focused_id) {
-                    self.scroll_handle.scroll_to_item(focused_idx);
-                }
-            }
+        if use_item_scroll
+            && let Some(focused_id) = self.focused_edit_target_entity_id(window, cx)
+            && let Some(focused_idx) = self.document.visible_index_for_entity_id(focused_id)
+        {
+            self.scroll_handle.scroll_to_item(focused_idx);
         }
 
         let has_bounds = self.ensure_focused_caret_visible(window, cx);

@@ -427,7 +427,7 @@ impl DocumentTree {
 
         for block in blocks {
             let block_ref = block.read(cx);
-            if Self::is_empty_root_paragraph(&block_ref) {
+            if Self::is_empty_root_paragraph(block_ref) {
                 pending_empty_roots += 1;
                 continue;
             }
@@ -444,7 +444,7 @@ impl DocumentTree {
                 lines.extend(std::iter::repeat_n(String::new(), pending_empty_roots));
             }
 
-            Self::collect_single_block_markdown_lines(&block_ref, 0, cx, lines);
+            Self::collect_single_block_markdown_lines(block_ref, 0, cx, lines);
             wrote_non_empty_root = true;
             pending_empty_roots = 0;
             previous_was_list_item = current_is_list_item;
@@ -595,11 +595,11 @@ impl DocumentTree {
                 let child_list_depth = list_depth + 1;
                 for child in &block_ref.children {
                     let child_ref = child.read(cx);
-                    if Self::list_child_requires_leading_blank_line(&child_ref) {
+                    if Self::list_child_requires_leading_blank_line(child_ref) {
                         lines.push(String::new());
                     }
                     Self::collect_single_block_markdown_lines(
-                        &child_ref,
+                        child_ref,
                         child_list_depth,
                         cx,
                         lines,
@@ -653,7 +653,7 @@ impl DocumentTree {
             first = false;
 
             let block_ref = block.read(cx);
-            Self::collect_single_block_markdown_lines(&block_ref, depth, cx, lines);
+            Self::collect_single_block_markdown_lines(block_ref, depth, cx, lines);
             previous_was_list_item = current_is_list_item;
         }
     }

@@ -835,7 +835,7 @@ fn starts_with_standalone_image_child_paragraph(lines: &[String]) -> bool {
         return false;
     }
 
-    lines.get(1).map_or(true, |next| {
+    lines.get(1).is_none_or(|next| {
         next.trim().is_empty()
             || parse_list_marker(next).is_some()
             || is_quote_start(next)
@@ -1634,16 +1634,15 @@ impl Editor {
                         continue;
                     }
 
-                    if parse_opening_fence(&anchor_dedented[0]).is_some() {
-                        if let Some((code_block, consumed)) =
+                    if parse_opening_fence(&anchor_dedented[0]).is_some()
+                        && let Some((code_block, consumed)) =
                             collect_fenced_code_block(cx, &anchor_dedented, 0)
-                        {
-                            attach_child_blocks(&block, vec![code_block], cx);
-                            body_index += consumed;
-                            pending_blank_lines = 0;
-                            saw_child = true;
-                            continue;
-                        }
+                    {
+                        attach_child_blocks(&block, vec![code_block], cx);
+                        body_index += consumed;
+                        pending_blank_lines = 0;
+                        saw_child = true;
+                        continue;
                     }
 
                     if is_root_table_candidate_line(&anchor_dedented[0]) {

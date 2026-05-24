@@ -101,15 +101,6 @@ pub(crate) struct CodeHighlightResult {
     pub(crate) spans: Vec<CodeHighlightSpan>,
 }
 
-impl CodeHighlightResult {
-    pub(crate) fn class_at(&self, offset: usize) -> Option<CodeHighlightClass> {
-        self.spans
-            .iter()
-            .find(|span| span.range.start <= offset && offset < span.range.end)
-            .map(|span| span.class)
-    }
-}
-
 /// Language aliases accepted from fenced-code info strings.
 #[derive(Clone, Copy)]
 struct LanguageDescriptor {

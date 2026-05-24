@@ -385,6 +385,7 @@ impl InlineRenderCache {
             .unwrap_or_default()
     }
 
+    #[allow(dead_code)]
     pub fn html_style_at(&self, offset: usize) -> Option<HtmlInlineStyle> {
         self.spans
             .iter()
@@ -392,6 +393,7 @@ impl InlineRenderCache {
             .and_then(|span| span.html_style)
     }
 
+    #[allow(dead_code)]
     pub fn link_at(&self, offset: usize) -> Option<&str> {
         self.link_hit_at(offset).map(|hit| hit.open_target.as_str())
     }
@@ -403,6 +405,7 @@ impl InlineRenderCache {
             .and_then(|span| span.link.as_ref())
     }
 
+    #[allow(dead_code)]
     pub fn footnote_hit_at(&self, offset: usize) -> Option<&InlineFootnoteHit> {
         self.spans
             .iter()

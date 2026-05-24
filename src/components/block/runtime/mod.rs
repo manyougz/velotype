@@ -382,10 +382,12 @@ impl Block {
         self.current_cache().spans()
     }
 
+    #[allow(dead_code)]
     pub fn inline_style_at(&self, offset: usize) -> InlineStyle {
         self.current_cache().style_at(offset)
     }
 
+    #[allow(dead_code)]
     pub(crate) fn inline_html_style_at(
         &self,
         offset: usize,
@@ -393,6 +395,7 @@ impl Block {
         self.current_cache().html_style_at(offset)
     }
 
+    #[allow(dead_code)]
     pub(crate) fn inline_link_at(&self, offset: usize) -> Option<&str> {
         self.current_cache().link_at(offset)
     }
@@ -402,6 +405,7 @@ impl Block {
         self.current_cache().link_hit_at(offset)
     }
 
+    #[allow(dead_code)]
     pub(crate) fn inline_footnote_hit_at(&self, offset: usize) -> Option<&InlineFootnoteHit> {
         self.current_cache().footnote_hit_at(offset)
     }
@@ -837,7 +841,11 @@ impl Block {
             .clone()
             .map(|range| self.current_to_clean_range(range));
         if self.projection_cache_key.as_ref()
-            == Some(&(supports_projection, clean_selected.clone(), clean_marked.clone()))
+            == Some(&(
+                supports_projection,
+                clean_selected.clone(),
+                clean_marked.clone(),
+            ))
         {
             return;
         }

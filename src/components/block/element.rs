@@ -913,7 +913,7 @@ impl Element for BlockTextElement {
         let runs: Vec<TextRun> = if !is_placeholder {
             if input.kind().is_code_block() {
                 build_code_text_runs(
-                    &input,
+                    input,
                     &display_text,
                     &run,
                     px(theme.dimensions.underline_thickness),
@@ -921,7 +921,7 @@ impl Element for BlockTextElement {
                 )
             } else {
                 build_text_runs(
-                    &input,
+                    input,
                     &display_text,
                     &run,
                     px(theme.dimensions.underline_thickness),
@@ -1168,7 +1168,7 @@ impl Element for BlockTextElement {
                 && !input.is_source_raw_mode()
                 && prepaint.hitbox.is_hovered(window)
                 && link_at_position(
-                    &input,
+                    input,
                     &prepaint.lines,
                     text_bounds,
                     prepaint.line_height,
@@ -1237,10 +1237,10 @@ impl Element for BlockTextElement {
             y_offset += wrapped_line_height(line, line_height);
         }
 
-        if focus_handle.is_focused(window) {
-            if let Some(cursor) = prepaint.cursor.take() {
-                window.paint_quad(cursor);
-            }
+        if focus_handle.is_focused(window)
+            && let Some(cursor) = prepaint.cursor.take()
+        {
+            window.paint_quad(cursor);
         }
 
         self.input.update(cx, |input, _cx| {

@@ -355,10 +355,10 @@ fn svg_root_tag_range(svg: &str) -> anyhow::Result<(usize, usize)> {
 }
 
 fn svg_root_size(root_tag: &str) -> anyhow::Result<MermaidSvgSize> {
-    if let Some(view_box) = svg_root_attr(root_tag, "viewBox") {
-        if let Some(size) = parse_view_box_size(&view_box) {
-            return Ok(size);
-        }
+    if let Some(view_box) = svg_root_attr(root_tag, "viewBox")
+        && let Some(size) = parse_view_box_size(&view_box)
+    {
+        return Ok(size);
     }
 
     let width = svg_root_attr(root_tag, "width")

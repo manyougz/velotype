@@ -39,19 +39,19 @@ fn main() {
         init_app_menu(cx);
 
         if input_paths.is_empty() {
-            if preferences.startup_open == config::StartupOpenPreference::LastOpenedFile {
-                if let Some(path) = config::first_existing_recent_markdown_file() {
-                    match std::fs::read_to_string(&path) {
-                        Ok(markdown) => {
-                            open_editor_window(cx, markdown, Some(path));
-                            return;
-                        }
-                        Err(err) => {
-                            eprintln!(
-                                "failed to read last opened file '{}': {err}",
-                                path.display()
-                            );
-                        }
+            if preferences.startup_open == config::StartupOpenPreference::LastOpenedFile
+                && let Some(path) = config::first_existing_recent_markdown_file()
+            {
+                match std::fs::read_to_string(&path) {
+                    Ok(markdown) => {
+                        open_editor_window(cx, markdown, Some(path));
+                        return;
+                    }
+                    Err(err) => {
+                        eprintln!(
+                            "failed to read last opened file '{}': {err}",
+                            path.display()
+                        );
                     }
                 }
             }

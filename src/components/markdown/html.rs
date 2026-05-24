@@ -773,28 +773,27 @@ fn parse_css_color(value: &str) -> Option<HtmlCssColor> {
             alpha: 0.0,
         }));
     }
-    if let Some(hex) = value.strip_prefix('#') {
-        if let Ok((red, green, blue, alpha)) = parse_hash_color(hex.as_bytes()) {
-            return Some(HtmlCssColor::Rgba(HtmlCssRgba {
-                red,
-                green,
-                blue,
-                alpha,
-            }));
-        }
+    if let Some(hex) = value.strip_prefix('#')
+        && let Ok((red, green, blue, alpha)) = parse_hash_color(hex.as_bytes())
+    {
+        return Some(HtmlCssColor::Rgba(HtmlCssRgba {
+            red,
+            green,
+            blue,
+            alpha,
+        }));
     }
     if value
         .chars()
         .all(|ch| ch.is_ascii_alphabetic() || ch == '-')
+        && let Ok((red, green, blue)) = parse_named_color(value)
     {
-        if let Ok((red, green, blue)) = parse_named_color(value) {
-            return Some(HtmlCssColor::Rgba(HtmlCssRgba {
-                red,
-                green,
-                blue,
-                alpha: 1.0,
-            }));
-        }
+        return Some(HtmlCssColor::Rgba(HtmlCssRgba {
+            red,
+            green,
+            blue,
+            alpha: 1.0,
+        }));
     }
     parse_rgb_color(value).or_else(|| parse_hsl_color(value))
 }
@@ -900,7 +899,7 @@ fn parse_alpha_component(value: &str) -> Option<f32> {
 fn parse_hue(value: &str) -> Option<f32> {
     let trimmed = value.trim().to_ascii_lowercase();
     if let Some(value) = trimmed.strip_suffix("deg") {
-        return Some(parse_css_number(value)?);
+        return parse_css_number(value);
     }
     if let Some(value) = trimmed.strip_suffix("turn") {
         return Some(parse_css_number(value)? * 360.0);
@@ -908,7 +907,7 @@ fn parse_hue(value: &str) -> Option<f32> {
     if let Some(value) = trimmed.strip_suffix("rad") {
         return Some(parse_css_number(value)? * 180.0 / std::f32::consts::PI);
     }
-    Some(parse_css_number(&trimmed)?)
+    parse_css_number(&trimmed)
 }
 
 fn hsl_to_rgb(hue_degrees: f32, saturation: f32, lightness: f32) -> (u8, u8, u8) {
