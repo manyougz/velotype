@@ -654,7 +654,7 @@ impl Element for CodeLanguageInputElement {
         window: &mut Window,
         cx: &mut App,
     ) -> (LayoutId, Self::RequestLayoutState) {
-        let theme = cx.global::<ThemeManager>().current().clone();
+        let theme = cx.global::<ThemeManager>().current_arc();
         let mut style = Style::default();
         style.size.width = relative(1.).into();
         style.size.height = px(theme.dimensions.code_language_input_height)
@@ -672,7 +672,7 @@ impl Element for CodeLanguageInputElement {
         window: &mut Window,
         cx: &mut App,
     ) -> Self::PrepaintState {
-        let theme = cx.global::<ThemeManager>().current().clone();
+        let theme = cx.global::<ThemeManager>().current_arc();
         let input = self.input.read(cx);
         let content = input.code_language_text().to_string();
         let is_placeholder = content.is_empty();
@@ -880,7 +880,7 @@ impl Element for BlockTextElement {
         window: &mut Window,
         cx: &mut App,
     ) -> (LayoutId, Self::RequestLayoutState) {
-        let theme = cx.global::<ThemeManager>().current().clone();
+        let theme = cx.global::<ThemeManager>().current_arc();
         let input = self.input.read(cx);
         let shared_text = input.shared_display_text();
         let is_placeholder = self.is_placeholder;
@@ -994,7 +994,7 @@ impl Element for BlockTextElement {
         window: &mut Window,
         cx: &mut App,
     ) -> Self::PrepaintState {
-        let theme = cx.global::<ThemeManager>().current().clone();
+        let theme = cx.global::<ThemeManager>().current_arc();
         let input = self.input.read(cx);
         let editor_selection_range = input
             .editor_selection_range

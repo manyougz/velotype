@@ -449,7 +449,7 @@ impl Editor {
             return;
         };
 
-        let strings = cx.global::<I18nManager>().strings().clone();
+        let strings = cx.global::<I18nManager>().strings_arc();
         let buttons = [
             strings.open_link_open.as_str(),
             strings.open_link_cancel.as_str(),
@@ -1362,8 +1362,8 @@ impl Render for Editor {
         let viewport_size = viewport_bounds.size;
         self.sync_scroll_viewport(viewport_size, cx);
 
-        let theme = cx.global::<ThemeManager>().current().clone();
-        let strings = cx.global::<I18nManager>().strings().clone();
+        let theme = cx.global::<ThemeManager>().current_arc();
+        let strings = cx.global::<I18nManager>().strings_arc();
         self.sync_window_title(window, &strings);
 
         let d = &theme.dimensions;

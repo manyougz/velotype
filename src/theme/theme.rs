@@ -5,6 +5,7 @@
 //! values.
 
 use std::path::Path;
+use std::sync::Arc;
 
 use anyhow::{Context as _, bail};
 use gpui::{App, FontWeight, Global, Hsla, hsla, rgba};
@@ -1437,7 +1438,7 @@ struct CustomThemeEntry {
 /// Registered via [`Global`] so every component can access it through
 /// `cx.global::<ThemeManager>().current()` without passing props.
 pub struct ThemeManager {
-    current: Theme,
+    current: Arc<Theme>,
     current_theme_id: String,
     custom_themes: Vec<CustomThemeEntry>,
     theme_catalog: Vec<ThemeCatalogEntry>,
@@ -1448,7 +1449,7 @@ impl Global for ThemeManager {}
 impl Default for ThemeManager {
     fn default() -> Self {
         Self {
-            current: Theme::default_theme(),
+            current: Arc::new(Theme::default_theme()),
             current_theme_id: BUILTIN_THEME_VELOTYPE_ID.into(),
             custom_themes: Vec::new(),
             theme_catalog: builtin_theme_catalog(),
@@ -1483,6 +1484,13 @@ impl ThemeManager {
         &self.current
     }
 
+    /// Returns an `Arc` clone of the currently active theme — O(1), no
+    /// per-field copy. Use this in hot render paths instead of cloning the
+    /// whole `Theme` struct (which has ~200 fields and a `String` name).
+    pub fn current_arc(&self) -> Arc<Theme> {
+        self.current.clone()
+    }
+
     /// Returns the identifier of the currently active theme.
     pub fn current_theme_id(&self) -> &str {
         &self.current_theme_id
@@ -1495,27 +1503,29 @@ impl ThemeManager {
 
     /// Loads and activates a theme from a file.
     pub fn load_file(&mut self, path: impl AsRef<Path>) -> anyhow::Result<()> {
-        self.current = Theme::from_file(path)?;
-        self.current_theme_id = self.theme_id_for_loaded_theme(&self.current);
+        let theme = Theme::from_file(path)?;
+        self.current_theme_id = self.theme_id_for_loaded_theme(&theme);
+        self.current = Arc::new(theme);
         Ok(())
     }
 
     /// Loads and activates a theme from JSON text.
     pub fn load_json(&mut self, json: &str) -> anyhow::Result<()> {
-        self.current = Theme::from_json(json)?;
-        self.current_theme_id = self.theme_id_for_loaded_theme(&self.current);
+        let theme = Theme::from_json(json)?;
+        self.current_theme_id = self.theme_id_for_loaded_theme(&theme);
+        self.current = Arc::new(theme);
         Ok(())
     }
 
     /// Replaces the active theme with a fully constructed value.
     pub fn set_theme(&mut self, theme: Theme) {
         self.current_theme_id = self.theme_id_for_loaded_theme(&theme);
-        self.current = theme;
+        self.current = Arc::new(theme);
     }
 
     /// Restores the built-in default theme.
     pub fn reset(&mut self) {
-        self.current = Theme::default_theme();
+        self.current = Arc::new(Theme::default_theme());
         self.current_theme_id = BUILTIN_THEME_VELOTYPE_ID.into();
     }
 
@@ -1523,12 +1533,12 @@ impl ThemeManager {
     pub fn set_theme_by_id(&mut self, theme_id: &str) -> bool {
         match theme_id {
             id if id == BUILTIN_THEME_VELOTYPE_ID => {
-                self.current = Theme::default_theme();
+                self.current = Arc::new(Theme::default_theme());
                 self.current_theme_id = BUILTIN_THEME_VELOTYPE_ID.into();
                 true
             }
             id if id == BUILTIN_THEME_VELOTYPE_LIGHT_ID => {
-                self.current = Theme::light_theme();
+                self.current = Arc::new(Theme::light_theme());
                 self.current_theme_id = BUILTIN_THEME_VELOTYPE_LIGHT_ID.into();
                 true
             }
@@ -1536,7 +1546,7 @@ impl ThemeManager {
                 let Some(entry) = self.custom_themes.iter().find(|entry| entry.id == id) else {
                     return false;
                 };
-                self.current = entry.theme.clone();
+                self.current = Arc::new(entry.theme.clone());
                 self.current_theme_id = entry.id.clone();
                 true
             }
