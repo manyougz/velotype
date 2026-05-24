@@ -1966,7 +1966,11 @@ impl Block {
     }
 
     /// Starts the cursor blink loop: a repeating background timer every 33ms
-    /// that calls `cx.notify()` to repaint the cursor.
+    /// that calls `cx.notify()` to repaint the cursor — but only while the
+    /// cursor opacity is actually animating. During the first 0.5 s after
+    /// each `cursor_blink_epoch` reset (which arrow keys / typing trigger),
+    /// opacity is pinned to 1.0, so a repaint would just re-do the full
+    /// projection rebuild for no visible change.
     ///
     /// The blink task is automatically cancelled when the block loses focus
     /// (the task handle is dropped in [`Block::render`]).
@@ -1978,8 +1982,10 @@ impl Block {
                     .timer(Duration::from_millis(33))
                     .await;
                 if this
-                    .update(cx, |_this: &mut Block, cx: &mut Context<Block>| {
-                        cx.notify();
+                    .update(cx, |this: &mut Block, cx: &mut Context<Block>| {
+                        if this.cursor_blink_epoch.elapsed().as_secs_f32() >= 0.5 {
+                            cx.notify();
+                        }
                     })
                     .is_err()
                 {
