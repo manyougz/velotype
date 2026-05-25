@@ -35,12 +35,16 @@ impl Global for AppMenuState {}
 
 fn window_title(file_path: Option<&Path>) -> SharedString {
     if let Some(path) = file_path {
+        // OsStr::to_string_lossy returns Cow<str>; calling .to_string() on
+        // it always allocates a fresh String, even for the valid-UTF-8 path
+        // (the common case). Borrow the Cow directly into format! — its
+        // Display impl writes the borrowed bytes straight into the output
+        // String, no intermediate allocation.
         format!(
             "Velotype - {}",
-            path.file_name().map_or_else(
-                || path.to_string_lossy().to_string(),
-                |name| name.to_string_lossy().to_string()
-            )
+            path.file_name()
+                .map(|name| name.to_string_lossy())
+                .unwrap_or_else(|| path.to_string_lossy())
         )
         .into()
     } else {
@@ -102,12 +106,12 @@ pub(crate) fn record_recent_file_from_editor(path: &Path, cx: &mut App) {
     record_recent_file_and_refresh(path, cx);
 }
 
-fn show_window_prompt(window: Option<AnyWindowHandle>, title: String, detail: &str, cx: &mut App) {
+fn show_window_prompt(window: Option<AnyWindowHandle>, title: &str, detail: &str, cx: &mut App) {
     if let Some(window) = window {
         let ok = cx.global::<I18nManager>().strings().info_dialog_ok.clone();
         let _ = window.update(cx, |_view, window, cx| {
             let buttons = [ok.as_str()];
-            let _ = window.prompt(PromptLevel::Critical, &title, Some(detail), &buttons, cx);
+            let _ = window.prompt(PromptLevel::Critical, title, Some(detail), &buttons, cx);
         });
     } else {
         eprintln!("{title}: {detail}");
@@ -164,7 +168,12 @@ fn open_recent_file_with_error_window(
         let detail = strings
             .recent_file_missing_message_template
             .replace("{path}", &path.to_string_lossy());
-        show_window_prompt(error_window, strings.recent_file_missing_title, &detail, cx);
+        show_window_prompt(
+            error_window,
+            &strings.recent_file_missing_title,
+            &detail,
+            cx,
+        );
         return;
     }
 
@@ -174,7 +183,7 @@ fn open_recent_file_with_error_window(
             .strings()
             .open_failed_title
             .clone();
-        show_window_prompt(error_window, title, &err.to_string(), cx);
+        show_window_prompt(error_window, &title, &err.to_string(), cx);
     }
 }
 
@@ -292,7 +301,7 @@ pub(crate) fn dispatch_menu_action(action: &dyn Action, cx: &mut App) {
                     .strings()
                     .preferences_save_failed_title
                     .clone();
-                show_window_prompt(cx.active_window(), title, &err.to_string(), cx);
+                show_window_prompt(cx.active_window(), &title, &err.to_string(), cx);
             }
         }
     } else if let Some(action) = action.as_any().downcast_ref::<SelectLanguage>() {
@@ -309,7 +318,7 @@ pub(crate) fn dispatch_menu_action(action: &dyn Action, cx: &mut App) {
                     .strings()
                     .preferences_save_failed_title
                     .clone();
-                show_window_prompt(cx.active_window(), title, &err.to_string(), cx);
+                show_window_prompt(cx.active_window(), &title, &err.to_string(), cx);
             }
         }
     } else if action.as_any().is::<CheckForUpdates>() {
@@ -444,7 +453,11 @@ fn build_menus(
         recent_files
             .iter()
             .map(|path| {
-                let label = path.to_string_lossy().to_string();
+                // into_owned on a Cow<str> reuses the Cow::Owned variant
+                // (no copy) when the OS string is valid UTF-8 — the common
+                // case — and only allocates for the lossy fallback. The
+                // previous .to_string_lossy().to_string() always allocated.
+                let label = path.to_string_lossy().into_owned();
                 MenuItem::action(label.clone(), OpenRecentFile { path: label })
             })
             .collect()
@@ -532,7 +545,7 @@ fn prompt_and_open_files_with_error_window(cx: &mut App, error_window: Option<An
                             .strings()
                             .open_failed_title
                             .clone();
-                        show_window_prompt(error_window, title, &err.to_string(), cx);
+                        show_window_prompt(error_window, &title, &err.to_string(), cx);
                     }
                 }
             });
@@ -545,7 +558,7 @@ fn prompt_and_open_files_with_error_window(cx: &mut App, error_window: Option<An
                     .strings()
                     .open_failed_title
                     .clone();
-                show_window_prompt(error_window, title, &detail, cx);
+                show_window_prompt(error_window, &title, &detail, cx);
             });
         }
         Ok(Ok(None)) | Err(_) => {}
@@ -592,7 +605,7 @@ fn prompt_and_import_language_config_with_error_window(
                             .strings()
                             .config_import_failed_title
                             .clone();
-                        show_window_prompt(error_window, title, &err.to_string(), cx);
+                        show_window_prompt(error_window, &title, &err.to_string(), cx);
                     }
                 }
             });
@@ -605,7 +618,7 @@ fn prompt_and_import_language_config_with_error_window(
                     .strings()
                     .config_import_failed_title
                     .clone();
-                show_window_prompt(error_window, title, &detail, cx);
+                show_window_prompt(error_window, &title, &detail, cx);
             });
         }
         Ok(Ok(None)) | Err(_) => {}
@@ -652,7 +665,7 @@ fn prompt_and_import_theme_config_with_error_window(
                             .strings()
                             .config_import_failed_title
                             .clone();
-                        show_window_prompt(error_window, title, &err.to_string(), cx);
+                        show_window_prompt(error_window, &title, &err.to_string(), cx);
                     }
                 }
             });
@@ -665,7 +678,7 @@ fn prompt_and_import_theme_config_with_error_window(
                     .strings()
                     .config_import_failed_title
                     .clone();
-                show_window_prompt(error_window, title, &detail, cx);
+                show_window_prompt(error_window, &title, &detail, cx);
             });
         }
         Ok(Ok(None)) | Err(_) => {}

@@ -338,7 +338,7 @@ pub(crate) fn parse_link_target(inner: &str) -> Option<(String, Option<String>)>
         if !is_escaped(inner, close_quote)
             && let Some(open_quote) = find_open_title_quote(inner, close_quote)
         {
-            let destination = inner[..open_quote.saturating_sub(1)].trim_end().to_string();
+            let destination = inner[..open_quote.saturating_sub(1)].trim_end();
             let title = inner[open_quote + 1..close_quote].to_string();
             if destination.is_empty() {
                 return None;
@@ -347,11 +347,11 @@ pub(crate) fn parse_link_target(inner: &str) -> Option<(String, Option<String>)>
         }
     }
 
-    Some((normalize_link_destination(inner.to_string()), None))
+    Some((normalize_link_destination(inner), None))
 }
 
-fn normalize_link_destination(destination: String) -> String {
-    let destination = unescape_ascii_punctuation(&destination);
+fn normalize_link_destination(destination: &str) -> String {
+    let destination = unescape_ascii_punctuation(destination);
     if destination.starts_with('<')
         && destination.ends_with('>')
         && is_supported_autolink_target(&destination[1..destination.len() - 1])
@@ -393,16 +393,12 @@ fn is_reference_definition_title_continuation(line: &str) -> bool {
 
 fn find_open_title_quote(input: &str, close_quote: usize) -> Option<usize> {
     let bytes = input.as_bytes();
-    for index in (0..close_quote).rev() {
-        if bytes[index] == b'"'
+    (0..close_quote).rev().find(|&index| {
+        bytes[index] == b'"'
             && !is_escaped(input, index)
             && index > 0
             && bytes[index - 1].is_ascii_whitespace()
-        {
-            return Some(index);
-        }
-    }
-    None
+    })
 }
 
 fn find_unescaped_char(input: &str, start: usize, target: u8) -> Option<usize> {

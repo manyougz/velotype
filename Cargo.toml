@@ -4,6 +4,25 @@ version = "0.4.9"
 edition = "2024"
 license = "Apache-2.0"
 
+[lints.clippy]
+# Allow stylistic patterns the project doesn't enforce. These mirror the
+# spirit of gpui-component's workspace lints — categorically silence
+# noise (range-loop indexing, identical-block flagging, helper-arg
+# counts, "future detached via let _") while keeping real correctness
+# lints active.
+if_same_then_else = "allow"
+needless_range_loop = "allow"
+too_many_arguments = "allow"
+let_underscore_future = "allow"
+manual_div_ceil = "allow"
+manual_checked_ops = "allow"
+manual_clamp = "allow"
+module_inception = "allow"
+obfuscated_if_else = "allow"
+question_mark = "allow"
+collapsible_if = "allow"
+collapsible_else_if = "allow"
+
 [features]
 default = ["code-highlight-core", "code-highlight-official", "code-highlight-config", "html-native"]
 code-highlight-core = ["dep:tree-sitter", "dep:tree-sitter-highlight"]
@@ -36,7 +55,7 @@ code-highlight-config = [
 [dependencies]
 anyhow = "1"
 uuid = "1.23"
-gpui = "0.2"
+gpui = { version = "0.2", features = ["runtime_shaders"] }
 unicode-segmentation = "1.13"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -77,9 +96,104 @@ tree-sitter-toml = { package = "adot-tree-sitter-toml", version = "0.1", optiona
 
 [dev-dependencies]
 gpui = { version = "0.2", features = ["test-support"] }
+criterion = { version = "0.5", default-features = false, features = ["cargo_bench_support", "html_reports"] }
+unicode-segmentation = "1.13"
+
+# Cargo auto-discovers each *.rs file in benches/ as its own bench binary.
+# Every Criterion bench needs `harness = false` so Cargo doesn't inject the
+# libtest harness on top of Criterion's own `main`. The shared helpers live
+# in `benches/common/mod.rs` (a subdirectory, so Cargo doesn't compile it as
+# yet another bench target).
+[[bench]]
+name = "theme_arc"
+harness = false
+
+[[bench]]
+name = "i18n_arc"
+harness = false
+
+[[bench]]
+name = "build_text_runs"
+harness = false
+
+[[bench]]
+name = "shared_display_text"
+harness = false
+
+[[bench]]
+name = "grapheme_cursor"
+harness = false
+
+[[bench]]
+name = "blink_throttle"
+harness = false
+
+[[bench]]
+name = "projection_cache"
+harness = false
+
+[[bench]]
+name = "render_loop"
+harness = false
+
+[[bench]]
+name = "html_attr_parser"
+harness = false
+
+[[bench]]
+name = "matches_sequence"
+harness = false
+
+[[bench]]
+name = "exporter_inline_walker"
+harness = false
+
+[[bench]]
+name = "borrowed_str_params"
+harness = false
+
+[[bench]]
+name = "spacing_infos_lazy"
+harness = false
+
+[[bench]]
+name = "menu_labels_dedup"
+harness = false
+
+[[bench]]
+name = "table_cells_collect"
+harness = false
+
+[[bench]]
+name = "os_string_lossy"
+harness = false
+
+[[bench]]
+name = "known_length_collect"
+harness = false
+
+[[bench]]
+name = "normalize_reference_label"
+harness = false
+
+[[bench]]
+name = "font_fallbacks_cache"
+harness = false
+
+# Stop Cargo from also linking the libtest bench harness against the bin —
+# without this, Criterion-specific CLI flags (`--save-baseline`, etc.) trip
+# the libtest stub before Criterion's `main` runs (rust-lang/rust#47241).
+[[bin]]
+name = "velotype"
+path = "src/main.rs"
+bench = false
 
 [build-dependencies]
 embed-resource = "3"
+
+[profile.bench]
+# Keep DWARF for samply / perf / cargo flamegraph; doesn't disable opts.
+debug = true
 
 [profile.release]
 codegen-units = 1
@@ -87,3 +201,48 @@ lto = true
 opt-level = "s"
 panic = "abort"
 strip = true
+
+# Keep our own code in dev (fast incremental compile, debuggable), but
+# build the heavy framework/IO crates at release-level optimization so debug
+# runs aren't dominated by their per-call overhead. The hot path on every
+# render goes through gpui/taffy/text-shaping; without these overrides each
+# block in a long document costs hundreds of µs/frame purely from O0 code.
+[profile.dev.package]
+gpui = { opt-level = 3 }
+gpui-macros = { opt-level = 3 }
+gpui_http_client = { opt-level = 3 }
+gpui_sum_tree = { opt-level = 3 }
+gpui_util = { opt-level = 3 }
+gpui_util_macros = { opt-level = 3 }
+gpui_collections = { opt-level = 3 }
+gpui_media = { opt-level = 3 }
+gpui_refineable = { opt-level = 3 }
+gpui_semantic_version = { opt-level = 3 }
+taffy = { opt-level = 3 }
+cosmic-text = { opt-level = 3 }
+rustybuzz = { opt-level = 3 }
+ttf-parser = { opt-level = 3 }
+resvg = { opt-level = 3 }
+usvg = { opt-level = 3 }
+zed-font-kit = { opt-level = 3 }
+unicode-segmentation = { opt-level = 3 }
+pulldown-cmark = { opt-level = 3 }
+tree-sitter = { opt-level = 3 }
+tree-sitter-highlight = { opt-level = 3 }
+ratex-layout = { opt-level = 3 }
+ratex-parser = { opt-level = 3 }
+ratex-svg = { opt-level = 3 }
+smol = { opt-level = 3 }
+async-task = { opt-level = 3 }
+parking_lot = { opt-level = 3 }
+parking_lot_core = { opt-level = 3 }
+hashbrown = { opt-level = 3 }
+smallvec = { opt-level = 3 }
+lyon = { opt-level = 3 }
+lyon_geom = { opt-level = 3 }
+lyon_path = { opt-level = 3 }
+lyon_tessellation = { opt-level = 3 }
+etagere = { opt-level = 3 }
+image = { opt-level = 3 }
+serde = { opt-level = 3 }
+serde_json = { opt-level = 3 }

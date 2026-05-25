@@ -826,16 +826,15 @@ impl Editor {
             mark_inserted_text,
             undo_kind,
         } = event
-        {
-            if self.replace_cross_block_selection_with_text(
+            && self.replace_cross_block_selection_with_text(
                 text,
                 selected_range_relative.clone(),
                 *mark_inserted_text,
                 *undo_kind,
                 cx,
-            ) {
-                return;
-            }
+            )
+        {
+            return;
         }
 
         if let Some(binding) = self.table_cell_binding(block.entity_id()) {
@@ -2661,7 +2660,7 @@ mod tests {
             assert_eq!(visible[0].entity.read(cx).kind(), BlockKind::Quote);
             assert_eq!(visible[0].entity.read(cx).display_text(), "");
             assert_eq!(visible[0].entity.read(cx).quote_depth, 1);
-            assert!(visible[0].entity.read(cx).children.len() > 0);
+            assert!(!visible[0].entity.read(cx).children.is_empty());
             assert_eq!(
                 visible[1].entity.read(cx).kind(),
                 BlockKind::BulletedListItem

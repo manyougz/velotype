@@ -37,8 +37,19 @@ impl Editor {
             });
         }
 
-        for binding in self.table_cells.values().cloned().collect::<Vec<_>>() {
-            binding.cell.update(cx, |block, _cx| {
+        // Collect only the cell Entity handles, not the whole TableCellBinding
+        // (3-field struct of Entity<Block> + TableCellPosition). The collect()
+        // exists to drop the &self borrow before the .update() loop; cloning
+        // an Entity is an Arc bump, so we pay that once per cell either way —
+        // skipping the surrounding struct clone makes the per-frame work
+        // proportional to "cell count" not "binding count + position copy".
+        let cells: Vec<Entity<Block>> = self
+            .table_cells
+            .values()
+            .map(|binding| binding.cell.clone())
+            .collect();
+        for cell in cells {
+            cell.update(cx, |block, _cx| {
                 changed |= block.end_pointer_selection_session();
             });
         }

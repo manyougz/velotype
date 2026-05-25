@@ -158,7 +158,9 @@ fn rewrite_inline_math_line(line: &str, theme: &Theme) -> String {
             continue;
         }
 
-        let ch = line[index..].chars().next().unwrap();
+        let Some(ch) = line[index..].chars().next() else {
+            break;
+        };
         output.push(ch);
         index += ch.len_utf8();
     }

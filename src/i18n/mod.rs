@@ -4,6 +4,7 @@
 //! manager used by menus and editor UI. Visual styling remains in `theme`.
 
 use std::path::Path;
+use std::sync::Arc;
 
 use anyhow::{Context as _, bail};
 use gpui::{App, Global};
@@ -1379,7 +1380,7 @@ fn language_id_for_locale(locale: &str) -> Option<&'static str> {
 /// Global singleton that holds the current UI language strings.
 pub struct I18nManager {
     current_language_id: String,
-    strings: I18nStrings,
+    strings: Arc<I18nStrings>,
     custom_languages: Vec<I18nLanguagePack>,
     language_catalog: Vec<LanguageCatalogEntry>,
 }
@@ -1405,10 +1406,10 @@ impl I18nManager {
     /// Installs a specific UI language into GPUI's global state.
     pub fn init_with_language_id(cx: &mut App, language_id: &str) {
         let mut manager = Self::new_with_language_id(BUILTIN_LANGUAGE_EN_US_ID);
-        if let Ok(dirs) = VelotypeConfigDirs::from_system() {
-            if let Err(err) = manager.load_custom_languages_from_dirs(&dirs) {
-                eprintln!("failed to load custom languages: {err}");
-            }
+        if let Ok(dirs) = VelotypeConfigDirs::from_system()
+            && let Err(err) = manager.load_custom_languages_from_dirs(&dirs)
+        {
+            eprintln!("failed to load custom languages: {err}");
         }
         let _ = manager.set_language_by_id(language_id);
         cx.set_global(manager);
@@ -1423,8 +1424,10 @@ impl I18nManager {
         };
         Self {
             current_language_id: current_language_id.into(),
-            strings: I18nStrings::for_language_id(current_language_id)
-                .unwrap_or_else(I18nStrings::en_us),
+            strings: Arc::new(
+                I18nStrings::for_language_id(current_language_id)
+                    .unwrap_or_else(I18nStrings::en_us),
+            ),
             custom_languages: Vec::new(),
             language_catalog: builtin_language_catalog(),
         }
@@ -1438,6 +1441,13 @@ impl I18nManager {
     /// Returns the strings for the currently active UI language.
     pub fn strings(&self) -> &I18nStrings {
         &self.strings
+    }
+
+    /// Returns an `Arc` clone of the currently active strings — O(1), no
+    /// per-field copy. Use this in hot render paths instead of cloning the
+    /// whole `I18nStrings` struct (137 `String` fields).
+    pub fn strings_arc(&self) -> Arc<I18nStrings> {
+        self.strings.clone()
     }
 
     /// Returns all built-in and imported UI languages exposed in the menu.
@@ -1460,7 +1470,7 @@ impl I18nManager {
         };
         let changed = self.current_language_id != language_id;
         self.current_language_id = language_id.into();
-        self.strings = strings;
+        self.strings = Arc::new(strings);
         changed
     }
 

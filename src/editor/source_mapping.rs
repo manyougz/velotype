@@ -663,7 +663,7 @@ impl Editor {
             let (is_empty_root, current_is_list_item) = {
                 let block_ref = block.read(cx);
                 (
-                    Self::is_empty_root_paragraph(&block_ref),
+                    Self::is_empty_root_paragraph(block_ref),
                     block_ref.kind().is_list_item(),
                 )
             };

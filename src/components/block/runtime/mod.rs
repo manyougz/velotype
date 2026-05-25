@@ -136,6 +136,15 @@ pub struct Block {
     /// Cached projection used to show editable inline delimiters for the
     /// currently touched inline span(s).
     pub(crate) projection: Option<ExpandedInlineProjection>,
+    /// Inputs that produced the current `projection`. When the next
+    /// `sync_inline_projection_for_focus` computes the same inputs, the
+    /// rebuild is skipped — saves a full O(fragments + text) walk per
+    /// render frame (cursor blink + every arrow keypress).
+    projection_cache_key: Option<(bool, Range<usize>, Option<Range<usize>>)>,
+    /// Display text held as a SharedString so renders can clone an Arc
+    /// instead of re-allocating per frame. Refreshed in `sync_render_cache`,
+    /// `rebuild_inline_projection`, and `clear_inline_projection`.
+    cached_display_text: SharedString,
     inline_math_source_edit_original: Option<InlineTextTree>,
     collapsed_caret_affinity: CollapsedCaretAffinity,
     /// When true, block-level shortcuts and inline formatting are
@@ -232,6 +241,8 @@ impl Block {
             vertical_motion_x: None,
             cursor_blink_task: None,
             projection: None,
+            projection_cache_key: None,
+            cached_display_text: SharedString::default(),
             inline_math_source_edit_original: None,
             collapsed_caret_affinity: CollapsedCaretAffinity::Default,
             edit_mode,
@@ -265,6 +276,7 @@ impl Block {
             quote_reparse_requested: false,
         };
         block.sync_code_highlight();
+        block.refresh_cached_display_text();
         block
     }
 
@@ -344,6 +356,21 @@ impl Block {
         self.current_cache().visible_text()
     }
 
+    /// Cheap clone of the current display text as a `SharedString` (Arc bump)
+    /// — avoids a fresh String allocation per render. The cached value is
+    /// refreshed by [`Self::refresh_cached_display_text`] whenever the
+    /// underlying text might have changed.
+    pub(crate) fn shared_display_text(&self) -> SharedString {
+        self.cached_display_text.clone()
+    }
+
+    fn refresh_cached_display_text(&mut self) {
+        let current = self.current_cache().visible_text();
+        if self.cached_display_text.as_ref() != current {
+            self.cached_display_text = SharedString::from(current.to_string());
+        }
+    }
+
     pub(crate) fn inline_tree_from_markdown_with_context(&self, markdown: &str) -> InlineTextTree {
         InlineTextTree::from_markdown_with_link_references(
             markdown,
@@ -355,10 +382,12 @@ impl Block {
         self.current_cache().spans()
     }
 
+    #[allow(dead_code)]
     pub fn inline_style_at(&self, offset: usize) -> InlineStyle {
         self.current_cache().style_at(offset)
     }
 
+    #[allow(dead_code)]
     pub(crate) fn inline_html_style_at(
         &self,
         offset: usize,
@@ -366,6 +395,7 @@ impl Block {
         self.current_cache().html_style_at(offset)
     }
 
+    #[allow(dead_code)]
     pub(crate) fn inline_link_at(&self, offset: usize) -> Option<&str> {
         self.current_cache().link_at(offset)
     }
@@ -375,6 +405,7 @@ impl Block {
         self.current_cache().link_hit_at(offset)
     }
 
+    #[allow(dead_code)]
     pub(crate) fn inline_footnote_hit_at(&self, offset: usize) -> Option<&InlineFootnoteHit> {
         self.current_cache().footnote_hit_at(offset)
     }
@@ -560,6 +591,7 @@ impl Block {
         self.sync_code_highlight();
         self.sync_image_runtime();
         self.projection = None;
+        self.projection_cache_key = None;
         if keep_projection {
             self.rebuild_inline_projection(clean_selected.clone(), clean_marked.clone());
             if clean_selected.is_empty() {
@@ -578,6 +610,7 @@ impl Block {
             self.marked_range = clean_marked;
             self.collapsed_caret_affinity = CollapsedCaretAffinity::Default;
         }
+        self.refresh_cached_display_text();
     }
 
     fn sync_link_reference_definitions(
@@ -780,7 +813,8 @@ impl Block {
     }
 
     pub(crate) fn sync_inline_projection_for_focus(&mut self, focused: bool) {
-        if !focused || !self.edit_mode.supports_inline_projection() {
+        let supports_projection = self.edit_mode.supports_inline_projection();
+        if !focused || !supports_projection {
             self.clear_inline_projection();
             return;
         }
@@ -806,6 +840,15 @@ impl Block {
             .marked_range
             .clone()
             .map(|range| self.current_to_clean_range(range));
+        if self.projection_cache_key.as_ref()
+            == Some(&(
+                supports_projection,
+                clean_selected.clone(),
+                clean_marked.clone(),
+            ))
+        {
+            return;
+        }
         let (clean_anchor, clean_focus) = self.clean_selection_anchor_focus();
         let collapsed_affinity = self.current_collapsed_caret_affinity();
         self.rebuild_inline_projection(clean_selected.clone(), clean_marked.clone());
@@ -843,6 +886,7 @@ impl Block {
 
     pub(crate) fn clear_inline_projection(&mut self) {
         if self.projection.is_none() {
+            self.projection_cache_key = None;
             return;
         }
 
@@ -852,9 +896,11 @@ impl Block {
             .map(|range| self.current_to_clean_range(range));
         let (clean_anchor, clean_focus) = self.clean_selection_anchor_focus();
         self.projection = None;
+        self.projection_cache_key = None;
         self.set_selection_from_anchor_focus(clean_anchor, clean_focus);
         self.marked_range = clean_marked;
         self.collapsed_caret_affinity = CollapsedCaretAffinity::Default;
+        self.refresh_cached_display_text();
     }
 
     fn rebuild_inline_projection(
@@ -862,11 +908,17 @@ impl Block {
         clean_selected: Range<usize>,
         clean_marked: Option<Range<usize>>,
     ) {
+        self.projection_cache_key = Some((
+            self.edit_mode.supports_inline_projection(),
+            clean_selected.clone(),
+            clean_marked.clone(),
+        ));
         self.projection = ExpandedInlineProjection::build(
             &self.record.title.fragments,
             clean_selected,
             clean_marked,
         );
+        self.refresh_cached_display_text();
     }
 
     fn projection_segments(&self) -> &[ExpandedInlineSegment] {
@@ -1946,7 +1998,11 @@ impl Block {
     }
 
     /// Starts the cursor blink loop: a repeating background timer every 33ms
-    /// that calls `cx.notify()` to repaint the cursor.
+    /// that calls `cx.notify()` to repaint the cursor — but only while the
+    /// cursor opacity is actually animating. During the first 0.5 s after
+    /// each `cursor_blink_epoch` reset (which arrow keys / typing trigger),
+    /// opacity is pinned to 1.0, so a repaint would just re-do the full
+    /// projection rebuild for no visible change.
     ///
     /// The blink task is automatically cancelled when the block loses focus
     /// (the task handle is dropped in [`Block::render`]).
@@ -1958,8 +2014,10 @@ impl Block {
                     .timer(Duration::from_millis(33))
                     .await;
                 if this
-                    .update(cx, |_this: &mut Block, cx: &mut Context<Block>| {
-                        cx.notify();
+                    .update(cx, |this: &mut Block, cx: &mut Context<Block>| {
+                        if this.cursor_blink_epoch.elapsed().as_secs_f32() >= 0.5 {
+                            cx.notify();
+                        }
                     })
                     .is_err()
                 {
@@ -2055,22 +2113,19 @@ impl Block {
     }
 
     pub fn previous_boundary(&self, offset: usize) -> usize {
-        let prev = self
-            .display_text()
-            .grapheme_indices(true)
-            .rev()
-            .find_map(|(idx, _)| (idx < offset).then_some(idx))
-            .unwrap_or(0);
-        prev
+        let text = self.display_text();
+        let mut cursor = GraphemeCursor::new(offset.min(text.len()), text.len(), true);
+        cursor.prev_boundary(text, 0).ok().flatten().unwrap_or(0)
     }
 
     pub fn next_boundary(&self, offset: usize) -> usize {
-        let next = self
-            .display_text()
-            .grapheme_indices(true)
-            .find_map(|(idx, _)| (idx > offset).then_some(idx))
-            .unwrap_or(self.display_text().len());
-        next
+        let text = self.display_text();
+        let mut cursor = GraphemeCursor::new(offset.min(text.len()), text.len(), true);
+        cursor
+            .next_boundary(text, 0)
+            .ok()
+            .flatten()
+            .unwrap_or(text.len())
     }
 
     /// Reverse of `display_offset`: maps an expanded display offset

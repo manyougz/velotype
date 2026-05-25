@@ -611,7 +611,7 @@ impl PreferencesWindow {
             .on_click(cx.listener(on_click))
     }
 
-    fn labeled_row(&self, label: String, control: impl IntoElement, theme: &Theme) -> Div {
+    fn labeled_row(&self, label: &str, control: impl IntoElement, theme: &Theme) -> Div {
         let c = &theme.colors;
         let t = &theme.typography;
         div()
@@ -625,7 +625,7 @@ impl PreferencesWindow {
                     .text_size(px(t.dialog_body_size))
                     .font_weight(t.dialog_button_weight.to_font_weight())
                     .text_color(c.dialog_title)
-                    .child(label),
+                    .child(SharedString::from(label.to_string())),
             )
             .child(control)
     }
@@ -682,7 +682,7 @@ impl PreferencesWindow {
                     cx,
                 ));
         }
-        self.labeled_row(strings.preferences_startup_option.clone(), dropdown, theme)
+        self.labeled_row(&strings.preferences_startup_option, dropdown, theme)
     }
 
     fn render_theme_page(
@@ -719,7 +719,7 @@ impl PreferencesWindow {
                 ));
             }
         }
-        self.labeled_row(strings.preferences_local_theme.clone(), dropdown, theme)
+        self.labeled_row(&strings.preferences_local_theme, dropdown, theme)
     }
 
     fn shortcut_category_label(
@@ -890,7 +890,7 @@ impl PreferencesWindow {
         cx.notify();
     }
 
-    fn shortcut_chip(label: String, theme: &Theme) -> impl IntoElement {
+    fn shortcut_chip(label: &str, theme: &Theme) -> impl IntoElement {
         let c = &theme.colors;
         let d = &theme.dimensions;
         let t = &theme.typography;
@@ -907,7 +907,7 @@ impl PreferencesWindow {
             .bg(c.code_bg)
             .text_size(px((t.dialog_body_size - 1.0).max(10.0)))
             .text_color(c.code_text)
-            .child(label)
+            .child(SharedString::from(label.to_string()))
     }
 
     fn shortcut_action_button(
@@ -958,12 +958,12 @@ impl PreferencesWindow {
         let mut chips = div().flex().flex_wrap().gap(px(6.0));
         if is_recording {
             chips = chips.child(Self::shortcut_chip(
-                strings.preferences_shortcut_recording.clone(),
+                &strings.preferences_shortcut_recording,
                 theme,
             ));
         } else {
             for key in keys {
-                chips = chips.child(Self::shortcut_chip(key, theme));
+                chips = chips.child(Self::shortcut_chip(&key, theme));
             }
         }
 

@@ -740,12 +740,10 @@ fn collect_fenced_code_block(
         ));
     }
 
-    let mut code_lines = Vec::new();
-    let mut content_index = start + 1;
-    while content_index < closing_index {
-        code_lines.push(lines[content_index].clone());
-        content_index += 1;
-    }
+    // Length is known: closing_index - (start + 1). slice.to_vec()
+    // allocates the exact capacity in one shot, vs Vec::new() + while-push
+    // which doubles the buffer 2-3 times for any non-trivial code block.
+    let code_lines = lines[start + 1..closing_index].to_vec();
 
     Some((
         build_code_block(cx, fence.language.clone(), code_lines.join("\n")),
@@ -835,7 +833,7 @@ fn starts_with_standalone_image_child_paragraph(lines: &[String]) -> bool {
         return false;
     }
 
-    lines.get(1).map_or(true, |next| {
+    lines.get(1).is_none_or(|next| {
         next.trim().is_empty()
             || parse_list_marker(next).is_some()
             || is_quote_start(next)
@@ -1634,16 +1632,15 @@ impl Editor {
                         continue;
                     }
 
-                    if parse_opening_fence(&anchor_dedented[0]).is_some() {
-                        if let Some((code_block, consumed)) =
+                    if parse_opening_fence(&anchor_dedented[0]).is_some()
+                        && let Some((code_block, consumed)) =
                             collect_fenced_code_block(cx, &anchor_dedented, 0)
-                        {
-                            attach_child_blocks(&block, vec![code_block], cx);
-                            body_index += consumed;
-                            pending_blank_lines = 0;
-                            saw_child = true;
-                            continue;
-                        }
+                    {
+                        attach_child_blocks(&block, vec![code_block], cx);
+                        body_index += consumed;
+                        pending_blank_lines = 0;
+                        saw_child = true;
+                        continue;
                     }
 
                     if is_root_table_candidate_line(&anchor_dedented[0]) {

@@ -61,8 +61,9 @@ fn build_text_runs(
     code_bg: Hsla,
     show_inline_code_backgrounds: bool,
 ) -> Vec<TextRun> {
+    let spans = input.inline_spans();
     let mut boundaries = vec![0, display_text.len()];
-    for span in input.inline_spans() {
+    for span in spans {
         boundaries.push(span.range.start);
         boundaries.push(span.range.end);
     }
@@ -73,8 +74,9 @@ fn build_text_runs(
     boundaries.sort_unstable();
     boundaries.dedup();
 
-    let marked_range = input.marked_range.clone();
+    let marked_range = input.marked_range.as_ref();
     let mut runs = Vec::new();
+    let mut span_idx = 0usize;
     for boundary_pair in boundaries.windows(2) {
         let start = boundary_pair[0];
         let end = boundary_pair[1];
@@ -82,12 +84,20 @@ fn build_text_runs(
             continue;
         }
 
-        let inline_style = input.inline_style_at(start);
-        let html_style = input.inline_html_style_at(start);
-        let is_link = input.inline_link_at(start).is_some();
-        let is_footnote = input.inline_footnote_hit_at(start).is_some();
+        // Spans are stored in ascending order and boundaries are sorted, so
+        // we can advance a single index instead of re-scanning per boundary.
+        while span_idx < spans.len() && spans[span_idx].range.end <= start {
+            span_idx += 1;
+        }
+        let active_span = spans
+            .get(span_idx)
+            .filter(|span| span.range.start <= start && start < span.range.end);
+
+        let inline_style = active_span.map(|s| s.style).unwrap_or_default();
+        let html_style = active_span.and_then(|s| s.html_style);
+        let is_link = active_span.map(|s| s.link.is_some()).unwrap_or(false);
+        let is_footnote = active_span.map(|s| s.footnote.is_some()).unwrap_or(false);
         let is_marked = marked_range
-            .as_ref()
             .map(|range| start < range.end && range.start < end)
             .unwrap_or(false);
 
@@ -168,12 +178,14 @@ fn build_code_text_runs(
     underline_thickness: Pixels,
     colors: &ThemeColors,
 ) -> Vec<TextRun> {
+    let highlight_spans = input
+        .code_highlight_result()
+        .map(|r| r.spans.as_slice())
+        .unwrap_or(&[]);
     let mut boundaries = vec![0, display_text.len()];
-    if let Some(highlight_result) = input.code_highlight_result() {
-        for span in &highlight_result.spans {
-            boundaries.push(span.range.start);
-            boundaries.push(span.range.end);
-        }
+    for span in highlight_spans {
+        boundaries.push(span.range.start);
+        boundaries.push(span.range.end);
     }
     if let Some(marked_range) = input.marked_range.as_ref() {
         boundaries.push(marked_range.start);
@@ -182,8 +194,9 @@ fn build_code_text_runs(
     boundaries.sort_unstable();
     boundaries.dedup();
 
-    let marked_range = input.marked_range.clone();
+    let marked_range = input.marked_range.as_ref();
     let mut runs = Vec::new();
+    let mut span_idx = 0usize;
     for boundary_pair in boundaries.windows(2) {
         let start = boundary_pair[0];
         let end = boundary_pair[1];
@@ -192,13 +205,15 @@ fn build_code_text_runs(
         }
 
         let is_marked = marked_range
-            .as_ref()
             .map(|range| start < range.end && range.start < end)
             .unwrap_or(false);
-        let run_color = input
-            .code_highlight_result()
-            .and_then(|result| result.class_at(start))
-            .map(|class| code_highlight_color(colors, class))
+        while span_idx < highlight_spans.len() && highlight_spans[span_idx].range.end <= start {
+            span_idx += 1;
+        }
+        let run_color = highlight_spans
+            .get(span_idx)
+            .filter(|span| span.range.start <= start && start < span.range.end)
+            .map(|span| code_highlight_color(colors, span.class))
             .unwrap_or(base_run.color);
 
         runs.push(TextRun {
@@ -639,7 +654,7 @@ impl Element for CodeLanguageInputElement {
         window: &mut Window,
         cx: &mut App,
     ) -> (LayoutId, Self::RequestLayoutState) {
-        let theme = cx.global::<ThemeManager>().current().clone();
+        let theme = cx.global::<ThemeManager>().current_arc();
         let mut style = Style::default();
         style.size.width = relative(1.).into();
         style.size.height = px(theme.dimensions.code_language_input_height)
@@ -657,7 +672,7 @@ impl Element for CodeLanguageInputElement {
         window: &mut Window,
         cx: &mut App,
     ) -> Self::PrepaintState {
-        let theme = cx.global::<ThemeManager>().current().clone();
+        let theme = cx.global::<ThemeManager>().current_arc();
         let input = self.input.read(cx);
         let content = input.code_language_text().to_string();
         let is_placeholder = content.is_empty();
@@ -865,13 +880,13 @@ impl Element for BlockTextElement {
         window: &mut Window,
         cx: &mut App,
     ) -> (LayoutId, Self::RequestLayoutState) {
-        let theme = cx.global::<ThemeManager>().current().clone();
+        let theme = cx.global::<ThemeManager>().current_arc();
         let input = self.input.read(cx);
-        let content = input.display_text().to_string();
+        let shared_text = input.shared_display_text();
         let is_placeholder = self.is_placeholder;
         let show_inline_code_backgrounds = !input.is_source_raw_mode();
         let show_source_line_numbers = input.show_source_line_numbers();
-        let source_line_count = source_line_count(&content);
+        let source_line_count = source_line_count(shared_text.as_ref());
         let style = window.text_style();
 
         let (display_text, text_color): (SharedString, Hsla) = if is_placeholder {
@@ -883,7 +898,7 @@ impl Element for BlockTextElement {
                     .unwrap_or(theme.colors.text_placeholder),
             )
         } else {
-            (content.into(), style.color)
+            (shared_text, style.color)
         };
 
         let run = TextRun {
@@ -898,7 +913,7 @@ impl Element for BlockTextElement {
         let runs: Vec<TextRun> = if !is_placeholder {
             if input.kind().is_code_block() {
                 build_code_text_runs(
-                    &input,
+                    input,
                     &display_text,
                     &run,
                     px(theme.dimensions.underline_thickness),
@@ -906,7 +921,7 @@ impl Element for BlockTextElement {
                 )
             } else {
                 build_text_runs(
-                    &input,
+                    input,
                     &display_text,
                     &run,
                     px(theme.dimensions.underline_thickness),
@@ -979,7 +994,7 @@ impl Element for BlockTextElement {
         window: &mut Window,
         cx: &mut App,
     ) -> Self::PrepaintState {
-        let theme = cx.global::<ThemeManager>().current().clone();
+        let theme = cx.global::<ThemeManager>().current_arc();
         let input = self.input.read(cx);
         let editor_selection_range = input
             .editor_selection_range
@@ -1153,7 +1168,7 @@ impl Element for BlockTextElement {
                 && !input.is_source_raw_mode()
                 && prepaint.hitbox.is_hovered(window)
                 && link_at_position(
-                    &input,
+                    input,
                     &prepaint.lines,
                     text_bounds,
                     prepaint.line_height,
@@ -1222,10 +1237,10 @@ impl Element for BlockTextElement {
             y_offset += wrapped_line_height(line, line_height);
         }
 
-        if focus_handle.is_focused(window) {
-            if let Some(cursor) = prepaint.cursor.take() {
-                window.paint_quad(cursor);
-            }
+        if focus_handle.is_focused(window)
+            && let Some(cursor) = prepaint.cursor.take()
+        {
+            window.paint_quad(cursor);
         }
 
         self.input.update(cx, |input, _cx| {

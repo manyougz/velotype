@@ -385,6 +385,7 @@ impl InlineRenderCache {
             .unwrap_or_default()
     }
 
+    #[allow(dead_code)]
     pub fn html_style_at(&self, offset: usize) -> Option<HtmlInlineStyle> {
         self.spans
             .iter()
@@ -392,6 +393,7 @@ impl InlineRenderCache {
             .and_then(|span| span.html_style)
     }
 
+    #[allow(dead_code)]
     pub fn link_at(&self, offset: usize) -> Option<&str> {
         self.link_hit_at(offset).map(|hit| hit.open_target.as_str())
     }
@@ -403,6 +405,7 @@ impl InlineRenderCache {
             .and_then(|span| span.link.as_ref())
     }
 
+    #[allow(dead_code)]
     pub fn footnote_hit_at(&self, offset: usize) -> Option<&InlineFootnoteHit> {
         self.spans
             .iter()
@@ -2557,15 +2560,10 @@ fn is_single_tilde_delimiter(tokens: &[CharToken], index: usize) -> bool {
 }
 
 fn matches_sequence(tokens: &[CharToken], index: usize, sequence: &str) -> bool {
-    let chars = sequence.chars().collect::<Vec<_>>();
-    if index + chars.len() > tokens.len() {
-        return false;
-    }
-
-    chars
-        .iter()
+    sequence
+        .chars()
         .enumerate()
-        .all(|(offset, ch)| tokens[index + offset].ch == *ch)
+        .all(|(offset, ch)| tokens.get(index + offset).is_some_and(|t| t.ch == ch))
 }
 
 fn escaped_sequence_token_len(tokens: &[CharToken], index: usize) -> Option<usize> {

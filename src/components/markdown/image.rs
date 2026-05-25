@@ -393,12 +393,21 @@ pub(crate) fn parse_image_reference_definitions(markdown: &str) -> ImageReferenc
 }
 
 pub(crate) fn normalize_reference_label(label: &str) -> Option<String> {
-    let normalized = label.split_whitespace().collect::<Vec<_>>().join(" ");
-    let trimmed = normalized.trim();
-    if trimmed.is_empty() {
+    // Single-pass concat: walk the words once, push to the output with a
+    // leading separator on all but the first. Avoids the intermediate
+    // Vec<&str> allocation that split_whitespace().collect::<Vec<_>>()
+    // produces before .join("") copies again.
+    let mut normalized = String::with_capacity(label.len());
+    for word in label.split_whitespace() {
+        if !normalized.is_empty() {
+            normalized.push(' ');
+        }
+        normalized.push_str(word);
+    }
+    if normalized.is_empty() {
         None
     } else {
-        Some(trimmed.to_lowercase())
+        Some(normalized.to_lowercase())
     }
 }
 
@@ -598,7 +607,7 @@ fn parse_image_target(inner: &str) -> Option<(String, Option<String>)> {
         if !is_escaped(inner, close_quote)
             && let Some(open_quote) = find_open_title_quote(inner, close_quote)
         {
-            let src = inner[..open_quote.saturating_sub(1)].trim_end().to_string();
+            let src = inner[..open_quote.saturating_sub(1)].trim_end();
             let title = inner[open_quote + 1..close_quote].to_string();
             if src.is_empty() {
                 return None;
@@ -607,7 +616,7 @@ fn parse_image_target(inner: &str) -> Option<(String, Option<String>)> {
         }
     }
 
-    Some((normalize_image_source(inner.to_string()), None))
+    Some((normalize_image_source(inner), None))
 }
 
 fn is_reference_definition_title_continuation(line: &str) -> bool {
@@ -628,20 +637,16 @@ fn is_reference_definition_title_continuation(line: &str) -> bool {
 
 fn find_open_title_quote(input: &str, close_quote: usize) -> Option<usize> {
     let bytes = input.as_bytes();
-    for index in (0..close_quote).rev() {
-        if bytes[index] == b'"'
+    (0..close_quote).rev().find(|&index| {
+        bytes[index] == b'"'
             && !is_escaped(input, index)
             && index > 0
             && bytes[index - 1].is_ascii_whitespace()
-        {
-            return Some(index);
-        }
-    }
-    None
+    })
 }
 
-fn normalize_image_source(source: String) -> String {
-    let source = unescape_ascii_punctuation(&source);
+fn normalize_image_source(source: &str) -> String {
+    let source = unescape_ascii_punctuation(source);
     if source.starts_with('<')
         && source.ends_with('>')
         && Uri::from_str(&source[1..source.len() - 1]).is_ok()

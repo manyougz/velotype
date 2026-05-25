@@ -1323,7 +1323,7 @@ impl Block {
             title: attr_value(node, "title").map(str::to_string),
             resolved_source: resolve_image_source(src, None),
         };
-        let strings = cx.global::<I18nManager>().strings().clone();
+        let strings = cx.global::<I18nManager>().strings_arc();
         let content = self.render_image_content(
             &runtime,
             Length::Definite(relative(1.0)),
@@ -1493,7 +1493,7 @@ impl Block {
             .pr(px(padding_right))
             .cursor(cursor_style);
 
-        let base = if source_mode {
+        if source_mode {
             base
         } else {
             base.on_action(cx.listener(Self::on_indent_block))
@@ -1502,9 +1502,7 @@ impl Block {
                 .on_action(cx.listener(Self::on_italic_selection))
                 .on_action(cx.listener(Self::on_underline_selection))
                 .on_action(cx.listener(Self::on_code_selection))
-        };
-
-        base
+        }
     }
 }
 
@@ -1549,8 +1547,8 @@ impl Render for Block {
         let is_placeholder =
             focused && self.display_text().is_empty() && self.marked_range.is_none();
 
-        let theme = cx.global::<ThemeManager>().current().clone();
-        let strings = cx.global::<I18nManager>().strings().clone();
+        let theme = cx.global::<ThemeManager>().current_arc();
+        let strings = cx.global::<I18nManager>().strings_arc();
         let c = &theme.colors;
         let d = &theme.dimensions;
         let t = &theme.typography;
