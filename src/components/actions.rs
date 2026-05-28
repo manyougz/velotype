@@ -54,6 +54,7 @@ actions!(
         ShowAbout,
         DismissTransientUi,
         ToggleViewMode,
+        ToggleWorkspace,
     ]
 );
 
@@ -129,6 +130,7 @@ pub(crate) enum ShortcutCommand {
     QuitApplication,
     DismissTransientUi,
     ToggleViewMode,
+    ToggleWorkspace,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -367,6 +369,13 @@ const SHORTCUT_DEFINITIONS: &[ShortcutDefinition] = &[
         default_keys: &["ctrl-tab", "cmd-tab"],
         context: None,
     },
+    ShortcutDefinition {
+        command: ShortcutCommand::ToggleWorkspace,
+        id: "toggle_workspace",
+        category: ShortcutCategory::Navigation,
+        default_keys: &["ctrl-w", "cmd-w"],
+        context: None,
+    },
 ];
 
 pub(crate) fn shortcut_definitions() -> &'static [ShortcutDefinition] {
@@ -534,6 +543,7 @@ fn key_binding_for(
         ShortcutCommand::QuitApplication => KeyBinding::new(key, QuitApplication, context),
         ShortcutCommand::DismissTransientUi => KeyBinding::new(key, DismissTransientUi, context),
         ShortcutCommand::ToggleViewMode => KeyBinding::new(key, ToggleViewMode, context),
+        ShortcutCommand::ToggleWorkspace => KeyBinding::new(key, ToggleWorkspace, context),
     }
 }
 
@@ -590,6 +600,14 @@ mod tests {
         assert_eq!(
             resolved_shortcut_keys(&BTreeMap::new(), ShortcutCommand::ToggleViewMode),
             vec!["ctrl-tab".to_string(), "cmd-tab".to_string()]
+        );
+    }
+
+    #[test]
+    fn toggle_workspace_has_default_shortcuts() {
+        assert_eq!(
+            resolved_shortcut_keys(&BTreeMap::new(), ShortcutCommand::ToggleWorkspace),
+            vec!["ctrl-w".to_string(), "cmd-w".to_string()]
         );
     }
 

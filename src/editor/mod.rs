@@ -41,6 +41,9 @@ mod tests;
 mod tree;
 mod update;
 mod window_state;
+mod workspace;
+
+use self::workspace::WorkspaceState;
 
 /// Link navigation request deferred until a `Window` is available.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -89,6 +92,7 @@ pub struct Editor {
     info_dialog: Option<InfoDialogKind>,
     /// True while an online update check is running in the background.
     update_check_in_progress: bool,
+    workspace: WorkspaceState,
     context_menu: Option<ContextMenuState>,
     table_insert_dialog: Option<TableInsertDialogState>,
     context_menu_submenu_close_task: Option<Task<()>>,
@@ -269,6 +273,7 @@ impl Editor {
             drop_replace_restore_focus: None,
             info_dialog: None,
             update_check_in_progress: false,
+            workspace: WorkspaceState::default(),
             context_menu: None,
             table_insert_dialog: None,
             context_menu_submenu_close_task: None,

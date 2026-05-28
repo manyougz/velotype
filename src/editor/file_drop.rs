@@ -129,6 +129,7 @@ impl Editor {
         self.last_stable_source_text = normalized;
         self.history_restore_in_progress = false;
         self.refresh_stable_document_snapshot(cx);
+        self.sync_workspace_after_document_path_change(cx);
         cx.notify();
     }
 

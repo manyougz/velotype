@@ -785,6 +785,9 @@ impl PreferencesWindow {
             ShortcutCommand::ToggleViewMode => {
                 strings.preferences_shortcut_toggle_view_mode.clone()
             }
+            ShortcutCommand::ToggleWorkspace => {
+                strings.preferences_shortcut_toggle_workspace.clone()
+            }
         }
     }
 

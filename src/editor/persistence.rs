@@ -80,6 +80,7 @@ impl Editor {
         self.pending_window_title_refresh = true;
         self.pending_close_after_save = false;
         self.close_dialog_restore_focus = None;
+        self.sync_workspace_after_document_path_change(cx);
         cx.notify();
     }
 

@@ -6,7 +6,7 @@ use std::time::Instant;
 
 use gpui::*;
 
-use super::{Editor, InfoDialogKind};
+use super::{Editor, InfoDialogKind, workspace::workspace_panel_width_for_viewport};
 use crate::app_menu::dispatch_menu_action_for_editor;
 use crate::components::CalloutVariant;
 use crate::components::{Block, BlockKind, NoRecentFiles};
@@ -1630,6 +1630,8 @@ impl Render for Editor {
             .id("editor-scroll")
             .w_full()
             .h_full()
+            .flex_1()
+            .min_w(px(0.0))
             .bg(theme.colors.editor_background)
             .relative()
             .child(scroll_content);
@@ -1741,6 +1743,7 @@ impl Render for Editor {
             .on_hover(cx.listener(Self::on_view_mode_toggle_hover))
             .child(SharedString::from(toggle_label))
             .on_click(cx.listener(Self::on_toggle_view_mode));
+        let content_area = content_area.child(view_mode_toggle);
 
         let base = div()
             .w_full()
@@ -1762,6 +1765,7 @@ impl Render for Editor {
             .on_action(cx.listener(Self::on_export_pdf))
             .on_action(cx.listener(Self::on_quit_application))
             .on_action(cx.listener(Self::on_toggle_view_mode_action))
+            .on_action(cx.listener(Self::on_toggle_workspace_action))
             .on_action(cx.listener(Self::on_dismiss_transient_ui));
         // Fetch menus + collect labels once for both renderers; previously each
         // of render_in_window_menu_bar / render_in_window_menu_panel called
@@ -1783,13 +1787,22 @@ impl Render for Editor {
         } else {
             base
         };
-        let base = base.child(
-            div()
-                .w_full()
-                .h_full()
-                .pt(menu_bar_height)
-                .child(content_area),
-        );
+        let workspace_width =
+            workspace_panel_width_for_viewport(f32::from(window.viewport_size().width));
+        let main_content = div()
+            .w_full()
+            .h_full()
+            .pt(menu_bar_height)
+            .flex()
+            .min_w(px(0.0));
+        let main_content = if let Some(workspace_panel) =
+            self.render_workspace_panel(&theme, &strings, workspace_width, cx)
+        {
+            main_content.child(workspace_panel)
+        } else {
+            main_content
+        };
+        let base = base.child(main_content.child(content_area));
         let base = if let Some(menu_panel) =
             self.render_in_window_menu_panel(&theme, cx, menus.as_deref(), &menu_labels)
         {
@@ -1807,8 +1820,6 @@ impl Render for Editor {
         } else {
             base
         };
-        let base = base.child(view_mode_toggle);
-
         if let Some(kind) = self.info_dialog {
             base.child(self.render_info_dialog_overlay(&theme, kind, cx))
         } else if self.show_drop_replace_dialog {
