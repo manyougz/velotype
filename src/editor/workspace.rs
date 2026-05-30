@@ -121,6 +121,13 @@ impl Editor {
             return;
         };
 
+        // Validate the root path
+        if root.as_os_str().is_empty() {
+            self.workspace.file_error = Some("Invalid workspace path: empty path".to_string());
+            self.workspace.selected = None;
+            return;
+        }
+
         match scan_workspace_dir(&root) {
             Ok(tree) => {
                 self.workspace.expanded.insert(tree.id.clone());

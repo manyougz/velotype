@@ -8,7 +8,7 @@
 
 [Editor Showcase](./assets/showcase/showcase.md)
 
-[English](README.md) | [中文](assets/README.zh-CN.md)
+[English](README.md) | [中文](docs/README.zh-CN.md)
 
 [![Rust](https://img.shields.io/badge/Rust-2024-f74c00?logo=rust&logoColor=white)](https://www.rust-lang.org/)
 [![GPUI](https://img.shields.io/badge/GUI-GPUI%200.2-4b7bec)](https://gpui.rs/)
@@ -41,9 +41,39 @@ Velotype targets Windows, Linux, and macOS. The app is naturally suitable for di
 
 ### 1. Download a release
 
-Download the Windows, Linux, or macOS build from the [Velotype Releases](https://github.com/manyougz/velotype/releases) page. Release artifacts are designed as portable desktop programs and can be run directly.
+Download the build for your platform from the [Velotype Releases](https://github.com/manyougz/velotype/releases) page.
 
-> Note: macOS users need to sign the `app` file locally on their machine; otherwise, Velotype will not run properly.
+#### Windows and Linux Users
+
+- Download the corresponding `.zip` or `.tar.gz` file
+- Unzip to get the executable
+- Run directly
+
+#### macOS Users
+
+Two installation options are available:
+
+**Option 1: Single .app package**
+- Download `velotype-*.zip` file
+- Unzip to get `Velotype.app`
+- Drag to `/Applications` or any location
+- Double-click to run
+
+**Option 2: PKG Installer(Recommended)**
+- Download `velotype-*.pkg` file
+- Double-click to run the installer
+- Automatically installs to `/Applications`
+- Automatically configures command-line tool `velotype`
+
+> **If using the PKG installer:** The CLI command is configured automatically during installation. The PKG installer manages the symlink automatically via its `postinstall` / `preuninstall` scripts. You can still manually trigger installation/uninstallation while in use. 
+> 
+> **If using the .app package:** Install or Uninstall the CLI command directly from the menu:
+> 1. Open Velotype.app
+> 2. Click the menu **Help → Install CLI Command**
+> 3. Enter administrator password
+> 4. Done!
+>
+> Be careful, if you move or delete `Velotype.app`, the symlink will automatically become invalid. Running `velotype` will report "command not found".
 
 ### 2. Build from source
 

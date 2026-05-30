@@ -113,6 +113,10 @@ pub struct I18nStrings {
     pub menu_check_updates: String,
     /// Help menu item for showing About information.
     pub menu_about: String,
+    /// Help menu item for installing the CLI tool (symlink to /usr/local/bin).
+    pub menu_install_cli_tool: String,
+    /// Help menu item for uninstalling the CLI tool.
+    pub menu_uninstall_cli_tool: String,
     /// Workspace menu item for opening or closing the workspace drawer.
     pub menu_toggle_workspace: String,
     /// Native file-dialog prompt for opening Markdown files.
@@ -321,6 +325,8 @@ struct I18nStringsDe {
     menu_export_pdf: Option<String>,
     menu_check_updates: Option<String>,
     menu_about: Option<String>,
+    menu_install_cli_tool: Option<String>,
+    menu_uninstall_cli_tool: Option<String>,
     menu_toggle_workspace: Option<String>,
     open_markdown_files_prompt: Option<String>,
     add_language_config_prompt: Option<String>,
@@ -471,6 +477,8 @@ const I18N_STRING_KEYS: &[&str] = &[
     "menu_export_pdf",
     "menu_check_updates",
     "menu_about",
+    "menu_install_cli_tool",
+    "menu_uninstall_cli_tool",
     "menu_toggle_workspace",
     "open_markdown_files_prompt",
     "add_language_config_prompt",
@@ -681,6 +689,12 @@ impl I18nStringsDe {
                 .menu_check_updates
                 .unwrap_or(defaults.menu_check_updates),
             menu_about: self.menu_about.unwrap_or(defaults.menu_about),
+            menu_install_cli_tool: self
+                .menu_install_cli_tool
+                .unwrap_or(defaults.menu_install_cli_tool),
+            menu_uninstall_cli_tool: self
+                .menu_uninstall_cli_tool
+                .unwrap_or(defaults.menu_uninstall_cli_tool),
             menu_toggle_workspace: self
                 .menu_toggle_workspace
                 .unwrap_or(defaults.menu_toggle_workspace),
@@ -1033,6 +1047,8 @@ impl I18nStrings {
             menu_export_pdf: "PDF".into(),
             menu_check_updates: "检查更新".into(),
             menu_about: "关于".into(),
+            menu_install_cli_tool: "安装CLI命令".into(),
+            menu_uninstall_cli_tool: "卸载CLI命令".into(),
             menu_toggle_workspace: "切换工作区".into(),
             open_markdown_files_prompt: "打开 Markdown 文件".into(),
             add_language_config_prompt: "选择语言配置文件".into(),
@@ -1198,6 +1214,8 @@ impl I18nStrings {
             menu_export_pdf: "PDF".into(),
             menu_check_updates: "Check for Updates".into(),
             menu_about: "About".into(),
+            menu_install_cli_tool: "Install CLI Command".into(),
+            menu_uninstall_cli_tool: "Uninstall CLI Command".into(),
             menu_toggle_workspace: "Toggle Workspace".into(),
             open_markdown_files_prompt: "Open Markdown Files".into(),
             add_language_config_prompt: "Choose Language Config".into(),

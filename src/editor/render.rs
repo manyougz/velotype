@@ -1766,7 +1766,9 @@ impl Render for Editor {
             .on_action(cx.listener(Self::on_quit_application))
             .on_action(cx.listener(Self::on_toggle_view_mode_action))
             .on_action(cx.listener(Self::on_toggle_workspace_action))
-            .on_action(cx.listener(Self::on_dismiss_transient_ui));
+            .on_action(cx.listener(Self::on_dismiss_transient_ui))
+            .on_action(cx.listener(Self::on_install_cli_tool))
+            .on_action(cx.listener(Self::on_uninstall_cli_tool));
         // Fetch menus + collect labels once for both renderers; previously each
         // of render_in_window_menu_bar / render_in_window_menu_panel called
         // cx.get_menus() and walked menus.iter().map(|m| m.name.to_string())

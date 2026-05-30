@@ -126,11 +126,67 @@ jobs:
           archive="velotype-${RELEASE_TAG}-${{ matrix.archive_suffix }}"
           ditto -c -k --sequesterRsrc --keepParent "dist/Velotype.app" "dist/$archive"
 
+      - name: Create macOS PKG installer
+        if: runner.os == 'macOS' && matrix.name == 'macOS aarch64'
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          VERSION="${RELEASE_TAG#v}"
+          APP_NAME="Velotype"
+          BUNDLE_ID="com.manyougz.Velotype"
+          COMPONENT_PKG="${APP_NAME}-component.pkg"
+
+          mkdir -p dist/pkg/root/Applications
+          mkdir -p dist/pkg/scripts
+
+          cp -R dist/${APP_NAME}.app dist/pkg/root/Applications/
+          cp resources/macos/pkg/postinstall dist/pkg/scripts/
+          cp resources/macos/pkg/preuninstall dist/pkg/scripts/
+          chmod +x dist/pkg/scripts/*
+
+          # Sign the app bundle with ad-hoc signature
+          # This is required for the PKG installer to work properly
+          xattr -cr "dist/pkg/root/Applications/${APP_NAME}.app" 2>/dev/null || true
+          codesign --force --deep --sign - "dist/pkg/root/Applications/${APP_NAME}.app" || {
+            echo "Warning: Code signing failed, continuing anyway..."
+          }
+
+          pkgbuild --root dist/pkg/root \
+            --scripts dist/pkg/scripts \
+            --identifier "$BUNDLE_ID" \
+            --version "$VERSION" \
+            --install-location "/" \
+            dist/pkg/${COMPONENT_PKG}
+
+          cp resources/macos/pkg/Distribution.xml dist/pkg/
+
+          productbuild --distribution dist/pkg/Distribution.xml \
+            --package-path dist/pkg \
+            "dist/velotype-${RELEASE_TAG}-macos.pkg"
+
+          pkgutil --expand "dist/velotype-${RELEASE_TAG}-macos.pkg" "dist/pkg/expanded" || true
+          if [ -f "dist/pkg/expanded/${COMPONENT_PKG}/PackageInfo" ]; then
+            sed -i '' '/<relocate>/,/<\/relocate>/d' "dist/pkg/expanded/${COMPONENT_PKG}/PackageInfo"
+            pkgutil --flatten "dist/pkg/expanded" "dist/velotype-${RELEASE_TAG}-macos.pkg"
+            rm -rf "dist/pkg/expanded"
+          fi
+
+          rm -rf dist/pkg
+
       - name: Upload build artifact
         uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.artifact }}
           path: dist/velotype-${{ inputs.release_tag }}-${{ matrix.archive_suffix }}
+          if-no-files-found: error
+
+      - name: Upload macOS PKG artifact
+        if: runner.os == 'macOS' && matrix.name == 'macOS aarch64'
+        uses: actions/upload-artifact@v7
+        with:
+          name: velotype-macos-pkg
+          path: dist/velotype-${{ inputs.release_tag }}-macos.pkg
           if-no-files-found: error
 
   release:
