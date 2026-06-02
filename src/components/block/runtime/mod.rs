@@ -801,6 +801,7 @@ impl Block {
             selected_clean
                 .as_ref()
                 .and_then(|range| (!range.is_empty()).then_some(false)),
+            false,
             cx,
         );
     }
@@ -1406,6 +1407,7 @@ impl Block {
             selected_clean
                 .as_ref()
                 .and_then(|range| (!range.is_empty()).then_some(false)),
+            false,
             cx,
         );
     }
@@ -1463,6 +1465,19 @@ impl Block {
                         footnote: fragment.footnote.clone(),
                         math: None,
                     };
+                }
+                // Caret just outside a span: after a closing delimiter or before
+                // an opening one. Insert plain text so it isn't absorbed back into
+                // the span, matching how code and strikethrough already behave.
+                ExpandedInlineSegmentKind::ClosingDelimiter(_)
+                    if current_offset == segment.display_range.end =>
+                {
+                    return InlineInsertionAttributes::default();
+                }
+                ExpandedInlineSegmentKind::OpeningDelimiter(_)
+                    if current_offset == segment.display_range.start =>
+                {
+                    return InlineInsertionAttributes::default();
                 }
                 ExpandedInlineSegmentKind::LinkTargetText => {
                     if let Some(link_group) = segment.link_group
@@ -1576,12 +1591,13 @@ impl Block {
         marked_range_clean: Option<Range<usize>>,
         selected_range_clean: Option<Range<usize>>,
         selected_range_reversed: Option<bool>,
+        caret_may_have_closed_span: bool,
         cx: &mut Context<Self>,
     ) {
         let old_kind = self.record.kind.clone();
         let old_title = self.record.title.clone();
         let old_title_was_empty = old_title.visible_text().is_empty();
-        let collapsed_affinity = self.current_collapsed_caret_affinity();
+        let mut collapsed_affinity = self.current_collapsed_caret_affinity();
         let keep_projection =
             self.projection.is_some() && self.edit_mode.supports_inline_projection();
 
@@ -1605,8 +1621,23 @@ impl Block {
         self.numbered_list_restart_requested = should_restart_numbered_list;
         self.sync_edit_mode_from_kind();
         self.sync_render_cache();
-        if keep_projection && self.edit_mode.supports_inline_projection() {
+        // Rebuild when a projection already existed, or when this edit may have
+        // closed a delimiter, creating a span whose markers now need projecting.
+        if self.edit_mode.supports_inline_projection()
+            && (keep_projection || caret_may_have_closed_span)
+        {
             self.rebuild_inline_projection(next_selected_clean.clone(), next_marked_clean.clone());
+        }
+
+        // If the edit closed a span (its delimiters were absorbed), place the
+        // caret after the new closing marker so typing continues as plain text.
+        if caret_may_have_closed_span
+            && next_selected_clean.is_empty()
+            && self.projection.as_ref().is_some_and(|projection| {
+                projection.caret_closes_span_at_clean(next_selected_clean.start)
+            })
+        {
+            collapsed_affinity = CollapsedCaretAffinity::OuterEnd;
         }
 
         self.marked_range = next_marked_clean
@@ -1691,6 +1722,7 @@ impl Block {
             }
         }
 
+        let base_visible_len = base_title.visible_text().len();
         let replaced_text = self.display_text()[visible_range.clone()].to_string();
         let result = if self.uses_raw_text_editing() {
             base_title.replace_visible_range_raw(
@@ -1706,6 +1738,15 @@ impl Block {
                 &self.link_reference_definitions,
             )
         };
+
+        // A span was closed when re-parsing absorbed delimiters into a style,
+        // leaving the clean text shorter than expected. Skip IME and deletions.
+        let expected_visible_len =
+            base_visible_len.saturating_sub(clean_range.len()) + new_text.len();
+        let caret_may_have_closed_span = !self.uses_raw_text_editing()
+            && !new_text.is_empty()
+            && !mark_inserted_text
+            && result.tree.visible_text().len() < expected_visible_len;
         let quote_structure_edit = !self.uses_raw_text_editing()
             && self.quote_depth > 0
             && (new_text.contains('\n')
@@ -1738,6 +1779,7 @@ impl Block {
             selected_range
                 .as_ref()
                 .and_then(|range| (!range.is_empty()).then_some(false)),
+            caret_may_have_closed_span,
             cx,
         );
     }
@@ -1850,6 +1892,7 @@ impl Block {
             None,
             Some(selection),
             Some(self.selection_reversed),
+            false,
             cx,
         );
     }
@@ -2125,6 +2168,28 @@ impl Block {
             .next_boundary(text, 0)
             .ok()
             .flatten()
+            .unwrap_or(text.len())
+    }
+
+    /// Offset of the start of the word before `offset`, or 0 if there is none.
+    pub fn previous_word_start(&self, offset: usize) -> usize {
+        let text = self.display_text();
+        let offset = offset.min(text.len());
+        text.unicode_word_indices()
+            .map(|(start, _)| start)
+            .take_while(|start| *start < offset)
+            .last()
+            .unwrap_or(0)
+    }
+
+    /// Offset of the start of the word after `offset`, or the text length if
+    /// there is none.
+    pub fn next_word_start(&self, offset: usize) -> usize {
+        let text = self.display_text();
+        let offset = offset.min(text.len());
+        text.unicode_word_indices()
+            .map(|(start, _)| start)
+            .find(|start| *start > offset)
             .unwrap_or(text.len())
     }
 

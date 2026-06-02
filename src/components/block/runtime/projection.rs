@@ -27,6 +27,8 @@ pub(super) enum ExpandedInlineKind {
     Link,
     /// Bold Markdown delimiters.
     BoldMarkdown,
+    /// Italic Markdown delimiters.
+    ItalicMarkdown,
     /// Strikethrough delimiters.
     Strikethrough,
     /// Code span backtick delimiters.
@@ -46,6 +48,7 @@ impl ExpandedInlineKind {
         match self {
             Self::Link => false,
             Self::BoldMarkdown => style.bold,
+            Self::ItalicMarkdown => style.italic,
             Self::Strikethrough => style.strikethrough,
             Self::Code => style.code,
             Self::SuperscriptMarkdown | Self::SuperscriptHtml => {
@@ -61,6 +64,7 @@ impl ExpandedInlineKind {
         match self {
             Self::Link => "[",
             Self::BoldMarkdown => "**",
+            Self::ItalicMarkdown => "*",
             Self::Strikethrough => "~~",
             Self::Code => "`",
             Self::SuperscriptMarkdown => "^",
@@ -83,6 +87,7 @@ impl ExpandedInlineKind {
         match self {
             Self::Link => None,
             Self::BoldMarkdown => Some(StyleFlag::Bold),
+            Self::ItalicMarkdown => Some(StyleFlag::Italic),
             Self::Strikethrough => Some(StyleFlag::Strikethrough),
             Self::Code => Some(StyleFlag::Code),
             Self::SuperscriptMarkdown | Self::SuperscriptHtml => Some(StyleFlag::Superscript),
@@ -99,7 +104,8 @@ impl ExpandedInlineKind {
             | Self::SuperscriptHtml
             | Self::SubscriptMarkdown
             | Self::SubscriptHtml => 3,
-            Self::Code => 4,
+            Self::ItalicMarkdown => 4,
+            Self::Code => 5,
         }
     }
 }
@@ -649,6 +655,9 @@ impl ExpandedInlineProjection {
                     ExpandedInlineSegmentKind::OpeningDelimiter(
                         ExpandedInlineKind::BoldMarkdown,
                     )
+                    | ExpandedInlineSegmentKind::OpeningDelimiter(
+                        ExpandedInlineKind::ItalicMarkdown,
+                    )
                     | ExpandedInlineSegmentKind::OpeningDelimiter(ExpandedInlineKind::Code)
                     | ExpandedInlineSegmentKind::OpeningDelimiter(
                         ExpandedInlineKind::Strikethrough,
@@ -664,6 +673,9 @@ impl ExpandedInlineProjection {
                     }
                     ExpandedInlineSegmentKind::ClosingDelimiter(
                         ExpandedInlineKind::BoldMarkdown,
+                    )
+                    | ExpandedInlineSegmentKind::ClosingDelimiter(
+                        ExpandedInlineKind::ItalicMarkdown,
                     )
                     | ExpandedInlineSegmentKind::ClosingDelimiter(ExpandedInlineKind::Code)
                     | ExpandedInlineSegmentKind::ClosingDelimiter(
@@ -746,6 +758,16 @@ impl ExpandedInlineProjection {
             }
         }
         CollapsedCaretAffinity::Default
+    }
+
+    /// Whether `clean` sits at the start of a projected closing delimiter (the
+    /// end boundary of a styled span). Used to place the caret after a
+    /// just-typed closing marker.
+    pub(super) fn caret_closes_span_at_clean(&self, clean: usize) -> bool {
+        self.segments.iter().any(|segment| {
+            matches!(segment.kind, ExpandedInlineSegmentKind::ClosingDelimiter(_))
+                && segment.clean_range.start == clean
+        })
     }
 
     pub(super) fn display_offset_for_clean_cursor(
@@ -852,6 +874,7 @@ impl ExpandedInlineProjection {
         let script_kind = Self::script_projection_kind(fragments, fragment_index);
         for kind in [
             Some(ExpandedInlineKind::BoldMarkdown),
+            Some(ExpandedInlineKind::ItalicMarkdown),
             Some(ExpandedInlineKind::Strikethrough),
             script_kind,
             Some(ExpandedInlineKind::Code),

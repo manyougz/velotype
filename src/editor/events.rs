@@ -1368,6 +1368,26 @@ impl Editor {
                 });
                 cx.notify();
             }
+            BlockEvent::RequestBlockUp => {
+                if current_visible_index == 0 {
+                    return;
+                }
+
+                let target = visible_before[current_visible_index - 1].entity.clone();
+                self.focus_block(target.entity_id());
+                target.update(cx, |target, cx| target.move_to(0, cx));
+                cx.notify();
+            }
+            BlockEvent::RequestBlockDown => {
+                if current_visible_index + 1 >= visible_before.len() {
+                    return;
+                }
+
+                let target = visible_before[current_visible_index + 1].entity.clone();
+                self.focus_block(target.entity_id());
+                target.update(cx, |target, cx| target.move_to(0, cx));
+                cx.notify();
+            }
             BlockEvent::RequestDelete => {
                 if self.downgrade_empty_callout_body_to_quote(&block, cx) {
                     return;

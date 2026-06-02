@@ -173,14 +173,22 @@ pub struct I18nStrings {
     pub preferences_shortcut_newline: String,
     pub preferences_shortcut_delete_back: String,
     pub preferences_shortcut_delete: String,
+    pub preferences_shortcut_word_delete_back: String,
+    pub preferences_shortcut_word_delete_forward: String,
     pub preferences_shortcut_focus_prev: String,
     pub preferences_shortcut_focus_next: String,
     pub preferences_shortcut_move_left: String,
     pub preferences_shortcut_move_right: String,
+    pub preferences_shortcut_word_move_left: String,
+    pub preferences_shortcut_word_move_right: String,
     pub preferences_shortcut_home: String,
     pub preferences_shortcut_end: String,
+    pub preferences_shortcut_block_up: String,
+    pub preferences_shortcut_block_down: String,
     pub preferences_shortcut_select_left: String,
     pub preferences_shortcut_select_right: String,
+    pub preferences_shortcut_word_select_left: String,
+    pub preferences_shortcut_word_select_right: String,
     pub preferences_shortcut_select_home: String,
     pub preferences_shortcut_select_end: String,
     pub preferences_shortcut_select_all: String,
@@ -362,14 +370,22 @@ struct I18nStringsDe {
     preferences_shortcut_newline: Option<String>,
     preferences_shortcut_delete_back: Option<String>,
     preferences_shortcut_delete: Option<String>,
+    preferences_shortcut_word_delete_back: Option<String>,
+    preferences_shortcut_word_delete_forward: Option<String>,
     preferences_shortcut_focus_prev: Option<String>,
     preferences_shortcut_focus_next: Option<String>,
     preferences_shortcut_move_left: Option<String>,
     preferences_shortcut_move_right: Option<String>,
+    preferences_shortcut_word_move_left: Option<String>,
+    preferences_shortcut_word_move_right: Option<String>,
     preferences_shortcut_home: Option<String>,
     preferences_shortcut_end: Option<String>,
+    preferences_shortcut_block_up: Option<String>,
+    preferences_shortcut_block_down: Option<String>,
     preferences_shortcut_select_left: Option<String>,
     preferences_shortcut_select_right: Option<String>,
+    preferences_shortcut_word_select_left: Option<String>,
+    preferences_shortcut_word_select_right: Option<String>,
     preferences_shortcut_select_home: Option<String>,
     preferences_shortcut_select_end: Option<String>,
     preferences_shortcut_select_all: Option<String>,
@@ -514,14 +530,22 @@ const I18N_STRING_KEYS: &[&str] = &[
     "preferences_shortcut_newline",
     "preferences_shortcut_delete_back",
     "preferences_shortcut_delete",
+    "preferences_shortcut_word_delete_back",
+    "preferences_shortcut_word_delete_forward",
     "preferences_shortcut_focus_prev",
     "preferences_shortcut_focus_next",
     "preferences_shortcut_move_left",
     "preferences_shortcut_move_right",
+    "preferences_shortcut_word_move_left",
+    "preferences_shortcut_word_move_right",
     "preferences_shortcut_home",
     "preferences_shortcut_end",
+    "preferences_shortcut_block_up",
+    "preferences_shortcut_block_down",
     "preferences_shortcut_select_left",
     "preferences_shortcut_select_right",
+    "preferences_shortcut_word_select_left",
+    "preferences_shortcut_word_select_right",
     "preferences_shortcut_select_home",
     "preferences_shortcut_select_end",
     "preferences_shortcut_select_all",
@@ -794,6 +818,12 @@ impl I18nStringsDe {
             preferences_shortcut_delete: self
                 .preferences_shortcut_delete
                 .unwrap_or(defaults.preferences_shortcut_delete),
+            preferences_shortcut_word_delete_back: self
+                .preferences_shortcut_word_delete_back
+                .unwrap_or(defaults.preferences_shortcut_word_delete_back),
+            preferences_shortcut_word_delete_forward: self
+                .preferences_shortcut_word_delete_forward
+                .unwrap_or(defaults.preferences_shortcut_word_delete_forward),
             preferences_shortcut_focus_prev: self
                 .preferences_shortcut_focus_prev
                 .unwrap_or(defaults.preferences_shortcut_focus_prev),
@@ -806,18 +836,36 @@ impl I18nStringsDe {
             preferences_shortcut_move_right: self
                 .preferences_shortcut_move_right
                 .unwrap_or(defaults.preferences_shortcut_move_right),
+            preferences_shortcut_word_move_left: self
+                .preferences_shortcut_word_move_left
+                .unwrap_or(defaults.preferences_shortcut_word_move_left),
+            preferences_shortcut_word_move_right: self
+                .preferences_shortcut_word_move_right
+                .unwrap_or(defaults.preferences_shortcut_word_move_right),
             preferences_shortcut_home: self
                 .preferences_shortcut_home
                 .unwrap_or(defaults.preferences_shortcut_home),
             preferences_shortcut_end: self
                 .preferences_shortcut_end
                 .unwrap_or(defaults.preferences_shortcut_end),
+            preferences_shortcut_block_up: self
+                .preferences_shortcut_block_up
+                .unwrap_or(defaults.preferences_shortcut_block_up),
+            preferences_shortcut_block_down: self
+                .preferences_shortcut_block_down
+                .unwrap_or(defaults.preferences_shortcut_block_down),
             preferences_shortcut_select_left: self
                 .preferences_shortcut_select_left
                 .unwrap_or(defaults.preferences_shortcut_select_left),
             preferences_shortcut_select_right: self
                 .preferences_shortcut_select_right
                 .unwrap_or(defaults.preferences_shortcut_select_right),
+            preferences_shortcut_word_select_left: self
+                .preferences_shortcut_word_select_left
+                .unwrap_or(defaults.preferences_shortcut_word_select_left),
+            preferences_shortcut_word_select_right: self
+                .preferences_shortcut_word_select_right
+                .unwrap_or(defaults.preferences_shortcut_word_select_right),
             preferences_shortcut_select_home: self
                 .preferences_shortcut_select_home
                 .unwrap_or(defaults.preferences_shortcut_select_home),
@@ -1085,14 +1133,22 @@ impl I18nStrings {
             preferences_shortcut_newline: "换行".into(),
             preferences_shortcut_delete_back: "向前删除".into(),
             preferences_shortcut_delete: "向后删除".into(),
-            preferences_shortcut_focus_prev: "聚焦上一块".into(),
-            preferences_shortcut_focus_next: "聚焦下一块".into(),
+            preferences_shortcut_word_delete_back: "向前删除单词".into(),
+            preferences_shortcut_word_delete_forward: "向后删除单词".into(),
+            preferences_shortcut_focus_prev: "上移".into(),
+            preferences_shortcut_focus_next: "下移".into(),
             preferences_shortcut_move_left: "光标左移".into(),
             preferences_shortcut_move_right: "光标右移".into(),
+            preferences_shortcut_word_move_left: "按词左移".into(),
+            preferences_shortcut_word_move_right: "按词右移".into(),
             preferences_shortcut_home: "行首".into(),
             preferences_shortcut_end: "行尾".into(),
+            preferences_shortcut_block_up: "上一块开头".into(),
+            preferences_shortcut_block_down: "下一块开头".into(),
             preferences_shortcut_select_left: "向左选择".into(),
             preferences_shortcut_select_right: "向右选择".into(),
+            preferences_shortcut_word_select_left: "向左选择单词".into(),
+            preferences_shortcut_word_select_right: "向右选择单词".into(),
             preferences_shortcut_select_home: "选择到行首".into(),
             preferences_shortcut_select_end: "选择到行尾".into(),
             preferences_shortcut_select_all: "全选".into(),
@@ -1253,14 +1309,22 @@ impl I18nStrings {
             preferences_shortcut_newline: "Newline".into(),
             preferences_shortcut_delete_back: "Delete Backward".into(),
             preferences_shortcut_delete: "Delete Forward".into(),
-            preferences_shortcut_focus_prev: "Focus Previous Block".into(),
-            preferences_shortcut_focus_next: "Focus Next Block".into(),
+            preferences_shortcut_word_delete_back: "Word Delete Backward".into(),
+            preferences_shortcut_word_delete_forward: "Word Delete Forward".into(),
+            preferences_shortcut_focus_prev: "Move Up".into(),
+            preferences_shortcut_focus_next: "Move Down".into(),
             preferences_shortcut_move_left: "Move Left".into(),
             preferences_shortcut_move_right: "Move Right".into(),
+            preferences_shortcut_word_move_left: "Word Move Left".into(),
+            preferences_shortcut_word_move_right: "Word Move Right".into(),
             preferences_shortcut_home: "Line Start".into(),
             preferences_shortcut_end: "Line End".into(),
+            preferences_shortcut_block_up: "Block Up".into(),
+            preferences_shortcut_block_down: "Block Down".into(),
             preferences_shortcut_select_left: "Select Left".into(),
             preferences_shortcut_select_right: "Select Right".into(),
+            preferences_shortcut_word_select_left: "Word Select Left".into(),
+            preferences_shortcut_word_select_right: "Word Select Right".into(),
             preferences_shortcut_select_home: "Select to Line Start".into(),
             preferences_shortcut_select_end: "Select to Line End".into(),
             preferences_shortcut_select_all: "Select All".into(),
