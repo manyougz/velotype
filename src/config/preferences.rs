@@ -744,14 +744,30 @@ impl PreferencesWindow {
             ShortcutCommand::Newline => strings.preferences_shortcut_newline.clone(),
             ShortcutCommand::DeleteBack => strings.preferences_shortcut_delete_back.clone(),
             ShortcutCommand::Delete => strings.preferences_shortcut_delete.clone(),
+            ShortcutCommand::WordDeleteBack => {
+                strings.preferences_shortcut_word_delete_back.clone()
+            }
+            ShortcutCommand::WordDeleteForward => {
+                strings.preferences_shortcut_word_delete_forward.clone()
+            }
             ShortcutCommand::FocusPrev => strings.preferences_shortcut_focus_prev.clone(),
             ShortcutCommand::FocusNext => strings.preferences_shortcut_focus_next.clone(),
             ShortcutCommand::MoveLeft => strings.preferences_shortcut_move_left.clone(),
             ShortcutCommand::MoveRight => strings.preferences_shortcut_move_right.clone(),
+            ShortcutCommand::WordMoveLeft => strings.preferences_shortcut_word_move_left.clone(),
+            ShortcutCommand::WordMoveRight => strings.preferences_shortcut_word_move_right.clone(),
             ShortcutCommand::Home => strings.preferences_shortcut_home.clone(),
             ShortcutCommand::End => strings.preferences_shortcut_end.clone(),
+            ShortcutCommand::BlockUp => strings.preferences_shortcut_block_up.clone(),
+            ShortcutCommand::BlockDown => strings.preferences_shortcut_block_down.clone(),
             ShortcutCommand::SelectLeft => strings.preferences_shortcut_select_left.clone(),
             ShortcutCommand::SelectRight => strings.preferences_shortcut_select_right.clone(),
+            ShortcutCommand::WordSelectLeft => {
+                strings.preferences_shortcut_word_select_left.clone()
+            }
+            ShortcutCommand::WordSelectRight => {
+                strings.preferences_shortcut_word_select_right.clone()
+            }
             ShortcutCommand::SelectHome => strings.preferences_shortcut_select_home.clone(),
             ShortcutCommand::SelectEnd => strings.preferences_shortcut_select_end.clone(),
             ShortcutCommand::SelectAll => strings.preferences_shortcut_select_all.clone(),

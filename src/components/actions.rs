@@ -17,14 +17,22 @@ actions!(
         Newline,
         DeleteBack,
         Delete,
+        WordDeleteBack,
+        WordDeleteForward,
         FocusPrev,
         FocusNext,
         MoveLeft,
         MoveRight,
+        WordMoveLeft,
+        WordMoveRight,
         Home,
         End,
+        BlockUp,
+        BlockDown,
         SelectLeft,
         SelectRight,
+        WordSelectLeft,
+        WordSelectRight,
         SelectHome,
         SelectEnd,
         SelectAll,
@@ -101,14 +109,22 @@ pub(crate) enum ShortcutCommand {
     Newline,
     DeleteBack,
     Delete,
+    WordDeleteBack,
+    WordDeleteForward,
     FocusPrev,
     FocusNext,
     MoveLeft,
     MoveRight,
+    WordMoveLeft,
+    WordMoveRight,
     Home,
     End,
+    BlockUp,
+    BlockDown,
     SelectLeft,
     SelectRight,
+    WordSelectLeft,
+    WordSelectRight,
     SelectHome,
     SelectEnd,
     SelectAll,
@@ -167,6 +183,20 @@ const SHORTCUT_DEFINITIONS: &[ShortcutDefinition] = &[
         context: BLOCK_CONTEXT,
     },
     ShortcutDefinition {
+        command: ShortcutCommand::WordDeleteBack,
+        id: "word_delete_back",
+        category: ShortcutCategory::Edit,
+        default_keys: &["ctrl-backspace", "alt-backspace"],
+        context: BLOCK_CONTEXT,
+    },
+    ShortcutDefinition {
+        command: ShortcutCommand::WordDeleteForward,
+        id: "word_delete_forward",
+        category: ShortcutCategory::Edit,
+        default_keys: &["ctrl-delete", "alt-delete"],
+        context: BLOCK_CONTEXT,
+    },
+    ShortcutDefinition {
         command: ShortcutCommand::FocusPrev,
         id: "focus_prev",
         category: ShortcutCategory::Navigation,
@@ -195,6 +225,20 @@ const SHORTCUT_DEFINITIONS: &[ShortcutDefinition] = &[
         context: BLOCK_CONTEXT,
     },
     ShortcutDefinition {
+        command: ShortcutCommand::WordMoveLeft,
+        id: "word_move_left",
+        category: ShortcutCategory::Navigation,
+        default_keys: &["ctrl-left", "alt-left"],
+        context: BLOCK_CONTEXT,
+    },
+    ShortcutDefinition {
+        command: ShortcutCommand::WordMoveRight,
+        id: "word_move_right",
+        category: ShortcutCategory::Navigation,
+        default_keys: &["ctrl-right", "alt-right"],
+        context: BLOCK_CONTEXT,
+    },
+    ShortcutDefinition {
         command: ShortcutCommand::Home,
         id: "home",
         category: ShortcutCategory::Navigation,
@@ -209,6 +253,20 @@ const SHORTCUT_DEFINITIONS: &[ShortcutDefinition] = &[
         context: BLOCK_CONTEXT,
     },
     ShortcutDefinition {
+        command: ShortcutCommand::BlockUp,
+        id: "block_up",
+        category: ShortcutCategory::Navigation,
+        default_keys: &["ctrl-up", "alt-up"],
+        context: BLOCK_CONTEXT,
+    },
+    ShortcutDefinition {
+        command: ShortcutCommand::BlockDown,
+        id: "block_down",
+        category: ShortcutCategory::Navigation,
+        default_keys: &["ctrl-down", "alt-down"],
+        context: BLOCK_CONTEXT,
+    },
+    ShortcutDefinition {
         command: ShortcutCommand::SelectLeft,
         id: "select_left",
         category: ShortcutCategory::Navigation,
@@ -220,6 +278,20 @@ const SHORTCUT_DEFINITIONS: &[ShortcutDefinition] = &[
         id: "select_right",
         category: ShortcutCategory::Navigation,
         default_keys: &["shift-right"],
+        context: BLOCK_CONTEXT,
+    },
+    ShortcutDefinition {
+        command: ShortcutCommand::WordSelectLeft,
+        id: "word_select_left",
+        category: ShortcutCategory::Navigation,
+        default_keys: &["ctrl-shift-left", "alt-shift-left"],
+        context: BLOCK_CONTEXT,
+    },
+    ShortcutDefinition {
+        command: ShortcutCommand::WordSelectRight,
+        id: "word_select_right",
+        category: ShortcutCategory::Navigation,
+        default_keys: &["ctrl-shift-right", "alt-shift-right"],
         context: BLOCK_CONTEXT,
     },
     ShortcutDefinition {
@@ -514,14 +586,22 @@ fn key_binding_for(
         ShortcutCommand::Newline => KeyBinding::new(key, Newline, context),
         ShortcutCommand::DeleteBack => KeyBinding::new(key, DeleteBack, context),
         ShortcutCommand::Delete => KeyBinding::new(key, Delete, context),
+        ShortcutCommand::WordDeleteBack => KeyBinding::new(key, WordDeleteBack, context),
+        ShortcutCommand::WordDeleteForward => KeyBinding::new(key, WordDeleteForward, context),
         ShortcutCommand::FocusPrev => KeyBinding::new(key, FocusPrev, context),
         ShortcutCommand::FocusNext => KeyBinding::new(key, FocusNext, context),
         ShortcutCommand::MoveLeft => KeyBinding::new(key, MoveLeft, context),
         ShortcutCommand::MoveRight => KeyBinding::new(key, MoveRight, context),
+        ShortcutCommand::WordMoveLeft => KeyBinding::new(key, WordMoveLeft, context),
+        ShortcutCommand::WordMoveRight => KeyBinding::new(key, WordMoveRight, context),
         ShortcutCommand::Home => KeyBinding::new(key, Home, context),
         ShortcutCommand::End => KeyBinding::new(key, End, context),
+        ShortcutCommand::BlockUp => KeyBinding::new(key, BlockUp, context),
+        ShortcutCommand::BlockDown => KeyBinding::new(key, BlockDown, context),
         ShortcutCommand::SelectLeft => KeyBinding::new(key, SelectLeft, context),
         ShortcutCommand::SelectRight => KeyBinding::new(key, SelectRight, context),
+        ShortcutCommand::WordSelectLeft => KeyBinding::new(key, WordSelectLeft, context),
+        ShortcutCommand::WordSelectRight => KeyBinding::new(key, WordSelectRight, context),
         ShortcutCommand::SelectHome => KeyBinding::new(key, SelectHome, context),
         ShortcutCommand::SelectEnd => KeyBinding::new(key, SelectEnd, context),
         ShortcutCommand::SelectAll => KeyBinding::new(key, SelectAll, context),
@@ -608,6 +688,29 @@ mod tests {
         assert_eq!(
             resolved_shortcut_keys(&BTreeMap::new(), ShortcutCommand::ToggleWorkspace),
             vec!["ctrl-w".to_string(), "cmd-w".to_string()]
+        );
+    }
+
+    #[test]
+    fn word_and_block_shortcuts_have_ctrl_and_alt_defaults() {
+        assert_eq!(
+            resolved_shortcut_keys(&BTreeMap::new(), ShortcutCommand::WordMoveLeft),
+            vec!["ctrl-left".to_string(), "alt-left".to_string()]
+        );
+        assert_eq!(
+            resolved_shortcut_keys(&BTreeMap::new(), ShortcutCommand::WordDeleteBack),
+            vec!["ctrl-backspace".to_string(), "alt-backspace".to_string()]
+        );
+        assert_eq!(
+            resolved_shortcut_keys(&BTreeMap::new(), ShortcutCommand::BlockUp),
+            vec!["ctrl-up".to_string(), "alt-up".to_string()]
+        );
+        assert_eq!(
+            resolved_shortcut_keys(&BTreeMap::new(), ShortcutCommand::WordSelectRight),
+            vec![
+                "ctrl-shift-right".to_string(),
+                "alt-shift-right".to_string()
+            ]
         );
     }
 

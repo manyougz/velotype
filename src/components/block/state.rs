@@ -757,6 +757,10 @@ pub enum BlockEvent {
     /// Cursor reached the bottom of this block; move focus to the next
     /// visible block, preserving the preferred horizontal position.
     RequestFocusNext { preferred_x: Option<f32> },
+    /// Move focus to the start of the previous visible block.
+    RequestBlockUp,
+    /// Move focus to the start of the next visible block.
+    RequestBlockDown,
     /// This block should be deleted (empty and backspace/delete pressed).
     RequestDelete,
     /// The user clicked this block; notify siblings so they re-render
