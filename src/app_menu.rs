@@ -130,6 +130,23 @@ fn is_cli_symlink_current_app() -> bool {
     }
 }
 
+#[cfg(any(target_os = "macos", test))]
+fn applescript_string_literal(value: &str) -> String {
+    let mut escaped = String::with_capacity(value.len() + 2);
+    escaped.push('"');
+    for ch in value.chars() {
+        match ch {
+            '\\' => escaped.push_str("\\\\"),
+            '"' => escaped.push_str("\\\""),
+            '\n' => escaped.push_str("\\n"),
+            '\r' => escaped.push_str("\\r"),
+            _ => escaped.push(ch),
+        }
+    }
+    escaped.push('"');
+    escaped
+}
+
 #[cfg(target_os = "macos")]
 pub(crate) fn install_cli_tool(cx: &mut App) {
     use std::process::Command;
@@ -159,14 +176,12 @@ pub(crate) fn install_cli_tool(cx: &mut App) {
         return;
     }
 
+    let exe_path = applescript_string_literal(&current_exe.to_string_lossy());
+    let link_path = applescript_string_literal(bin_link);
     let script = format!(
-        r#"
-        do shell script "
-            rm -f '{bin_link}'
-            ln -s '{}' '{bin_link}'
-        " with administrator privileges
-        "#,
-        current_exe.display()
+        r#"set exePath to {exe_path}
+set linkPath to {link_path}
+do shell script "rm -f " & quoted form of linkPath & linefeed & "ln -s " & quoted form of exePath & space & quoted form of linkPath with administrator privileges"#
     );
 
     match Command::new("osascript").arg("-e").arg(&script).output() {
@@ -210,7 +225,7 @@ pub(crate) fn install_cli_tool(cx: &mut App) {
             show_install_cli_error(cx, &format!("Failed to run installer: {err}"));
         }
     }
-    // Refresh menus so the label changes between Install ↔ Uninstall.
+    // Refresh menus so the label changes between Install -> Uninstall.
     install_menus(cx);
 }
 
@@ -226,7 +241,11 @@ pub(crate) fn uninstall_cli_tool(cx: &mut App) {
         return;
     }
 
-    let script = format!(r#"do shell script "rm -f '{bin_link}'" with administrator privileges"#,);
+    let link_path = applescript_string_literal(bin_link);
+    let script = format!(
+        r#"set linkPath to {link_path}
+do shell script "rm -f " & quoted form of linkPath with administrator privileges"#
+    );
 
     match Command::new("osascript").arg("-e").arg(&script).output() {
         Ok(output) => {
@@ -259,7 +278,7 @@ pub(crate) fn uninstall_cli_tool(cx: &mut App) {
             show_install_cli_error(cx, &format!("Failed to run uninstaller: {err}"));
         }
     }
-    // Refresh menus so the label changes between Install ↔ Uninstall.
+    // Refresh menus so the label changes between Install -> Uninstall.
     install_menus(cx);
 }
 
@@ -1012,7 +1031,7 @@ pub(crate) fn init(cx: &mut App) {
 
 #[cfg(test)]
 mod tests {
-    use super::build_menus;
+    use super::{applescript_string_literal, build_menus};
     use crate::components::{
         AddLanguageConfig, AddThemeConfig, CheckForUpdates, ExportHtml, ExportPdf, NewWindow,
         NoRecentFiles, OpenFile, OpenPreferences, OpenRecentFile, QuitApplication, SaveDocument,
@@ -1035,6 +1054,20 @@ mod tests {
             MenuItem::Submenu(menu) => menu,
             _ => panic!("expected submenu item"),
         }
+    }
+
+    #[test]
+    fn applescript_string_literal_escapes_special_characters() {
+        assert_eq!(
+            applescript_string_literal(
+                r#"/Applications/Velotype "Test".app/Contents/MacOS/velotype"#
+            ),
+            r#""/Applications/Velotype \"Test\".app/Contents/MacOS/velotype""#
+        );
+        assert_eq!(
+            applescript_string_literal(r#"/Applications/O'Brien\Velotype.app"#),
+            r#""/Applications/O'Brien\\Velotype.app""#
+        );
     }
 
     #[test]

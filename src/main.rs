@@ -92,6 +92,9 @@ fn main() {
         i += 1;
     }
 
+    #[cfg(not(target_os = "macos"))]
+    let _ = detach;
+
     // On macOS, detach from terminal if requested
     // TODO: Other platforms may also need to be adapted
     #[cfg(target_os = "macos")]

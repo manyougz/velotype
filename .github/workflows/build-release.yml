@@ -160,6 +160,7 @@ jobs:
             dist/pkg/${COMPONENT_PKG}
 
           cp resources/macos/pkg/Distribution.xml dist/pkg/
+          sed -i '' "s/__VELOTYPE_VERSION__/${VERSION}/g" dist/pkg/Distribution.xml
 
           productbuild --distribution dist/pkg/Distribution.xml \
             --package-path dist/pkg \

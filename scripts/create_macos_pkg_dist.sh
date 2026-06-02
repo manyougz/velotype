@@ -83,6 +83,7 @@ pkgbuild --identifier "$BUNDLE_ID" \
 
 echo "==> Creating distribution package..."
 cp "$RESOURCES_DIR/pkg/Distribution.xml" "$PKG_DIR/"
+sed -i '' "s/__VELOTYPE_VERSION__/${VERSION}/g" "$PKG_DIR/Distribution.xml"
 
 productbuild --distribution "$PKG_DIR/Distribution.xml" \
     --package-path "$PKG_DIR" \

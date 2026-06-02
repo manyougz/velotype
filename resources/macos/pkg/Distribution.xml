@@ -17,5 +17,5 @@
     <choice id="Velotype" title="Install Velotype" description="Install Velotype to /Applications">
         <pkg-ref id="com.manyougz.Velotype"/>
     </choice>
-    <pkg-ref id="com.manyougz.Velotype" version="0.5.0" onConclusion="none">#Velotype-component.pkg</pkg-ref>
+    <pkg-ref id="com.manyougz.Velotype" version="__VELOTYPE_VERSION__" onConclusion="none">#Velotype-component.pkg</pkg-ref>
 </installer-gui-script>
