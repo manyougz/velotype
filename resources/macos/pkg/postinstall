@@ -1,0 +1,40 @@
+#!/bin/bash
+# Post-install script for Velotype.pkg
+# This script runs after the app is installed to /Applications
+
+# Don't use 'set -e' - we want to continue even if checks fail
+
+APP_NAME="Velotype"
+BINARY_NAME="velotype"
+APP_PATH="/Applications/${APP_NAME}.app"
+BINARY_PATH="$APP_PATH/Contents/MacOS/$BINARY_NAME"
+CLI_LINK="/usr/local/bin/${BINARY_NAME}"
+
+echo "==> $APP_NAME post-install script"
+echo "    App path: $APP_PATH"
+echo "    Binary: $BINARY_PATH"
+echo "    CLI link: $CLI_LINK"
+
+echo "==> Checking installation..."
+ls -la "$APP_PATH" 2>&1 || echo "ERROR: App not found at $APP_PATH"
+
+# Create CLI symlink (only if app exists)
+if [ -d "$APP_PATH" ] && [ -f "$BINARY_PATH" ]; then
+    echo "==> Creating command-line tool symlink..."
+    rm -f "$CLI_LINK"
+    ln -s "$BINARY_PATH" "$CLI_LINK"
+    
+    if [ -L "$CLI_LINK" ]; then
+        echo "✅ Command-line tool installed at $CLI_LINK"
+        ls -la "$CLI_LINK"
+    else
+        echo "❌ Failed to create symlink"
+    fi
+else
+    echo "⚠️  Skipping CLI tool - app installation may have failed"
+fi
+
+echo "==> Post-install script completed"
+echo "   You can now use '$BINARY_NAME' from the terminal"
+
+exit 0

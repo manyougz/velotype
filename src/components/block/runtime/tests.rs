@@ -373,6 +373,7 @@ async fn paragraph_shortcut_creates_task_item_directly(cx: &mut TestAppContext) 
             None,
             None,
             None,
+            false,
             cx,
         );
     });
@@ -388,7 +389,15 @@ async fn paragraph_shortcut_creates_parenthesized_numbered_list_directly(cx: &mu
     let block = cx.new(|cx| Block::with_record(cx, BlockRecord::paragraph(String::new())));
 
     block.update(cx, |block, cx| {
-        block.apply_title_edit(InlineTextTree::plain("1) item"), 7, None, None, None, cx);
+        block.apply_title_edit(
+            InlineTextTree::plain("1) item"),
+            7,
+            None,
+            None,
+            None,
+            false,
+            cx,
+        );
     });
 
     let kind = block.read_with(cx, |block, _cx| block.kind());
@@ -402,13 +411,21 @@ async fn bullet_shortcut_upgrades_to_task_item_after_box_prefix(cx: &mut TestApp
     let block = cx.new(|cx| Block::with_record(cx, BlockRecord::paragraph(String::new())));
 
     block.update(cx, |block, cx| {
-        block.apply_title_edit(InlineTextTree::plain("- "), 2, None, None, None, cx);
+        block.apply_title_edit(InlineTextTree::plain("- "), 2, None, None, None, false, cx);
     });
     let kind = block.read_with(cx, |block, _cx| block.kind());
     assert_eq!(kind, BlockKind::BulletedListItem);
 
     block.update(cx, |block, cx| {
-        block.apply_title_edit(InlineTextTree::plain("[ ] "), 4, None, None, None, cx);
+        block.apply_title_edit(
+            InlineTextTree::plain("[ ] "),
+            4,
+            None,
+            None,
+            None,
+            false,
+            cx,
+        );
     });
 
     let kind = block.read_with(cx, |block, _cx| block.kind());
@@ -649,6 +666,268 @@ async fn bold_projection_insertion_inside_span_preserves_bold_style(cx: &mut Tes
         assert_eq!(block.display_text(), "**bXold**");
         assert_eq!(block.record.title.serialize_markdown(), "**bXold**");
         assert!(block.record.title.render_cache().spans()[0].style.bold);
+    });
+}
+
+#[gpui::test]
+async fn italic_projection_only_expands_touched_span(cx: &mut TestAppContext) {
+    let block = cx.new(|cx| {
+        Block::with_record(
+            cx,
+            BlockRecord::new(
+                BlockKind::Paragraph,
+                InlineTextTree::from_markdown("a *italic* b"),
+            ),
+        )
+    });
+
+    block.update(cx, |block, _cx| {
+        block.selected_range = 0..0;
+        block.sync_inline_projection_for_focus(true);
+    });
+    assert_eq!(
+        block.read_with(cx, |block, _cx| block.display_text().to_string()),
+        "a italic b"
+    );
+
+    block.update(cx, |block, _cx| {
+        block.selected_range = 2..2;
+        block.sync_inline_projection_for_focus(true);
+    });
+    assert_eq!(
+        block.read_with(cx, |block, _cx| block.display_text().to_string()),
+        "a *italic* b"
+    );
+}
+
+#[gpui::test]
+async fn italic_projection_marker_edit_unwraps_italic_style(cx: &mut TestAppContext) {
+    let block = cx.new(|cx| {
+        Block::with_record(
+            cx,
+            BlockRecord::new(BlockKind::Paragraph, InlineTextTree::from_markdown("*it*")),
+        )
+    });
+
+    block.update(cx, |block, cx| {
+        block.selected_range = 0..0;
+        block.sync_inline_projection_for_focus(true);
+        assert_eq!(block.display_text(), "*it*");
+        block.replace_text_in_visible_range(0..1, "", None, false, cx);
+    });
+
+    block.read_with(cx, |block, _cx| {
+        assert_eq!(block.display_text(), "it");
+        assert_eq!(block.record.title.serialize_markdown(), "it");
+        assert!(
+            block
+                .record
+                .title
+                .render_cache()
+                .spans()
+                .iter()
+                .all(|span| !span.style.italic)
+        );
+    });
+}
+
+#[gpui::test]
+async fn typing_closing_italic_marker_places_caret_after_marker(cx: &mut TestAppContext) {
+    // `*italic` is literal until the closing `*` is typed; afterwards the caret
+    // must land *after* the closing marker so further typing stays plain.
+    let block = cx.new(|cx| {
+        Block::with_record(
+            cx,
+            BlockRecord::new(
+                BlockKind::Paragraph,
+                InlineTextTree::from_markdown("*italic"),
+            ),
+        )
+    });
+
+    block.update(cx, |block, cx| {
+        block.selected_range = 7..7;
+        block.sync_inline_projection_for_focus(true);
+        assert_eq!(block.display_text(), "*italic");
+        block.replace_text_in_visible_range(7..7, "*", None, false, cx);
+    });
+
+    block.read_with(cx, |block, _cx| {
+        assert_eq!(block.display_text(), "*italic*");
+        assert_eq!(block.cursor_offset(), "*italic*".len());
+        assert_eq!(
+            block.collapsed_caret_affinity,
+            super::CollapsedCaretAffinity::OuterEnd
+        );
+    });
+}
+
+#[gpui::test]
+async fn typing_closing_bold_marker_places_caret_after_marker(cx: &mut TestAppContext) {
+    let block = cx.new(|cx| {
+        Block::with_record(
+            cx,
+            BlockRecord::new(
+                BlockKind::Paragraph,
+                InlineTextTree::from_markdown("**bold*"),
+            ),
+        )
+    });
+
+    block.update(cx, |block, cx| {
+        block.selected_range = 7..7;
+        block.sync_inline_projection_for_focus(true);
+        assert_eq!(block.display_text(), "**bold*");
+        block.replace_text_in_visible_range(7..7, "*", None, false, cx);
+    });
+
+    block.read_with(cx, |block, _cx| {
+        assert_eq!(block.display_text(), "**bold**");
+        assert_eq!(block.cursor_offset(), "**bold**".len());
+        assert_eq!(
+            block.collapsed_caret_affinity,
+            super::CollapsedCaretAffinity::OuterEnd
+        );
+    });
+}
+
+#[gpui::test]
+async fn typing_inside_span_keeps_default_affinity(cx: &mut TestAppContext) {
+    // Inserting an ordinary character inside a bold span must not jump the
+    // caret outside the span.
+    let block = cx.new(|cx| {
+        Block::with_record(
+            cx,
+            BlockRecord::new(
+                BlockKind::Paragraph,
+                InlineTextTree::from_markdown("**bold**"),
+            ),
+        )
+    });
+
+    block.update(cx, |block, cx| {
+        block.selected_range = 0..0;
+        block.sync_inline_projection_for_focus(true);
+        assert_eq!(block.display_text(), "**bold**");
+        // Insert "X" inside the bold word (display offset 3 = after "**b").
+        block.replace_text_in_visible_range(3..3, "X", None, false, cx);
+    });
+
+    block.read_with(cx, |block, _cx| {
+        assert_eq!(block.display_text(), "**bXold**");
+        assert_eq!(
+            block.collapsed_caret_affinity,
+            super::CollapsedCaretAffinity::Default
+        );
+    });
+}
+
+#[gpui::test]
+async fn typing_bold_markers_char_by_char_produces_bold_not_italic(cx: &mut TestAppContext) {
+    // Typing `**bold**` one character at a time must yield bold, not italic.
+    // The clean parse is committed on each keystroke, so the intermediate
+    // `**bold*` must not collapse to a literal `*` plus an italic `bold`.
+    let block = cx.new(|cx| {
+        Block::with_record(
+            cx,
+            BlockRecord::new(BlockKind::Paragraph, InlineTextTree::from_markdown("")),
+        )
+    });
+
+    block.update(cx, |block, cx| {
+        block.selected_range = 0..0;
+        block.sync_inline_projection_for_focus(true);
+        for ch in "**bold**".chars() {
+            let caret = block.cursor_offset();
+            block.replace_text_in_visible_range(caret..caret, &ch.to_string(), None, false, cx);
+        }
+    });
+
+    block.read_with(cx, |block, _cx| {
+        assert_eq!(block.record.title.visible_text(), "bold");
+        assert_eq!(block.record.title.serialize_markdown(), "**bold**");
+        assert!(
+            block
+                .record
+                .title
+                .render_cache()
+                .spans()
+                .iter()
+                .all(|span| span.style.bold && !span.style.italic),
+            "typed `**bold**` must be bold, not italic"
+        );
+    });
+}
+
+#[gpui::test]
+async fn typing_after_closing_italic_marker_inserts_plain_text(cx: &mut TestAppContext) {
+    // After typing `*italic*` the caret sits after the closing `*`, so further
+    // typing must be plain text rather than being absorbed back into the span.
+    let block = cx.new(|cx| {
+        Block::with_record(
+            cx,
+            BlockRecord::new(BlockKind::Paragraph, InlineTextTree::from_markdown("")),
+        )
+    });
+
+    block.update(cx, |block, cx| {
+        block.selected_range = 0..0;
+        block.sync_inline_projection_for_focus(true);
+        for ch in "*italic* x".chars() {
+            let caret = block.cursor_offset();
+            block.replace_text_in_visible_range(caret..caret, &ch.to_string(), None, false, cx);
+        }
+    });
+
+    block.read_with(cx, |block, _cx| {
+        assert_eq!(block.record.title.visible_text(), "italic x");
+        assert_eq!(block.record.title.serialize_markdown(), "*italic* x");
+        // The trailing " x" must be a plain (non-italic) fragment.
+        let trailing_is_italic = block
+            .record
+            .title
+            .fragments
+            .iter()
+            .any(|fragment| fragment.text.contains('x') && fragment.style.italic);
+        assert!(
+            !trailing_is_italic,
+            "text after closing `*` must not be italic"
+        );
+    });
+}
+
+#[gpui::test]
+async fn typing_after_closing_bold_marker_inserts_plain_text(cx: &mut TestAppContext) {
+    // Same as above for bold: typing past the closing `**` must be plain.
+    let block = cx.new(|cx| {
+        Block::with_record(
+            cx,
+            BlockRecord::new(BlockKind::Paragraph, InlineTextTree::from_markdown("")),
+        )
+    });
+
+    block.update(cx, |block, cx| {
+        block.selected_range = 0..0;
+        block.sync_inline_projection_for_focus(true);
+        for ch in "**bold** more".chars() {
+            let caret = block.cursor_offset();
+            block.replace_text_in_visible_range(caret..caret, &ch.to_string(), None, false, cx);
+        }
+    });
+
+    block.read_with(cx, |block, _cx| {
+        assert_eq!(block.record.title.visible_text(), "bold more");
+        assert_eq!(block.record.title.serialize_markdown(), "**bold** more");
+        let trailing_is_bold = block
+            .record
+            .title
+            .fragments
+            .iter()
+            .any(|fragment| fragment.text.contains("more") && fragment.style.bold);
+        assert!(
+            !trailing_is_bold,
+            "text after closing `**` must not be bold"
+        );
     });
 }
 
@@ -981,6 +1260,33 @@ async fn strikethrough_projection_left_escape_stays_outside_after_rebuild(cx: &m
         block.move_to_with_preferred_x(target, None, _cx);
     });
     assert_eq!(block.read_with(cx, |block, _cx| block.cursor_offset()), 1);
+}
+
+#[gpui::test]
+async fn word_start_boundaries_step_over_whole_words(cx: &mut TestAppContext) {
+    let block = cx.new(|cx| {
+        Block::with_record(
+            cx,
+            BlockRecord::new(
+                BlockKind::Paragraph,
+                InlineTextTree::from_markdown("hello world foo"),
+            ),
+        )
+    });
+
+    block.read_with(cx, |block, _cx| {
+        // Word starts are at offsets 0 ("hello"), 6 ("world"), 12 ("foo").
+        assert_eq!(block.next_word_start(0), 6);
+        assert_eq!(block.next_word_start(3), 6);
+        assert_eq!(block.next_word_start(6), 12);
+        assert_eq!(block.next_word_start(12), 15);
+
+        assert_eq!(block.previous_word_start(15), 12);
+        assert_eq!(block.previous_word_start(12), 6);
+        assert_eq!(block.previous_word_start(7), 6);
+        assert_eq!(block.previous_word_start(6), 0);
+        assert_eq!(block.previous_word_start(0), 0);
+    });
 }
 
 #[gpui::test]

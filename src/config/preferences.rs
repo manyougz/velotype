@@ -9,7 +9,6 @@ use gpui::*;
 use serde::Serialize;
 
 use super::{VelotypeConfigDirs, read_recent_files};
-use crate::app_identity::VELOTYPE_APP_ID;
 use crate::components::{
     ShortcutCategory, ShortcutCommand, ShortcutDefinition, install_keybindings,
     normalize_shortcut_config, normalize_shortcut_keys, resolved_shortcut_keys,
@@ -17,6 +16,9 @@ use crate::components::{
 };
 use crate::i18n::{I18nManager, language_id_for_locale_preferences};
 use crate::theme::{Theme, ThemeCatalogEntry, ThemeManager};
+use crate::window_chrome::{
+    custom_titlebar_height, render_custom_titlebar, velotype_window_options,
+};
 
 const DEFAULT_THEME_ID: &str = "velotype";
 const DEFAULT_LANGUAGE_ID: &str = "en-US";
@@ -448,6 +450,17 @@ impl PreferencesWindow {
         window.remove_window();
     }
 
+    fn on_titlebar_close(
+        &mut self,
+        event: &ClickEvent,
+        window: &mut Window,
+        _cx: &mut Context<Self>,
+    ) {
+        if event.standard_click() {
+            window.remove_window();
+        }
+    }
+
     fn save(&mut self, _: &ClickEvent, window: &mut Window, cx: &mut Context<Self>) {
         if !self.has_unsaved_changes() {
             return;
@@ -744,14 +757,30 @@ impl PreferencesWindow {
             ShortcutCommand::Newline => strings.preferences_shortcut_newline.clone(),
             ShortcutCommand::DeleteBack => strings.preferences_shortcut_delete_back.clone(),
             ShortcutCommand::Delete => strings.preferences_shortcut_delete.clone(),
+            ShortcutCommand::WordDeleteBack => {
+                strings.preferences_shortcut_word_delete_back.clone()
+            }
+            ShortcutCommand::WordDeleteForward => {
+                strings.preferences_shortcut_word_delete_forward.clone()
+            }
             ShortcutCommand::FocusPrev => strings.preferences_shortcut_focus_prev.clone(),
             ShortcutCommand::FocusNext => strings.preferences_shortcut_focus_next.clone(),
             ShortcutCommand::MoveLeft => strings.preferences_shortcut_move_left.clone(),
             ShortcutCommand::MoveRight => strings.preferences_shortcut_move_right.clone(),
+            ShortcutCommand::WordMoveLeft => strings.preferences_shortcut_word_move_left.clone(),
+            ShortcutCommand::WordMoveRight => strings.preferences_shortcut_word_move_right.clone(),
             ShortcutCommand::Home => strings.preferences_shortcut_home.clone(),
             ShortcutCommand::End => strings.preferences_shortcut_end.clone(),
+            ShortcutCommand::BlockUp => strings.preferences_shortcut_block_up.clone(),
+            ShortcutCommand::BlockDown => strings.preferences_shortcut_block_down.clone(),
             ShortcutCommand::SelectLeft => strings.preferences_shortcut_select_left.clone(),
             ShortcutCommand::SelectRight => strings.preferences_shortcut_select_right.clone(),
+            ShortcutCommand::WordSelectLeft => {
+                strings.preferences_shortcut_word_select_left.clone()
+            }
+            ShortcutCommand::WordSelectRight => {
+                strings.preferences_shortcut_word_select_right.clone()
+            }
             ShortcutCommand::SelectHome => strings.preferences_shortcut_select_home.clone(),
             ShortcutCommand::SelectEnd => strings.preferences_shortcut_select_end.clone(),
             ShortcutCommand::SelectAll => strings.preferences_shortcut_select_all.clone(),
@@ -1098,22 +1127,27 @@ impl PreferencesWindow {
 }
 
 impl Render for PreferencesWindow {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = cx.global::<ThemeManager>().current().clone();
         let strings = cx.global::<I18nManager>().strings().clone();
         let c = &theme.colors;
         let d = &theme.dimensions;
         let t = &theme.typography;
         let can_save = self.has_unsaved_changes();
+        let window_title =
+            SharedString::from(format!("Velotype - {}", strings.preferences_window_title));
+        window.set_window_title(window_title.as_ref());
+        let titlebar_height = custom_titlebar_height(window, d);
 
-        div()
+        let content = div()
             .size_full()
+            .pt(px(titlebar_height))
+            .flex()
             .key_context("Preferences")
             .track_focus(&self.focus_handle)
             .on_key_down(cx.listener(Self::capture_shortcut_key))
             .bg(c.editor_background)
             .text_color(c.dialog_body)
-            .flex()
             .child(
                 div()
                     .w(relative(0.3))
@@ -1279,7 +1313,26 @@ impl Render for PreferencesWindow {
                                     .on_click(cx.listener(Self::save)),
                             ),
                     ),
-            )
+            );
+
+        let root = div()
+            .size_full()
+            .relative()
+            .bg(c.editor_background)
+            .child(content);
+
+        if let Some(titlebar) = render_custom_titlebar(
+            "preferences-titlebar",
+            window_title,
+            &theme,
+            window,
+            cx,
+            Self::on_titlebar_close,
+        ) {
+            root.child(titlebar)
+        } else {
+            root
+        }
     }
 }
 
@@ -1290,18 +1343,10 @@ fn open_preferences_window_with_state(
     title: String,
 ) -> WindowHandle<PreferencesWindow> {
     let bounds = Bounds::centered(None, size(px(720.0), px(480.0)), cx);
+    let window_title = SharedString::from(format!("Velotype - {title}"));
     let handle = cx
         .open_window(
-            WindowOptions {
-                app_id: Some(VELOTYPE_APP_ID.to_string()),
-                window_bounds: Some(WindowBounds::Windowed(bounds)),
-                titlebar: Some(TitlebarOptions {
-                    title: Some(format!("Velotype - {title}").into()),
-                    ..TitlebarOptions::default()
-                }),
-                focus: true,
-                ..WindowOptions::default()
-            },
+            velotype_window_options(window_title, bounds),
             move |_window, cx| {
                 cx.new(move |cx| PreferencesWindow::new(preferences, theme_options, cx))
             },

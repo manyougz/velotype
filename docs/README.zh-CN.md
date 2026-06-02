@@ -41,9 +41,39 @@ Velotype 目标支持 Windows、Linux 和 macOS。应用天然适合作为独立
 
 ### 1. 下载 release
 
-从 [Velotype Releases](https://github.com/manyougz/velotype/releases) 页面下载 Windows、Linux 或 macOS 构建。Release 产物按便携桌面程序设计，可直接运行。
+从 [Velotype Releases](https://github.com/manyougz/velotype/releases) 页面下载对应平台的构建。
 
-> 注意，macOS 系统用户需要在本地自行对 `app` 文件进行签名，否则 Velotype 无法正常运行。
+#### Windows 和 Linux 用户
+
+- 下载对应的 `.zip` 或 `.tar.gz` 文件
+- 解压得到可执行文件
+- 直接运行即可
+
+#### macOS 用户
+
+提供两种安装方式：
+
+**方式 1：单一 .app 应用包**
+- 下载 `velotype-*.zip` 文件
+- 解压得到 `Velotype.app`
+- 拖到 `/Applications` 或任意位置
+- 双击即可运行
+
+**方式 2：PKG 安装包（推荐）**
+- 下载 `velotype-*.pkg` 文件
+- 双击运行安装程序
+- 自动安装到 `/Applications`
+- 自动配置命令行工具 `velotype`
+
+> **如果使用 PKG 安装**：命令行工具在安装过程中已自动配置，可直接使用。PKG安装程序通过 `postinstall` / `preuninstall`脚本自动管理CLI链接。你仍然可以在使用时手动触发安装/卸载。
+> 
+> **如果使用 .app 应用包**：可通过应用内菜单一键安装/卸载：
+> 1. 打开 Velotype.app
+> 2. 点击菜单 **帮助 → 安装CLI命令**
+> 3. 输入管理员密码
+> 4. 完成！
+> 
+> 注意，如果你移动或删除了 `Velotype.app`，符号链接会自动失效，运行 `velotype` 会提示找不到命令。
 
 ### 2. 从源码构建
 

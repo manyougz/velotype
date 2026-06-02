@@ -1501,10 +1501,11 @@ fn parse_until(
     inside_code: bool,
     reference_definitions: &LinkReferenceDefinitions,
 ) -> ParseResult {
+    let body_start = index;
     while index < tokens.len() {
         // Check for closing delimiter.
         if let Some(ref end_delim) = end_delimiter {
-            let closed = match end_delim {
+            let mut closed = match end_delim {
                 Delimiter::CodeMarkdown { run_len } => {
                     tokens[index].ch == '`' && backtick_run_len(tokens, index) == *run_len
                 }
@@ -1519,6 +1520,12 @@ fn parse_until(
                         && can_close_emphasis(tokens, index)
                 }
             };
+
+            // Emphasis spans must enclose at least one character; reject a
+            // close at the very start of the body so empty spans stay literal.
+            if closed && index == body_start && emphasis_requires_body(*end_delim) {
+                closed = false;
+            }
 
             if closed {
                 let close_len = end_delim.close().chars().count();
@@ -1604,26 +1611,37 @@ fn parse_until(
                 continue;
             }
 
-            if let Some(delimiter) = match_open_delimiter(tokens, index)
-                && has_closing_delimiter(tokens, index, delimiter)
-            {
-                for token in &tokens[index..index + delimiter.token_len()] {
-                    builder.drop_token(token);
-                }
-                let inner_start = index + delimiter.token_len();
-                let is_code_delim = matches!(delimiter, Delimiter::CodeMarkdown { .. });
-                let parsed = parse_until(
-                    tokens,
-                    inner_start,
-                    Some(delimiter),
-                    extra_style.apply(delimiter),
-                    extra_html_style,
-                    builder,
-                    is_code_delim,
-                    reference_definitions,
-                );
-                if parsed.closed {
-                    index = parsed.next_index;
+            if let Some(delimiter) = match_open_delimiter(tokens, index) {
+                if has_closing_delimiter(tokens, index, delimiter) {
+                    for token in &tokens[index..index + delimiter.token_len()] {
+                        builder.drop_token(token);
+                    }
+                    let inner_start = index + delimiter.token_len();
+                    let is_code_delim = matches!(delimiter, Delimiter::CodeMarkdown { .. });
+                    let parsed = parse_until(
+                        tokens,
+                        inner_start,
+                        Some(delimiter),
+                        extra_style.apply(delimiter),
+                        extra_html_style,
+                        builder,
+                        is_code_delim,
+                        reference_definitions,
+                    );
+                    if parsed.closed {
+                        index = parsed.next_index;
+                        continue;
+                    }
+                } else if delimiter.token_len() > 1 {
+                    // Keep an unclosed multi-character opener (`**`, `__`, `~~`,
+                    // backtick run) literal as one unit. Emitting just its first
+                    // char would let the rest open a shorter span (e.g. `**bold*`
+                    // -> `*` + italic `bold`), which is committed on every
+                    // keystroke and loses the intended bold.
+                    for token in &tokens[index..index + delimiter.token_len()] {
+                        builder.emit_token(token, extra_style, extra_html_style);
+                    }
+                    index += delimiter.token_len();
                     continue;
                 }
             }
@@ -2499,7 +2517,9 @@ fn has_closing_delimiter(tokens: &[CharToken], index: usize, delimiter: Delimite
         return locate_script_close(tokens, index + skip, marker).is_some();
     }
 
-    let mut cursor = index + skip;
+    let body_start = index + skip;
+    let requires_body = emphasis_requires_body(delimiter);
+    let mut cursor = body_start;
     while cursor < tokens.len() {
         if tokens[cursor].ch == '\\'
             && let Some(escaped_len) = escaped_sequence_token_len(tokens, cursor)
@@ -2509,6 +2529,13 @@ fn has_closing_delimiter(tokens: &[CharToken], index: usize, delimiter: Delimite
         }
 
         if matches_sequence(tokens, cursor, &close_str) {
+            // Emphasis spans must enclose at least one character; a close
+            // sitting immediately after the open (e.g. `**` or `*` `*`) is an
+            // empty span and is treated as literal text instead.
+            if requires_body && cursor == body_start {
+                cursor += 1;
+                continue;
+            }
             return true;
         }
 
@@ -2516,6 +2543,21 @@ fn has_closing_delimiter(tokens: &[CharToken], index: usize, delimiter: Delimite
     }
 
     false
+}
+
+/// Whether `delimiter` requires a non-empty body. Emphasis and strikethrough
+/// markers must enclose at least one character; code spans may be empty and
+/// script markers already constrain their bodies elsewhere.
+fn emphasis_requires_body(delimiter: Delimiter) -> bool {
+    matches!(
+        delimiter,
+        Delimiter::BoldMarkdown { .. }
+            | Delimiter::ItalicMarkdown { .. }
+            | Delimiter::StrikethroughMarkdown
+            | Delimiter::BoldHtml
+            | Delimiter::ItalicHtml
+            | Delimiter::Underline
+    )
 }
 
 fn locate_script_close(tokens: &[CharToken], mut cursor: usize, marker: char) -> Option<usize> {
@@ -3213,6 +3255,112 @@ mod tests {
 
         assert_eq!(tree.visible_text(), "1**234");
         assert_eq!(tree.serialize_markdown(), "1\\*\\*234");
+    }
+
+    #[test]
+    fn empty_emphasis_spans_stay_literal() {
+        // `**`, `* *`, or `**word` must not be swallowed as an empty emphasis
+        // span; the markers stay literal until a non-empty body is closed.
+        for input in ["*", "**", "***", "****", "~~~~", "__"] {
+            let tree = InlineTextTree::from_markdown(input);
+            assert_eq!(tree.visible_text(), input, "input {input:?} lost markers");
+        }
+
+        let leading = InlineTextTree::from_markdown("**word");
+        assert_eq!(leading.visible_text(), "**word");
+        assert_eq!(leading.serialize_markdown(), "\\*\\*word");
+
+        let trailing = InlineTextTree::from_markdown("**word*");
+        assert_eq!(trailing.visible_text(), "**word*");
+    }
+
+    #[test]
+    fn non_empty_emphasis_still_parses_after_empty_guard() {
+        let bold = InlineTextTree::from_markdown("**word**");
+        assert_eq!(bold.visible_text(), "word");
+        assert_eq!(bold.serialize_markdown(), "**word**");
+
+        let italic = InlineTextTree::from_markdown("*a*");
+        assert_eq!(italic.visible_text(), "a");
+        assert_eq!(italic.serialize_markdown(), "*a*");
+
+        let single_char_bold = InlineTextTree::from_markdown("**a**");
+        assert_eq!(single_char_bold.visible_text(), "a");
+        assert_eq!(single_char_bold.serialize_markdown(), "**a**");
+
+        let bold_italic = InlineTextTree::from_markdown("***x***");
+        assert_eq!(bold_italic.visible_text(), "x");
+        let spans = bold_italic.render_cache();
+        assert!(
+            spans
+                .spans()
+                .iter()
+                .all(|span| span.style.bold && span.style.italic)
+        );
+    }
+
+    #[test]
+    fn unclosed_multichar_opener_stays_fully_literal() {
+        // While typing `**bold**`, the intermediate `**bold*` must stay literal;
+        // otherwise the second `*` opens an italic span and the bold is lost.
+        let partial = InlineTextTree::from_markdown("**bold*");
+        assert_eq!(partial.visible_text(), "**bold*");
+        assert!(
+            partial
+                .render_cache()
+                .spans()
+                .iter()
+                .all(|span| !span.style.italic && !span.style.bold),
+            "`**bold*` must be plain literal, not italic"
+        );
+
+        // The completed marker still resolves to bold (not italic).
+        let complete = InlineTextTree::from_markdown("**bold**");
+        assert_eq!(complete.visible_text(), "bold");
+        assert!(
+            complete
+                .render_cache()
+                .spans()
+                .iter()
+                .all(|span| span.style.bold && !span.style.italic),
+            "`**bold**` must be bold, not italic"
+        );
+
+        // A genuine single-`*` italic opener is unaffected by the multi-char rule.
+        let italic = InlineTextTree::from_markdown("*word*");
+        assert_eq!(italic.visible_text(), "word");
+        assert!(
+            italic
+                .render_cache()
+                .spans()
+                .iter()
+                .all(|span| span.style.italic && !span.style.bold),
+            "`*word*` must stay italic"
+        );
+
+        // Other unclosed multi-char openers stay literal as a unit too.
+        for input in ["__bold_", "~~strike~"] {
+            let tree = InlineTextTree::from_markdown(input);
+            assert_eq!(tree.visible_text(), input, "input {input:?} lost markers");
+            assert!(
+                tree.render_cache()
+                    .spans()
+                    .iter()
+                    .all(|span| !span.style.italic
+                        && !span.style.bold
+                        && !span.style.strikethrough),
+                "input {input:?} should be plain literal"
+            );
+        }
+    }
+
+    #[test]
+    fn empty_code_span_is_unaffected_by_emphasis_guard() {
+        // The empty-emphasis guard must not touch code spans. `*` inside a code
+        // span stays literal and the span round-trips.
+        let tree = InlineTextTree::from_markdown("`*`");
+        assert_eq!(tree.visible_text(), "*");
+        assert_eq!(tree.serialize_markdown(), "`*`");
     }
 
     #[test]

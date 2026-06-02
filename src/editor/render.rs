@@ -12,6 +12,7 @@ use crate::components::CalloutVariant;
 use crate::components::{Block, BlockKind, NoRecentFiles};
 use crate::i18n::{I18nManager, I18nStrings};
 use crate::theme::{Theme, ThemeDimensions, ThemeManager};
+use crate::window_chrome::{custom_titlebar_height, render_custom_titlebar};
 
 pub(crate) const ABOUT_GITHUB_URL: &str = "https://github.com/manyougz/velotype";
 
@@ -316,6 +317,17 @@ fn footnote_group_shell(
 }
 
 impl Editor {
+    fn on_titlebar_close(
+        &mut self,
+        event: &ClickEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if event.standard_click() {
+            self.request_close_current_window(window, cx);
+        }
+    }
+
     pub(crate) fn install_close_guard(&mut self, cx: &mut Context<Self>, window: &mut Window) {
         if self.close_guard_installed {
             return;
@@ -523,6 +535,7 @@ impl Editor {
         cx: &mut Context<Self>,
         menus: Option<&[gpui::OwnedMenu]>,
         menu_labels: &[SharedString],
+        top_offset: f32,
     ) -> Option<AnyElement> {
         let menus = menus?;
         if menus.is_empty() {
@@ -542,7 +555,7 @@ impl Editor {
             div()
                 .id("app-menu-bar")
                 .absolute()
-                .top_0()
+                .top(px(top_offset))
                 .left_0()
                 .right_0()
                 .h(px(d.menu_bar_height))
@@ -605,6 +618,7 @@ impl Editor {
         cx: &mut Context<Self>,
         menus: Option<&[gpui::OwnedMenu]>,
         menu_labels: &[SharedString],
+        top_offset: f32,
     ) -> Option<AnyElement> {
         let open_index = self.menu_bar_open?;
         let menus = menus?;
@@ -633,7 +647,7 @@ impl Editor {
                             .id(("app-submenu-bridge", open_index * 1000 + submenu_index))
                             .absolute()
                             .occlude()
-                            .top(px(geometry.top))
+                            .top(px(top_offset + geometry.top))
                             .left(px(geometry.left))
                             .w(px(geometry.width))
                             .h(px(geometry.height))
@@ -743,7 +757,7 @@ impl Editor {
                                 .id(("app-submenu-panel", open_index * 1000 + submenu_index))
                                 .absolute()
                                 .occlude()
-                                .top(px(top))
+                                .top(px(top_offset + top))
                                 .left(px(left))
                                 .w(px(submenu_width))
                                 .p(px(d.menu_panel_padding))
@@ -874,7 +888,7 @@ impl Editor {
             .id(("app-menu-panel", open_index))
             .absolute()
             .occlude()
-            .top(px(d.menu_panel_top))
+            .top(px(top_offset + d.menu_panel_top))
             .left(px(menu_panel_left(open_index, menu_labels, d)))
             .w(px(menu_panel_width))
             .p(px(d.menu_panel_padding))
@@ -1376,11 +1390,9 @@ impl Render for Editor {
             .get_menus()
             .map(|menus| !menus.is_empty())
             .unwrap_or(false);
-        let menu_bar_height = px(in_window_menu_bar_height_for_target_os(
-            std::env::consts::OS,
-            has_menus,
-            d,
-        ));
+        let titlebar_height = custom_titlebar_height(window, d);
+        let menu_bar_height =
+            in_window_menu_bar_height_for_target_os(std::env::consts::OS, has_menus, d);
         let scroll_trigger_padding = (d.block_min_height * 0.75).max(16.0);
         let max_scroll_y = f32::from(self.scroll_handle.max_offset().height.max(px(0.0)));
         let viewport_height = f32::from(viewport_bounds.size.height.max(px(1.0)));
@@ -1766,7 +1778,9 @@ impl Render for Editor {
             .on_action(cx.listener(Self::on_quit_application))
             .on_action(cx.listener(Self::on_toggle_view_mode_action))
             .on_action(cx.listener(Self::on_toggle_workspace_action))
-            .on_action(cx.listener(Self::on_dismiss_transient_ui));
+            .on_action(cx.listener(Self::on_dismiss_transient_ui))
+            .on_action(cx.listener(Self::on_install_cli_tool))
+            .on_action(cx.listener(Self::on_uninstall_cli_tool));
         // Fetch menus + collect labels once for both renderers; previously each
         // of render_in_window_menu_bar / render_in_window_menu_panel called
         // cx.get_menus() and walked menus.iter().map(|m| m.name.to_string())
@@ -1780,9 +1794,27 @@ impl Render for Editor {
             .as_ref()
             .map(|m| m.iter().map(|menu| menu.name.clone()).collect())
             .unwrap_or_default();
-        let base = if let Some(menu_bar) =
-            self.render_in_window_menu_bar(&theme, cx, menus.as_deref(), &menu_labels)
-        {
+        let window_title =
+            Self::window_title(self.file_path.as_deref(), self.document_dirty, &strings);
+        let base = if let Some(titlebar) = render_custom_titlebar(
+            "editor-titlebar",
+            window_title.into(),
+            &theme,
+            window,
+            cx,
+            Self::on_titlebar_close,
+        ) {
+            base.child(titlebar)
+        } else {
+            base
+        };
+        let base = if let Some(menu_bar) = self.render_in_window_menu_bar(
+            &theme,
+            cx,
+            menus.as_deref(),
+            &menu_labels,
+            titlebar_height,
+        ) {
             base.child(menu_bar)
         } else {
             base
@@ -1792,7 +1824,7 @@ impl Render for Editor {
         let main_content = div()
             .w_full()
             .h_full()
-            .pt(menu_bar_height)
+            .pt(px(titlebar_height + menu_bar_height))
             .flex()
             .min_w(px(0.0));
         let main_content = if let Some(workspace_panel) =
@@ -1803,9 +1835,13 @@ impl Render for Editor {
             main_content
         };
         let base = base.child(main_content.child(content_area));
-        let base = if let Some(menu_panel) =
-            self.render_in_window_menu_panel(&theme, cx, menus.as_deref(), &menu_labels)
-        {
+        let base = if let Some(menu_panel) = self.render_in_window_menu_panel(
+            &theme,
+            cx,
+            menus.as_deref(),
+            &menu_labels,
+            titlebar_height,
+        ) {
             base.child(menu_panel)
         } else {
             base

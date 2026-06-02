@@ -113,6 +113,10 @@ pub struct I18nStrings {
     pub menu_check_updates: String,
     /// Help menu item for showing About information.
     pub menu_about: String,
+    /// Help menu item for installing the CLI tool (symlink to /usr/local/bin).
+    pub menu_install_cli_tool: String,
+    /// Help menu item for uninstalling the CLI tool.
+    pub menu_uninstall_cli_tool: String,
     /// Workspace menu item for opening or closing the workspace drawer.
     pub menu_toggle_workspace: String,
     /// Native file-dialog prompt for opening Markdown files.
@@ -169,14 +173,22 @@ pub struct I18nStrings {
     pub preferences_shortcut_newline: String,
     pub preferences_shortcut_delete_back: String,
     pub preferences_shortcut_delete: String,
+    pub preferences_shortcut_word_delete_back: String,
+    pub preferences_shortcut_word_delete_forward: String,
     pub preferences_shortcut_focus_prev: String,
     pub preferences_shortcut_focus_next: String,
     pub preferences_shortcut_move_left: String,
     pub preferences_shortcut_move_right: String,
+    pub preferences_shortcut_word_move_left: String,
+    pub preferences_shortcut_word_move_right: String,
     pub preferences_shortcut_home: String,
     pub preferences_shortcut_end: String,
+    pub preferences_shortcut_block_up: String,
+    pub preferences_shortcut_block_down: String,
     pub preferences_shortcut_select_left: String,
     pub preferences_shortcut_select_right: String,
+    pub preferences_shortcut_word_select_left: String,
+    pub preferences_shortcut_word_select_right: String,
     pub preferences_shortcut_select_home: String,
     pub preferences_shortcut_select_end: String,
     pub preferences_shortcut_select_all: String,
@@ -321,6 +333,8 @@ struct I18nStringsDe {
     menu_export_pdf: Option<String>,
     menu_check_updates: Option<String>,
     menu_about: Option<String>,
+    menu_install_cli_tool: Option<String>,
+    menu_uninstall_cli_tool: Option<String>,
     menu_toggle_workspace: Option<String>,
     open_markdown_files_prompt: Option<String>,
     add_language_config_prompt: Option<String>,
@@ -356,14 +370,22 @@ struct I18nStringsDe {
     preferences_shortcut_newline: Option<String>,
     preferences_shortcut_delete_back: Option<String>,
     preferences_shortcut_delete: Option<String>,
+    preferences_shortcut_word_delete_back: Option<String>,
+    preferences_shortcut_word_delete_forward: Option<String>,
     preferences_shortcut_focus_prev: Option<String>,
     preferences_shortcut_focus_next: Option<String>,
     preferences_shortcut_move_left: Option<String>,
     preferences_shortcut_move_right: Option<String>,
+    preferences_shortcut_word_move_left: Option<String>,
+    preferences_shortcut_word_move_right: Option<String>,
     preferences_shortcut_home: Option<String>,
     preferences_shortcut_end: Option<String>,
+    preferences_shortcut_block_up: Option<String>,
+    preferences_shortcut_block_down: Option<String>,
     preferences_shortcut_select_left: Option<String>,
     preferences_shortcut_select_right: Option<String>,
+    preferences_shortcut_word_select_left: Option<String>,
+    preferences_shortcut_word_select_right: Option<String>,
     preferences_shortcut_select_home: Option<String>,
     preferences_shortcut_select_end: Option<String>,
     preferences_shortcut_select_all: Option<String>,
@@ -471,6 +493,8 @@ const I18N_STRING_KEYS: &[&str] = &[
     "menu_export_pdf",
     "menu_check_updates",
     "menu_about",
+    "menu_install_cli_tool",
+    "menu_uninstall_cli_tool",
     "menu_toggle_workspace",
     "open_markdown_files_prompt",
     "add_language_config_prompt",
@@ -506,14 +530,22 @@ const I18N_STRING_KEYS: &[&str] = &[
     "preferences_shortcut_newline",
     "preferences_shortcut_delete_back",
     "preferences_shortcut_delete",
+    "preferences_shortcut_word_delete_back",
+    "preferences_shortcut_word_delete_forward",
     "preferences_shortcut_focus_prev",
     "preferences_shortcut_focus_next",
     "preferences_shortcut_move_left",
     "preferences_shortcut_move_right",
+    "preferences_shortcut_word_move_left",
+    "preferences_shortcut_word_move_right",
     "preferences_shortcut_home",
     "preferences_shortcut_end",
+    "preferences_shortcut_block_up",
+    "preferences_shortcut_block_down",
     "preferences_shortcut_select_left",
     "preferences_shortcut_select_right",
+    "preferences_shortcut_word_select_left",
+    "preferences_shortcut_word_select_right",
     "preferences_shortcut_select_home",
     "preferences_shortcut_select_end",
     "preferences_shortcut_select_all",
@@ -681,6 +713,12 @@ impl I18nStringsDe {
                 .menu_check_updates
                 .unwrap_or(defaults.menu_check_updates),
             menu_about: self.menu_about.unwrap_or(defaults.menu_about),
+            menu_install_cli_tool: self
+                .menu_install_cli_tool
+                .unwrap_or(defaults.menu_install_cli_tool),
+            menu_uninstall_cli_tool: self
+                .menu_uninstall_cli_tool
+                .unwrap_or(defaults.menu_uninstall_cli_tool),
             menu_toggle_workspace: self
                 .menu_toggle_workspace
                 .unwrap_or(defaults.menu_toggle_workspace),
@@ -780,6 +818,12 @@ impl I18nStringsDe {
             preferences_shortcut_delete: self
                 .preferences_shortcut_delete
                 .unwrap_or(defaults.preferences_shortcut_delete),
+            preferences_shortcut_word_delete_back: self
+                .preferences_shortcut_word_delete_back
+                .unwrap_or(defaults.preferences_shortcut_word_delete_back),
+            preferences_shortcut_word_delete_forward: self
+                .preferences_shortcut_word_delete_forward
+                .unwrap_or(defaults.preferences_shortcut_word_delete_forward),
             preferences_shortcut_focus_prev: self
                 .preferences_shortcut_focus_prev
                 .unwrap_or(defaults.preferences_shortcut_focus_prev),
@@ -792,18 +836,36 @@ impl I18nStringsDe {
             preferences_shortcut_move_right: self
                 .preferences_shortcut_move_right
                 .unwrap_or(defaults.preferences_shortcut_move_right),
+            preferences_shortcut_word_move_left: self
+                .preferences_shortcut_word_move_left
+                .unwrap_or(defaults.preferences_shortcut_word_move_left),
+            preferences_shortcut_word_move_right: self
+                .preferences_shortcut_word_move_right
+                .unwrap_or(defaults.preferences_shortcut_word_move_right),
             preferences_shortcut_home: self
                 .preferences_shortcut_home
                 .unwrap_or(defaults.preferences_shortcut_home),
             preferences_shortcut_end: self
                 .preferences_shortcut_end
                 .unwrap_or(defaults.preferences_shortcut_end),
+            preferences_shortcut_block_up: self
+                .preferences_shortcut_block_up
+                .unwrap_or(defaults.preferences_shortcut_block_up),
+            preferences_shortcut_block_down: self
+                .preferences_shortcut_block_down
+                .unwrap_or(defaults.preferences_shortcut_block_down),
             preferences_shortcut_select_left: self
                 .preferences_shortcut_select_left
                 .unwrap_or(defaults.preferences_shortcut_select_left),
             preferences_shortcut_select_right: self
                 .preferences_shortcut_select_right
                 .unwrap_or(defaults.preferences_shortcut_select_right),
+            preferences_shortcut_word_select_left: self
+                .preferences_shortcut_word_select_left
+                .unwrap_or(defaults.preferences_shortcut_word_select_left),
+            preferences_shortcut_word_select_right: self
+                .preferences_shortcut_word_select_right
+                .unwrap_or(defaults.preferences_shortcut_word_select_right),
             preferences_shortcut_select_home: self
                 .preferences_shortcut_select_home
                 .unwrap_or(defaults.preferences_shortcut_select_home),
@@ -1033,6 +1095,8 @@ impl I18nStrings {
             menu_export_pdf: "PDF".into(),
             menu_check_updates: "检查更新".into(),
             menu_about: "关于".into(),
+            menu_install_cli_tool: "安装CLI命令".into(),
+            menu_uninstall_cli_tool: "卸载CLI命令".into(),
             menu_toggle_workspace: "切换工作区".into(),
             open_markdown_files_prompt: "打开 Markdown 文件".into(),
             add_language_config_prompt: "选择语言配置文件".into(),
@@ -1069,14 +1133,22 @@ impl I18nStrings {
             preferences_shortcut_newline: "换行".into(),
             preferences_shortcut_delete_back: "向前删除".into(),
             preferences_shortcut_delete: "向后删除".into(),
-            preferences_shortcut_focus_prev: "聚焦上一块".into(),
-            preferences_shortcut_focus_next: "聚焦下一块".into(),
+            preferences_shortcut_word_delete_back: "向前删除单词".into(),
+            preferences_shortcut_word_delete_forward: "向后删除单词".into(),
+            preferences_shortcut_focus_prev: "上移".into(),
+            preferences_shortcut_focus_next: "下移".into(),
             preferences_shortcut_move_left: "光标左移".into(),
             preferences_shortcut_move_right: "光标右移".into(),
+            preferences_shortcut_word_move_left: "按词左移".into(),
+            preferences_shortcut_word_move_right: "按词右移".into(),
             preferences_shortcut_home: "行首".into(),
             preferences_shortcut_end: "行尾".into(),
+            preferences_shortcut_block_up: "上一块开头".into(),
+            preferences_shortcut_block_down: "下一块开头".into(),
             preferences_shortcut_select_left: "向左选择".into(),
             preferences_shortcut_select_right: "向右选择".into(),
+            preferences_shortcut_word_select_left: "向左选择单词".into(),
+            preferences_shortcut_word_select_right: "向右选择单词".into(),
             preferences_shortcut_select_home: "选择到行首".into(),
             preferences_shortcut_select_end: "选择到行尾".into(),
             preferences_shortcut_select_all: "全选".into(),
@@ -1198,6 +1270,8 @@ impl I18nStrings {
             menu_export_pdf: "PDF".into(),
             menu_check_updates: "Check for Updates".into(),
             menu_about: "About".into(),
+            menu_install_cli_tool: "Install CLI Command".into(),
+            menu_uninstall_cli_tool: "Uninstall CLI Command".into(),
             menu_toggle_workspace: "Toggle Workspace".into(),
             open_markdown_files_prompt: "Open Markdown Files".into(),
             add_language_config_prompt: "Choose Language Config".into(),
@@ -1235,14 +1309,22 @@ impl I18nStrings {
             preferences_shortcut_newline: "Newline".into(),
             preferences_shortcut_delete_back: "Delete Backward".into(),
             preferences_shortcut_delete: "Delete Forward".into(),
-            preferences_shortcut_focus_prev: "Focus Previous Block".into(),
-            preferences_shortcut_focus_next: "Focus Next Block".into(),
+            preferences_shortcut_word_delete_back: "Word Delete Backward".into(),
+            preferences_shortcut_word_delete_forward: "Word Delete Forward".into(),
+            preferences_shortcut_focus_prev: "Move Up".into(),
+            preferences_shortcut_focus_next: "Move Down".into(),
             preferences_shortcut_move_left: "Move Left".into(),
             preferences_shortcut_move_right: "Move Right".into(),
+            preferences_shortcut_word_move_left: "Word Move Left".into(),
+            preferences_shortcut_word_move_right: "Word Move Right".into(),
             preferences_shortcut_home: "Line Start".into(),
             preferences_shortcut_end: "Line End".into(),
+            preferences_shortcut_block_up: "Block Up".into(),
+            preferences_shortcut_block_down: "Block Down".into(),
             preferences_shortcut_select_left: "Select Left".into(),
             preferences_shortcut_select_right: "Select Right".into(),
+            preferences_shortcut_word_select_left: "Word Select Left".into(),
+            preferences_shortcut_word_select_right: "Word Select Right".into(),
             preferences_shortcut_select_home: "Select to Line Start".into(),
             preferences_shortcut_select_end: "Select to Line End".into(),
             preferences_shortcut_select_all: "Select All".into(),

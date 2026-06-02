@@ -11,10 +11,11 @@ use super::CollapsedCaretAffinity;
 use super::{Block, BlockEvent, BlockKind, InlineFormat, InlineTextTree, UndoCaptureKind};
 use crate::components::markdown::paste::should_split_plain_multiline_paste;
 use crate::components::{
-    BoldSelection, CodeSelection, Copy, Cut, Delete, DeleteBack, DismissTransientUi, End,
-    ExitCodeBlock, FocusNext, FocusPrev, Home, IndentBlock, ItalicSelection, MoveLeft, MoveRight,
-    Newline, OutdentBlock, Paste, SelectAll, SelectEnd, SelectHome, SelectLeft, SelectRight,
-    UnderlineSelection,
+    BlockDown, BlockUp, BoldSelection, CodeSelection, Copy, Cut, Delete, DeleteBack,
+    DismissTransientUi, End, ExitCodeBlock, FocusNext, FocusPrev, Home, IndentBlock,
+    ItalicSelection, MoveLeft, MoveRight, Newline, OutdentBlock, Paste, SelectAll, SelectEnd,
+    SelectHome, SelectLeft, SelectRight, UnderlineSelection, WordDeleteBack, WordDeleteForward,
+    WordMoveLeft, WordMoveRight, WordSelectLeft, WordSelectRight,
 };
 
 impl Block {
@@ -471,6 +472,42 @@ impl Block {
         self.replace_text_in_range(None, "", window, cx);
     }
 
+    pub(crate) fn on_word_delete_back(
+        &mut self,
+        _: &WordDeleteBack,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.selected_range.is_empty() {
+            if self.cursor_offset() == 0 {
+                // Nothing to the left in this block; defer to grapheme
+                // backspace, which handles block merge and downgrades.
+                self.on_delete_back(&DeleteBack, window, cx);
+                return;
+            }
+            self.select_to(self.previous_word_start(self.cursor_offset()), cx);
+        }
+        self.replace_text_in_range(None, "", window, cx);
+    }
+
+    pub(crate) fn on_word_delete_forward(
+        &mut self,
+        _: &WordDeleteForward,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.selected_range.is_empty() {
+            if self.cursor_offset() == self.visible_len() {
+                // Nothing to the right in this block; defer to grapheme
+                // delete, which handles block merge and separator removal.
+                self.on_delete(&Delete, window, cx);
+                return;
+            }
+            self.select_to(self.next_word_start(self.cursor_offset()), cx);
+        }
+        self.replace_text_in_range(None, "", window, cx);
+    }
+
     pub(crate) fn on_indent_block(
         &mut self,
         _: &IndentBlock,
@@ -641,6 +678,60 @@ impl Block {
         } else {
             self.select_to(self.next_boundary(self.cursor_offset()), cx);
         }
+    }
+
+    pub(crate) fn on_word_move_left(
+        &mut self,
+        _: &WordMoveLeft,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.move_to(self.previous_word_start(self.cursor_offset()), cx);
+    }
+
+    pub(crate) fn on_word_move_right(
+        &mut self,
+        _: &WordMoveRight,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.move_to(self.next_word_start(self.cursor_offset()), cx);
+    }
+
+    pub(crate) fn on_word_select_left(
+        &mut self,
+        _: &WordSelectLeft,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.select_to(self.previous_word_start(self.cursor_offset()), cx);
+    }
+
+    pub(crate) fn on_word_select_right(
+        &mut self,
+        _: &WordSelectRight,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.select_to(self.next_word_start(self.cursor_offset()), cx);
+    }
+
+    pub(crate) fn on_block_up(
+        &mut self,
+        _: &BlockUp,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        cx.emit(BlockEvent::RequestBlockUp);
+    }
+
+    pub(crate) fn on_block_down(
+        &mut self,
+        _: &BlockDown,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        cx.emit(BlockEvent::RequestBlockDown);
     }
 
     pub(crate) fn on_select_all(

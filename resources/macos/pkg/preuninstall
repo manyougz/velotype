@@ -1,0 +1,21 @@
+#!/bin/bash
+# Pre-uninstall script for Velotype.pkg
+# This script runs when the user removes the package
+
+set -e
+
+BINARY_NAME="velotype"
+CLI_LINK="/usr/local/bin/${BINARY_NAME}"
+
+echo "==> Velotype pre-uninstall script"
+
+# Remove CLI symlink if it exists
+if [ -L "$CLI_LINK" ] || [ -e "$CLI_LINK" ]; then
+    echo "Removing command-line tool symlink..."
+    rm -f "$CLI_LINK"
+    echo "✅ Command-line tool removed"
+else
+    echo "Command-line tool not installed, nothing to remove"
+fi
+
+exit 0
