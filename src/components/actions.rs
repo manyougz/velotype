@@ -58,6 +58,7 @@ actions!(
         AddLanguageConfig,
         AddThemeConfig,
         QuitApplication,
+        CloseWindow,
         CheckForUpdates,
         ShowAbout,
         InstallCliTool,
@@ -146,6 +147,7 @@ pub(crate) enum ShortcutCommand {
     NewWindow,
     OpenFile,
     QuitApplication,
+    CloseWindow,
     DismissTransientUi,
     ToggleViewMode,
     ToggleWorkspace,
@@ -161,6 +163,18 @@ pub(crate) struct ShortcutDefinition {
 }
 
 const BLOCK_CONTEXT: Option<&str> = Some("BlockEditor");
+
+// On macOS cmd-q is the system quit shortcut; Windows/Linux use Alt+F4 (OS-handled).
+#[cfg(target_os = "macos")]
+const QUIT_APPLICATION_DEFAULT_KEYS: &[&str] = &["cmd-q"];
+#[cfg(not(target_os = "macos"))]
+const QUIT_APPLICATION_DEFAULT_KEYS: &[&str] = &[];
+
+// On macOS cmd-w closes the current window; no app-level binding needed on other platforms.
+#[cfg(target_os = "macos")]
+const CLOSE_WINDOW_DEFAULT_KEYS: &[&str] = &["cmd-w"];
+#[cfg(not(target_os = "macos"))]
+const CLOSE_WINDOW_DEFAULT_KEYS: &[&str] = &["ctrl-q"];
 
 const SHORTCUT_DEFINITIONS: &[ShortcutDefinition] = &[
     ShortcutDefinition {
@@ -426,7 +440,14 @@ const SHORTCUT_DEFINITIONS: &[ShortcutDefinition] = &[
         command: ShortcutCommand::QuitApplication,
         id: "quit_application",
         category: ShortcutCategory::File,
-        default_keys: &["cmd-q", "ctrl-q"],
+        default_keys: QUIT_APPLICATION_DEFAULT_KEYS,
+        context: None,
+    },
+    ShortcutDefinition {
+        command: ShortcutCommand::CloseWindow,
+        id: "close_window",
+        category: ShortcutCategory::File,
+        default_keys: CLOSE_WINDOW_DEFAULT_KEYS,
         context: None,
     },
     ShortcutDefinition {
@@ -447,7 +468,7 @@ const SHORTCUT_DEFINITIONS: &[ShortcutDefinition] = &[
         command: ShortcutCommand::ToggleWorkspace,
         id: "toggle_workspace",
         category: ShortcutCategory::Navigation,
-        default_keys: &["ctrl-w", "cmd-w"],
+        default_keys: &["ctrl-w"],
         context: None,
     },
 ];
@@ -623,6 +644,7 @@ fn key_binding_for(
         ShortcutCommand::NewWindow => KeyBinding::new(key, NewWindow, context),
         ShortcutCommand::OpenFile => KeyBinding::new(key, OpenFile, context),
         ShortcutCommand::QuitApplication => KeyBinding::new(key, QuitApplication, context),
+        ShortcutCommand::CloseWindow => KeyBinding::new(key, CloseWindow, context),
         ShortcutCommand::DismissTransientUi => KeyBinding::new(key, DismissTransientUi, context),
         ShortcutCommand::ToggleViewMode => KeyBinding::new(key, ToggleViewMode, context),
         ShortcutCommand::ToggleWorkspace => KeyBinding::new(key, ToggleWorkspace, context),
@@ -689,7 +711,7 @@ mod tests {
     fn toggle_workspace_has_default_shortcuts() {
         assert_eq!(
             resolved_shortcut_keys(&BTreeMap::new(), ShortcutCommand::ToggleWorkspace),
-            vec!["ctrl-w".to_string(), "cmd-w".to_string()]
+            vec!["ctrl-w".to_string()]
         );
     }
 

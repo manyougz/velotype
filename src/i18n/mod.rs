@@ -91,6 +91,8 @@ pub struct I18nStrings {
     pub menu_add_theme_config: String,
     /// File menu item for opening a new window.
     pub menu_new_window: String,
+    /// File menu item for closing the current window.
+    pub menu_close_window: String,
     /// File menu item for opening Markdown files.
     pub menu_open_file: String,
     /// File menu item for opening a recent file submenu.
@@ -208,6 +210,7 @@ pub struct I18nStrings {
     pub preferences_shortcut_new_window: String,
     pub preferences_shortcut_open_file: String,
     pub preferences_shortcut_quit_application: String,
+    pub preferences_shortcut_close_window: String,
     pub preferences_shortcut_dismiss_transient_ui: String,
     pub preferences_shortcut_toggle_view_mode: String,
     pub preferences_shortcut_toggle_workspace: String,
@@ -322,6 +325,7 @@ struct I18nStringsDe {
     menu_add_language_config: Option<String>,
     menu_add_theme_config: Option<String>,
     menu_new_window: Option<String>,
+    menu_close_window: Option<String>,
     menu_open_file: Option<String>,
     menu_open_recent_file: Option<String>,
     menu_preferences: Option<String>,
@@ -405,6 +409,7 @@ struct I18nStringsDe {
     preferences_shortcut_new_window: Option<String>,
     preferences_shortcut_open_file: Option<String>,
     preferences_shortcut_quit_application: Option<String>,
+    preferences_shortcut_close_window: Option<String>,
     preferences_shortcut_dismiss_transient_ui: Option<String>,
     preferences_shortcut_toggle_view_mode: Option<String>,
     preferences_shortcut_toggle_workspace: Option<String>,
@@ -482,6 +487,7 @@ const I18N_STRING_KEYS: &[&str] = &[
     "menu_add_language_config",
     "menu_add_theme_config",
     "menu_new_window",
+    "menu_close_window",
     "menu_open_file",
     "menu_open_recent_file",
     "menu_preferences",
@@ -565,6 +571,7 @@ const I18N_STRING_KEYS: &[&str] = &[
     "preferences_shortcut_new_window",
     "preferences_shortcut_open_file",
     "preferences_shortcut_quit_application",
+    "preferences_shortcut_close_window",
     "preferences_shortcut_dismiss_transient_ui",
     "preferences_shortcut_toggle_view_mode",
     "preferences_shortcut_toggle_workspace",
@@ -696,6 +703,7 @@ impl I18nStringsDe {
                 .menu_add_theme_config
                 .unwrap_or(defaults.menu_add_theme_config),
             menu_new_window: self.menu_new_window.unwrap_or(defaults.menu_new_window),
+            menu_close_window: self.menu_close_window.unwrap_or(defaults.menu_close_window),
             menu_open_file: self.menu_open_file.unwrap_or(defaults.menu_open_file),
             menu_open_recent_file: self
                 .menu_open_recent_file
@@ -923,6 +931,9 @@ impl I18nStringsDe {
             preferences_shortcut_quit_application: self
                 .preferences_shortcut_quit_application
                 .unwrap_or(defaults.preferences_shortcut_quit_application),
+            preferences_shortcut_close_window: self
+                .preferences_shortcut_close_window
+                .unwrap_or(defaults.preferences_shortcut_close_window),
             preferences_shortcut_dismiss_transient_ui: self
                 .preferences_shortcut_dismiss_transient_ui
                 .unwrap_or(defaults.preferences_shortcut_dismiss_transient_ui),
@@ -1084,6 +1095,7 @@ impl I18nStrings {
             menu_add_language_config: "添加语言配置".into(),
             menu_add_theme_config: "添加主题配置".into(),
             menu_new_window: "新建窗口".into(),
+            menu_close_window: "关闭窗口".into(),
             menu_open_file: "打开文件".into(),
             menu_open_recent_file: "打开最近文件".into(),
             menu_preferences: "偏好设置".into(),
@@ -1168,6 +1180,7 @@ impl I18nStrings {
             preferences_shortcut_new_window: "新建窗口".into(),
             preferences_shortcut_open_file: "打开文件".into(),
             preferences_shortcut_quit_application: "退出应用".into(),
+            preferences_shortcut_close_window: "关闭窗口".into(),
             preferences_shortcut_dismiss_transient_ui: "关闭临时界面".into(),
             preferences_shortcut_toggle_view_mode: "切换视图模式".into(),
             preferences_shortcut_toggle_workspace: "切换工作区".into(),
@@ -1259,6 +1272,7 @@ impl I18nStrings {
             menu_add_language_config: "Add Language Config".into(),
             menu_add_theme_config: "Add Theme Config".into(),
             menu_new_window: "New Window".into(),
+            menu_close_window: "Close Window".into(),
             menu_open_file: "Open File".into(),
             menu_open_recent_file: "Open Recent File".into(),
             menu_preferences: "Preferences".into(),
@@ -1344,6 +1358,7 @@ impl I18nStrings {
             preferences_shortcut_new_window: "New Window".into(),
             preferences_shortcut_open_file: "Open File".into(),
             preferences_shortcut_quit_application: "Quit Application".into(),
+            preferences_shortcut_close_window: "Close Window".into(),
             preferences_shortcut_dismiss_transient_ui: "Dismiss Temporary UI".into(),
             preferences_shortcut_toggle_view_mode: "Toggle View Mode".into(),
             preferences_shortcut_toggle_workspace: "Toggle Workspace".into(),

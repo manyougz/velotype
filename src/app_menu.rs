@@ -10,10 +10,10 @@ use anyhow::Context as _;
 use gpui::*;
 
 use crate::components::{
-    AddLanguageConfig, AddThemeConfig, CheckForUpdates, ExportHtml, ExportPdf, InstallCliTool,
-    NewWindow, NoRecentFiles, OpenFile, OpenPreferences, OpenRecentFile, QuitApplication,
-    SaveDocument, SaveDocumentAs, SelectLanguage, SelectTheme, ShowAbout, ToggleWorkspace,
-    UninstallCliTool,
+    AddLanguageConfig, AddThemeConfig, CheckForUpdates, CloseWindow, ExportHtml, ExportPdf,
+    InstallCliTool, NewWindow, NoRecentFiles, OpenFile, OpenPreferences, OpenRecentFile,
+    QuitApplication, SaveDocument, SaveDocumentAs, SelectLanguage, SelectTheme, ShowAbout,
+    ToggleWorkspace, UninstallCliTool,
 };
 use crate::config::{
     apply_configured_language, apply_configured_theme, import_language_config_and_select,
@@ -401,6 +401,7 @@ fn is_editor_scoped_menu_action(action: &dyn Action) -> bool {
         || action.as_any().is::<ExportHtml>()
         || action.as_any().is::<ExportPdf>()
         || action.as_any().is::<QuitApplication>()
+        || action.as_any().is::<CloseWindow>()
         || action.as_any().is::<CheckForUpdates>()
         || action.as_any().is::<ShowAbout>()
         || action.as_any().is::<InstallCliTool>()
@@ -547,6 +548,8 @@ pub(crate) fn dispatch_menu_action(action: &dyn Action, cx: &mut App) {
             editor.toggle_workspace_drawer(window, cx);
         });
     } else if action.as_any().is::<QuitApplication>() {
+        cx.quit();
+    } else if action.as_any().is::<CloseWindow>() {
         request_close_current_editor_window(cx);
     }
 }
@@ -596,6 +599,8 @@ pub(crate) fn dispatch_menu_action_for_editor(
             editor.export_document_via_prompt(ExportFormat::Pdf, window, cx);
         });
     } else if action.as_any().is::<QuitApplication>() {
+        cx.quit();
+    } else if action.as_any().is::<CloseWindow>() {
         let _ = target.update(cx, |editor, cx| {
             editor.request_close_current_window(window, cx);
         });
@@ -697,6 +702,7 @@ fn build_menus(
             name: strings.menu_file.into(),
             items: vec![
                 MenuItem::action(strings.menu_new_window.clone(), NewWindow),
+                MenuItem::action(strings.menu_close_window.clone(), CloseWindow),
                 MenuItem::action(strings.menu_open_file.clone(), OpenFile),
                 MenuItem::submenu(Menu {
                     name: strings.menu_open_recent_file.clone().into(),
@@ -1016,6 +1022,9 @@ pub(crate) fn init(cx: &mut App) {
     cx.on_action(|_: &QuitApplication, cx| {
         dispatch_menu_action(&QuitApplication, cx);
     });
+    cx.on_action(|_: &CloseWindow, cx| {
+        dispatch_menu_action(&CloseWindow, cx);
+    });
 
     install_menus(cx);
     cx.activate(true);
@@ -1025,9 +1034,9 @@ pub(crate) fn init(cx: &mut App) {
 mod tests {
     use super::{applescript_string_literal, build_menus};
     use crate::components::{
-        AddLanguageConfig, AddThemeConfig, CheckForUpdates, ExportHtml, ExportPdf, NewWindow,
-        NoRecentFiles, OpenFile, OpenPreferences, OpenRecentFile, QuitApplication, SaveDocument,
-        SelectLanguage, SelectTheme, ShowAbout,
+        AddLanguageConfig, AddThemeConfig, CheckForUpdates, CloseWindow, ExportHtml, ExportPdf,
+        NewWindow, NoRecentFiles, OpenFile, OpenPreferences, OpenRecentFile, QuitApplication,
+        SaveDocument, SelectLanguage, SelectTheme, ShowAbout,
     };
     use crate::i18n::I18nManager;
     use crate::theme::ThemeManager;
@@ -1211,6 +1220,7 @@ mod tests {
         assert!(super::is_window_context_menu_action(&AddThemeConfig));
         assert!(super::is_window_context_menu_action(&SaveDocument));
         assert!(super::is_window_context_menu_action(&QuitApplication));
+        assert!(super::is_window_context_menu_action(&CloseWindow));
         assert!(!super::is_window_context_menu_action(&SelectTheme {
             theme_id: "velotype".into(),
         }));
