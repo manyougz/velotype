@@ -109,7 +109,7 @@ Syntax support will continue to improve. Planned work includes:
 
 ## Theme Customization & Translation
 
-Velotype separates visual themes from UI language packs. Theme files can override global colors, typography, dimensions, menus, dialogs, table controls, image placeholders, code highlighting colors, and layout-related tokens. Missing fields or empty values inherit the built-in Velotype defaults, so a custom theme can be very small or fully override the default look.
+Velotype separates visual themes and UI language packs for separate management. Theme files can override global colors, fonts, sizes, menus, dialogs, table controls, image placeholders, code highlighting colors, and layout-related tokens. Missing fields or empty values inherit the built-in base theme specified by the theme pack (`velotype` or `velotype-light`, following `base_theme_id`; when this field is empty or invalid, it falls back to the `velotype` theme values), so a custom theme file can be very small, while still being able to fully override the theme.
 
 Language packs use the same partial-configuration strategy. Missing strings fall back to English, and imported language packs are normalized before being written into the app configuration directory.
 

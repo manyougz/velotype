@@ -1285,7 +1285,7 @@ impl Theme {
     /// Returns the built-in light theme.
     ///
     /// The light theme intentionally reuses the default layout and typography
-    /// tokens so custom theme fallback behavior remains anchored to Velotype.
+    /// tokens so it can focus on palette differences.
     pub fn light_theme() -> Self {
         let base = Self::default_theme();
         Self {
@@ -1430,6 +1430,7 @@ struct CustomThemeEntry {
     id: String,
     name: String,
     creator: String,
+    base_theme_id: String,
     theme: Theme,
 }
 
@@ -1565,7 +1566,9 @@ impl ThemeManager {
         dirs: &VelotypeConfigDirs,
     ) -> anyhow::Result<String> {
         let raw = read_json_or_jsonc(path.as_ref())?;
-        let (entry, normalized) = custom_theme_from_value(raw)?;
+        let default_base_theme_id = self.theme_import_base_theme_id();
+        let (entry, normalized) =
+            custom_theme_from_value_with_default_base(raw, default_base_theme_id.as_str())?;
         let file_name = format!(
             "{}_{}.json",
             sanitize_config_file_stem(&entry.name),
@@ -1645,9 +1648,29 @@ impl ThemeManager {
             CUSTOM_THEME_ID.into()
         }
     }
+
+    fn theme_import_base_theme_id(&self) -> String {
+        match self.current_theme_id.as_str() {
+            BUILTIN_THEME_VELOTYPE_LIGHT_ID => BUILTIN_THEME_VELOTYPE_LIGHT_ID.into(),
+            BUILTIN_THEME_VELOTYPE_ID => BUILTIN_THEME_VELOTYPE_ID.into(),
+            id => self
+                .custom_themes
+                .iter()
+                .find(|entry| entry.id == id)
+                .map(|entry| entry.base_theme_id.clone())
+                .unwrap_or_else(|| BUILTIN_THEME_VELOTYPE_ID.into()),
+        }
+    }
 }
 
-fn custom_theme_from_value(mut value: Value) -> anyhow::Result<(CustomThemeEntry, Value)> {
+fn custom_theme_from_value(value: Value) -> anyhow::Result<(CustomThemeEntry, Value)> {
+    custom_theme_from_value_with_default_base(value, BUILTIN_THEME_VELOTYPE_ID)
+}
+
+fn custom_theme_from_value_with_default_base(
+    mut value: Value,
+    default_base_theme_id: &str,
+) -> anyhow::Result<(CustomThemeEntry, Value)> {
     prune_empty_json_values(&mut value);
     let Value::Object(mut object) = value else {
         bail!("theme config must be a JSON object");
@@ -1655,6 +1678,7 @@ fn custom_theme_from_value(mut value: Value) -> anyhow::Result<(CustomThemeEntry
     let object = object_without_empty_values(std::mem::take(&mut object));
     let name = required_string(&object, "name")?;
     let creator = required_string(&object, "creator")?;
+    let base_theme_id = resolved_custom_theme_base_id(&object, default_base_theme_id);
     let raw_theme_patch = object
         .get("theme")
         .cloned()
@@ -1663,7 +1687,8 @@ fn custom_theme_from_value(mut value: Value) -> anyhow::Result<(CustomThemeEntry
         bail!("field 'theme' must be a JSON object when present");
     }
 
-    let mut merged = serde_json::to_value(Theme::default_theme())?;
+    let base_theme = custom_theme_base_theme(&base_theme_id);
+    let mut merged = serde_json::to_value(base_theme)?;
     let mut theme_patch = filter_json_by_schema(&raw_theme_patch, &merged);
     if let Value::Object(theme_patch_object) = &mut theme_patch {
         theme_patch_object.remove("name");
@@ -1682,6 +1707,10 @@ fn custom_theme_from_value(mut value: Value) -> anyhow::Result<(CustomThemeEntry
     let mut normalized_object = Map::new();
     normalized_object.insert("name".into(), Value::String(name.clone()));
     normalized_object.insert("creator".into(), Value::String(creator.clone()));
+    normalized_object.insert(
+        "base_theme_id".into(),
+        Value::String(base_theme_id.to_string()),
+    );
     for key in ["description", "version", "homepage", "license"] {
         if let Some(value) = object.get(key) {
             normalized_object.insert(key.into(), value.clone());
@@ -1701,10 +1730,41 @@ fn custom_theme_from_value(mut value: Value) -> anyhow::Result<(CustomThemeEntry
             id,
             name,
             creator,
+            base_theme_id: base_theme_id.to_string(),
             theme,
         },
         normalized,
     ))
+}
+
+fn resolved_custom_theme_base_id<'a>(
+    object: &'a Map<String, Value>,
+    default_base_theme_id: &'a str,
+) -> &'a str {
+    object
+        .get("base_theme_id")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| is_builtin_theme_id(value))
+        .unwrap_or_else(|| {
+            if is_builtin_theme_id(default_base_theme_id) {
+                default_base_theme_id
+            } else {
+                BUILTIN_THEME_VELOTYPE_ID
+            }
+        })
+}
+
+fn is_builtin_theme_id(theme_id: &str) -> bool {
+    theme_id == BUILTIN_THEME_VELOTYPE_ID || theme_id == BUILTIN_THEME_VELOTYPE_LIGHT_ID
+}
+
+fn custom_theme_base_theme(theme_id: &str) -> Theme {
+    if theme_id == BUILTIN_THEME_VELOTYPE_LIGHT_ID {
+        Theme::light_theme()
+    } else {
+        Theme::default_theme()
+    }
 }
 
 fn filter_json_by_schema(value: &Value, schema: &Value) -> Value {
@@ -2075,6 +2135,10 @@ mod tests {
 
         assert_eq!(manager.current_theme_id(), imported_id);
         assert_eq!(manager.current().name, "Night Writer");
+        assert_eq!(
+            manager.current().colors.editor_background,
+            Theme::default_theme().colors.editor_background
+        );
         assert_eq!(manager.current().dimensions.block_gap, 12.0);
         assert_eq!(manager.current().dimensions.menu_text_size, 12.0);
         assert!(
@@ -2088,10 +2152,134 @@ mod tests {
             .expect("normalized theme config should exist");
         assert!(normalized.contains("\"name\": \"Night Writer\""));
         assert!(normalized.contains("\"creator\": \"Ada\""));
+        assert!(normalized.contains("\"base_theme_id\": \"velotype\""));
         assert!(normalized.contains("\"block_gap\": 12.0"));
         assert!(!normalized.contains("menu_text_size"));
         assert!(!normalized.contains("empty_editing"));
         assert!(!normalized.contains("description"));
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn custom_theme_pack_can_inherit_light_base() {
+        let value = serde_json::json!({
+            "name": "Day Writer",
+            "creator": "Ada",
+            "base_theme_id": "velotype-light",
+            "theme": {
+                "dimensions": {
+                    "menu_panel_radius": 12.0
+                },
+                "colors": {
+                    "text_link": null
+                }
+            }
+        });
+
+        let (entry, normalized) =
+            super::custom_theme_from_value(value).expect("theme should import");
+        let light = Theme::light_theme();
+
+        assert_eq!(entry.base_theme_id, "velotype-light");
+        assert_eq!(
+            entry.theme.colors.editor_background,
+            light.colors.editor_background
+        );
+        assert_eq!(entry.theme.colors.text_default, light.colors.text_default);
+        assert_eq!(entry.theme.colors.text_link, light.colors.text_link);
+        assert_eq!(entry.theme.dimensions.menu_panel_radius, 12.0);
+        assert_eq!(
+            normalized
+                .get("base_theme_id")
+                .and_then(|value| value.as_str()),
+            Some("velotype-light")
+        );
+        assert!(
+            normalized
+                .pointer("/theme/colors")
+                .and_then(|value| value.as_object())
+                .map(|colors| !colors.contains_key("text_link"))
+                .unwrap_or(true)
+        );
+    }
+
+    #[test]
+    fn invalid_custom_theme_base_falls_back_to_dark() {
+        let value = serde_json::json!({
+            "name": "Broken Base",
+            "creator": "Ada",
+            "base_theme_id": "missing",
+            "theme": {
+                "dimensions": {
+                    "block_gap": 10.0
+                }
+            }
+        });
+
+        let (entry, normalized) =
+            super::custom_theme_from_value(value).expect("invalid base should not fail import");
+
+        assert_eq!(entry.base_theme_id, "velotype");
+        assert_eq!(
+            entry.theme.colors.editor_background,
+            Theme::default_theme().colors.editor_background
+        );
+        assert_eq!(
+            normalized
+                .get("base_theme_id")
+                .and_then(|value| value.as_str()),
+            Some("velotype")
+        );
+    }
+
+    #[test]
+    fn importing_without_base_uses_current_builtin_theme_as_base() {
+        let root =
+            std::env::temp_dir().join(format!("velotype-light-theme-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&root).expect("temp root should be created");
+        let source = root.join("theme.jsonc");
+        std::fs::write(
+            &source,
+            r#"{
+                "name": "Light Radius",
+                "creator": "Ada",
+                "theme": {
+                    "dimensions": {
+                        "menu_panel_radius": 14.0
+                    }
+                }
+            }"#,
+        )
+        .expect("theme config should be written");
+
+        let dirs = VelotypeConfigDirs::from_root(&root);
+        let mut manager = ThemeManager::default();
+        assert!(manager.set_theme_by_id("velotype-light"));
+        let imported_id = manager
+            .import_theme_config_with_dirs(&source, &dirs)
+            .expect("theme config should import");
+
+        assert_eq!(manager.current_theme_id(), imported_id);
+        assert_eq!(
+            manager.current().colors.editor_background,
+            Theme::light_theme().colors.editor_background
+        );
+        assert_eq!(manager.current().dimensions.menu_panel_radius, 14.0);
+
+        let normalized = std::fs::read_to_string(dirs.themes_dir().join("Light_Radius_Ada.json"))
+            .expect("normalized theme config should exist");
+        assert!(normalized.contains("\"base_theme_id\": \"velotype-light\""));
+
+        let mut reloaded = ThemeManager::default();
+        reloaded
+            .load_custom_themes_from_dirs(&dirs)
+            .expect("saved theme should reload");
+        assert!(reloaded.set_theme_by_id(&imported_id));
+        assert_eq!(
+            reloaded.current().colors.editor_background,
+            Theme::light_theme().colors.editor_background
+        );
 
         let _ = std::fs::remove_dir_all(root);
     }

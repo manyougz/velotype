@@ -2,14 +2,18 @@
 //
 // Save a copy as .json or .jsonc, fill only the fields you want to customize,
 // then import it from Theme -> Add Theme Config. Empty strings and null values
-// are ignored when Velotype normalizes the file. Missing theme fields fall back
-// to the built-in Velotype theme. Color values use the same serialized format
-// produced by Theme::to_json().
+// are ignored when Velotype normalizes the file. Missing theme fields inherit
+// the selected base theme. If base_theme_id is omitted, import uses the current
+// built-in theme as the base and writes that choice into the normalized file.
+// Color values use the same serialized format produced by Theme::to_json().
 {
   // Required. This is the theme name used in the Theme menu.
   "name": "",
   // Required. The Theme menu displays custom themes as "<name> - <creator>".
   "creator": "",
+  // Optional. Choose the built-in theme used for missing fields.
+  // Supported values: "velotype", "velotype-light".
+  "base_theme_id": "",
   // Optional short description for theme galleries, release notes, or sharing.
   "description": "",
   // Optional version string controlled by the theme author.
@@ -18,7 +22,7 @@
   "homepage": "",
   // Optional license identifier or license URL for the theme pack.
   "license": "",
-  // Optional visual tokens. Leave any value null or empty to inherit Velotype.
+  // Optional visual tokens. Leave any value null or empty to inherit base_theme_id.
   "theme": {
     // Colors use the serialized GPUI color format emitted by Theme::to_json().
     // Most fields affect rendered mode, editor chrome, dialogs, or menus.
@@ -193,7 +197,7 @@
       "dialog_danger_button_text": null
     },
     // Dimensions are logical pixels unless a comment explicitly says ratio.
-    // Set null to inherit Velotype and avoid storing the field after import.
+    // Set null to inherit base_theme_id and avoid storing the field after import.
     "dimensions": {
       // Padding around the editor content area.
       "editor_padding": null,
