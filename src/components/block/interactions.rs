@@ -202,6 +202,18 @@ impl Block {
         }
     }
 
+    /// If the code block's last line is a bare fence (three or more backticks
+    /// or tildes, no info string), returns the byte offset to cut from so the
+    /// whole line is removed; otherwise `None`.
+    fn trailing_code_fence_line_start(&self) -> Option<usize> {
+        let text = self.display_text();
+        let line_start = text.rfind('\n').map(|idx| idx + 1).unwrap_or(0);
+        let is_bare_fence = BlockKind::parse_code_fence_opening(&text[line_start..])
+            .is_some_and(|fence| fence.language.is_none());
+        // Cut from the preceding newline too, unless the fence is the only line.
+        is_bare_fence.then(|| line_start.saturating_sub(1))
+    }
+
     pub(crate) fn on_newline(&mut self, _: &Newline, window: &mut Window, cx: &mut Context<Self>) {
         // Enter is ordered from special editors to rich-text splitting:
         // table/source/code/quote-like blocks keep local newline semantics,
@@ -305,6 +317,21 @@ impl Block {
         if self.kind().is_code_block() {
             if self.selected_range.is_empty() && self.is_empty() {
                 self.convert_to_paragraph(cx);
+                return;
+            }
+            // Typing a bare closing fence on the last line and pressing Enter
+            // leaves the block, matching source mode.
+            if self.selected_range.is_empty()
+                && self.cursor_offset() == self.visible_len()
+                && let Some(fence_start) = self.trailing_code_fence_line_start()
+            {
+                let fence_end = self.visible_len();
+                self.prepare_undo_capture(UndoCaptureKind::NonCoalescible, cx);
+                self.replace_text_in_visible_range(fence_start..fence_end, "", None, false, cx);
+                cx.emit(BlockEvent::RequestNewline {
+                    trailing: InlineTextTree::plain(String::new()),
+                    source_already_mutated: true,
+                });
                 return;
             }
             if !self.selected_range.is_empty() {

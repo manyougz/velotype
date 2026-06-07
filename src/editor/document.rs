@@ -166,6 +166,13 @@ fn find_matching_closing_fence(
     for index in (start_index + 1)..lines.len() {
         let line = &lines[index];
         if is_closing_fence(line, opener) {
+            // An empty opener looks identical to a closing fence, so the
+            // greedy search below would merge adjacent empty-language blocks
+            // (issue #58). Close at the first match instead; greedy matching
+            // is only needed for info-tagged blocks that may wrap bare fences.
+            if opener.language.is_none() {
+                return Some(index);
+            }
             last_match = Some(index);
             continue;
         }
@@ -1876,6 +1883,22 @@ mod tests {
         ];
         let opener = parse_opening_fence(&lines[0]).expect("opening fence");
         assert_eq!(find_matching_closing_fence(&lines, 0, &opener), Some(3));
+    }
+
+    #[test]
+    fn empty_language_fence_closes_at_first_match() {
+        // Adjacent empty-language blocks must stay separate rather than the
+        // first absorbing the second's fences as body content (issue #58).
+        let lines = vec![
+            "```".to_string(),
+            "first".to_string(),
+            "```".to_string(),
+            "```".to_string(),
+            "second".to_string(),
+            "```".to_string(),
+        ];
+        let opener = parse_opening_fence(&lines[0]).expect("opening fence");
+        assert_eq!(find_matching_closing_fence(&lines, 0, &opener), Some(2));
     }
 
     #[test]
