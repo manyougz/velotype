@@ -1849,6 +1849,44 @@ mod tests {
     }
 
     #[gpui::test]
+    async fn trailing_fence_line_enter_closes_code_block(cx: &mut TestAppContext) {
+        let cx = cx.add_empty_window();
+        let editor =
+            cx.new(|cx| Editor::from_markdown(cx, "```rust\nlet x = 1;\n```".to_string(), None));
+
+        cx.update(|window, cx| {
+            editor.update(cx, |editor, cx| {
+                let block = editor.document.visible_blocks()[0].entity.clone();
+                block.update(cx, |block, block_cx| {
+                    // Type a closing fence on a fresh last line, then Enter.
+                    let end = block.visible_len();
+                    block.replace_text_in_visible_range(end..end, "\n```", None, false, block_cx);
+                    block.move_to(block.visible_len(), block_cx);
+                    block.on_newline(&Newline, window, block_cx);
+                });
+            });
+        });
+
+        editor.update(cx, |editor, cx| {
+            let visible = editor.document.visible_blocks();
+            assert_eq!(visible.len(), 2);
+            assert_eq!(
+                visible[0].entity.read(cx).kind(),
+                BlockKind::CodeBlock {
+                    language: Some("rust".into())
+                }
+            );
+            assert_eq!(visible[0].entity.read(cx).display_text(), "let x = 1;");
+            assert_eq!(visible[1].entity.read(cx).kind(), BlockKind::Paragraph);
+            assert_eq!(visible[1].entity.read(cx).display_text(), "");
+            assert_eq!(
+                editor.document.markdown_text(cx),
+                "```rust\nlet x = 1;\n```\n\n"
+            );
+        });
+    }
+
+    #[gpui::test]
     async fn math_block_exit_shortcut_creates_plain_text_block(cx: &mut TestAppContext) {
         let cx = cx.add_empty_window();
         let editor = cx.new(|cx| Editor::from_markdown(cx, "$$n^2$$".to_string(), None));
