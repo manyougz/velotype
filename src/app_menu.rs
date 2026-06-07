@@ -474,6 +474,31 @@ fn request_close_current_editor_window(cx: &mut App) {
     }
 }
 
+pub(crate) fn request_quit_application(cx: &mut App) {
+    let candidates = current_window_candidates(cx);
+    if candidates.is_empty() {
+        cx.quit();
+        return;
+    }
+
+    for window in candidates {
+        let Some(window) = window.downcast::<Editor>() else {
+            continue;
+        };
+
+        let should_close = window
+            .update(cx, |editor, window, cx| {
+                editor.on_window_should_close(window, cx)
+            })
+            .unwrap_or(false);
+        if !should_close {
+            return;
+        }
+    }
+
+    cx.quit();
+}
+
 /// Executes one of the app-menu actions against the current application state.
 pub(crate) fn dispatch_menu_action(action: &dyn Action, cx: &mut App) {
     if action.as_any().is::<NewWindow>() {
@@ -548,7 +573,7 @@ pub(crate) fn dispatch_menu_action(action: &dyn Action, cx: &mut App) {
             editor.toggle_workspace_drawer(window, cx);
         });
     } else if action.as_any().is::<QuitApplication>() {
-        cx.quit();
+        request_quit_application(cx);
     } else if action.as_any().is::<CloseWindow>() {
         request_close_current_editor_window(cx);
     }
@@ -599,7 +624,7 @@ pub(crate) fn dispatch_menu_action_for_editor(
             editor.export_document_via_prompt(ExportFormat::Pdf, window, cx);
         });
     } else if action.as_any().is::<QuitApplication>() {
-        cx.quit();
+        request_quit_application(cx);
     } else if action.as_any().is::<CloseWindow>() {
         let _ = target.update(cx, |editor, cx| {
             editor.request_close_current_window(window, cx);
@@ -1087,10 +1112,11 @@ mod tests {
         );
         assert_eq!(action_name(&menus[0].items[0]), "New Window");
         assert_eq!(
-            submenu(&menus[0].items[2]).name.to_string(),
+            submenu(&menus[0].items[3]).name.to_string(),
             "Open Recent File"
         );
-        assert_eq!(action_name(&menus[0].items[3]), "Preferences");
+        assert_eq!(action_name(&menus[0].items[1]), "Close Window");
+        assert_eq!(action_name(&menus[0].items[4]), "Preferences");
         assert_eq!(action_name(&menus[1].items[0]), "HTML");
         assert_eq!(action_name(&menus[1].items[1]), "PDF");
         assert_eq!(action_name(&menus[2].items[0]), "简体中文");
@@ -1105,7 +1131,7 @@ mod tests {
         let menus = build_menus(&theme_manager, &i18n_manager, &[]);
 
         assert_eq!(
-            submenu(&menus[0].items[2]).name.to_string(),
+            submenu(&menus[0].items[3]).name.to_string(),
             i18n_manager.strings().menu_open_recent_file.as_str()
         );
 
@@ -1169,7 +1195,7 @@ mod tests {
         let theme_manager = ThemeManager::default();
         let i18n_manager = I18nManager::default();
         let menus = build_menus(&theme_manager, &i18n_manager, &[]);
-        let recent_menu = submenu(&menus[0].items[2]);
+        let recent_menu = submenu(&menus[0].items[3]);
 
         assert_eq!(recent_menu.name.to_string(), "Open Recent File");
         assert_eq!(recent_menu.items.len(), 1);
@@ -1191,7 +1217,7 @@ mod tests {
             PathBuf::from(r"D:\notes\two.markdown"),
         ];
         let menus = build_menus(&theme_manager, &i18n_manager, &recent_files);
-        let recent_menu = submenu(&menus[0].items[2]);
+        let recent_menu = submenu(&menus[0].items[3]);
 
         assert_eq!(recent_menu.items.len(), 2);
         assert_eq!(action_name(&recent_menu.items[0]), r"C:\docs\one.md");

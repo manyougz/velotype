@@ -8,8 +8,8 @@ use gpui::{
 
 use super::{Editor, ViewMode};
 use crate::components::{
-    BlockKind, ImageReferenceDefinitions, ImageResolvedSource, InlineTextTree, QuitApplication,
-    SaveDocument, TableCellInlineImageSegment, TableColumnAlignment,
+    BlockKind, CloseWindow, ImageReferenceDefinitions, ImageResolvedSource, InlineTextTree,
+    QuitApplication, SaveDocument, TableCellInlineImageSegment, TableColumnAlignment,
     parse_table_cell_inline_images, superscript_ordinal,
 };
 use crate::export::ExportFormat;
@@ -479,7 +479,7 @@ async fn dirty_drop_saves_existing_document_before_replace(cx: &mut TestAppConte
 }
 
 #[gpui::test]
-async fn quit_menu_action_closes_only_active_editor_window(cx: &mut TestAppContext) {
+async fn close_window_menu_action_closes_only_active_editor_window(cx: &mut TestAppContext) {
     init_editor_test_app(cx);
 
     let (_first_editor, cx) =
@@ -495,7 +495,7 @@ async fn quit_menu_action_closes_only_active_editor_window(cx: &mut TestAppConte
     assert_eq!(cx.cx.windows().len(), 2);
 
     cx.cx.update(|cx| {
-        crate::app_menu::dispatch_menu_action(&QuitApplication, cx);
+        crate::app_menu::dispatch_menu_action(&CloseWindow, cx);
     });
     cx.run_until_parked();
 
@@ -528,7 +528,7 @@ async fn app_menu_opened_windows_activate_and_close_independently(cx: &mut TestA
     );
 
     cx.update(|cx| {
-        crate::app_menu::dispatch_menu_action(&QuitApplication, cx);
+        crate::app_menu::dispatch_menu_action(&CloseWindow, cx);
     });
     cx.run_until_parked();
 
@@ -537,7 +537,7 @@ async fn app_menu_opened_windows_activate_and_close_independently(cx: &mut TestA
     assert_eq!(remaining[0].window_id(), first_window.window_id());
 
     cx.update(|cx| {
-        crate::app_menu::dispatch_menu_action(&QuitApplication, cx);
+        crate::app_menu::dispatch_menu_action(&CloseWindow, cx);
     });
     cx.run_until_parked();
 
@@ -577,7 +577,7 @@ async fn app_menu_opened_file_window_reinstalls_close_guard_after_registration(
         .expect("second editor window should be open");
 
     cx.update(|cx| {
-        crate::app_menu::dispatch_menu_action(&QuitApplication, cx);
+        crate::app_menu::dispatch_menu_action(&CloseWindow, cx);
     });
     cx.run_until_parked();
 
@@ -660,7 +660,35 @@ async fn app_menu_opened_dirty_window_close_guard_prompts_only_that_window(
 }
 
 #[gpui::test]
-async fn quit_menu_action_prompts_only_dirty_active_editor(cx: &mut TestAppContext) {
+async fn quit_application_allows_clean_editor_windows_to_quit(cx: &mut TestAppContext) {
+    init_editor_test_app(cx);
+
+    let (first_editor, cx) =
+        cx.add_window_view(|_window, cx| Editor::from_markdown(cx, "first".to_string(), None));
+    let _first_window = activate_visual_window(cx);
+
+    let (second_editor, cx) = cx
+        .cx
+        .add_window_view(|_window, cx| Editor::from_markdown(cx, "second".to_string(), None));
+    let _second_window = activate_visual_window(cx);
+
+    assert_eq!(cx.cx.windows().len(), 2);
+
+    cx.cx.update(|cx| {
+        crate::app_menu::dispatch_menu_action(&QuitApplication, cx);
+    });
+    cx.run_until_parked();
+
+    first_editor.read_with(cx, |editor, _cx| {
+        assert!(!editor.show_unsaved_changes_dialog);
+    });
+    second_editor.read_with(cx, |editor, _cx| {
+        assert!(!editor.show_unsaved_changes_dialog);
+    });
+}
+
+#[gpui::test]
+async fn quit_application_prompts_dirty_editor_without_quitting(cx: &mut TestAppContext) {
     init_editor_test_app(cx);
 
     let (first_editor, cx) =
@@ -701,7 +729,9 @@ async fn quit_menu_action_prompts_only_dirty_active_editor(cx: &mut TestAppConte
 }
 
 #[gpui::test]
-async fn windows_fallback_quit_dispatch_closes_target_editor_window(cx: &mut TestAppContext) {
+async fn windows_fallback_close_window_dispatch_closes_target_editor_window(
+    cx: &mut TestAppContext,
+) {
     init_editor_test_app(cx);
 
     let (editor, cx) =
@@ -710,7 +740,7 @@ async fn windows_fallback_quit_dispatch_closes_target_editor_window(cx: &mut Tes
 
     cx.update(|window, cx| {
         let editor = editor.downgrade();
-        crate::app_menu::dispatch_menu_action_for_editor(&QuitApplication, &editor, window, cx);
+        crate::app_menu::dispatch_menu_action_for_editor(&CloseWindow, &editor, window, cx);
     });
     cx.run_until_parked();
 
@@ -723,7 +753,7 @@ async fn windows_fallback_quit_dispatch_closes_target_editor_window(cx: &mut Tes
 }
 
 #[gpui::test]
-async fn window_quit_action_closes_current_editor_before_global_menu_route(
+async fn window_close_action_closes_current_editor_before_global_menu_route(
     cx: &mut TestAppContext,
 ) {
     init_editor_test_app(cx);
@@ -737,7 +767,7 @@ async fn window_quit_action_closes_current_editor_before_global_menu_route(
         .add_window_view(|_window, cx| Editor::from_markdown(cx, "second".to_string(), None));
     let second_window = activate_visual_window(cx);
 
-    cx.dispatch_action(QuitApplication);
+    cx.dispatch_action(CloseWindow);
     cx.run_until_parked();
 
     let remaining = cx.cx.windows();

@@ -716,6 +716,33 @@ mod tests {
     }
 
     #[test]
+    fn close_and_quit_defaults_are_platform_specific() {
+        #[cfg(target_os = "macos")]
+        {
+            assert_eq!(
+                resolved_shortcut_keys(&BTreeMap::new(), ShortcutCommand::CloseWindow),
+                vec!["cmd-w".to_string()]
+            );
+            assert_eq!(
+                resolved_shortcut_keys(&BTreeMap::new(), ShortcutCommand::QuitApplication),
+                vec!["cmd-q".to_string()]
+            );
+        }
+
+        #[cfg(not(target_os = "macos"))]
+        {
+            assert_eq!(
+                resolved_shortcut_keys(&BTreeMap::new(), ShortcutCommand::CloseWindow),
+                vec!["ctrl-q".to_string()]
+            );
+            assert!(
+                resolved_shortcut_keys(&BTreeMap::new(), ShortcutCommand::QuitApplication)
+                    .is_empty()
+            );
+        }
+    }
+
+    #[test]
     fn word_and_block_shortcuts_have_ctrl_and_alt_defaults() {
         assert_eq!(
             resolved_shortcut_keys(&BTreeMap::new(), ShortcutCommand::WordMoveLeft),
