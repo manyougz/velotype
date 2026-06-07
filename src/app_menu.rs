@@ -701,7 +701,6 @@ fn build_menus(
             Menu {
                 name: "Velotype".into(),
                 items: vec![
-                    MenuItem::action(strings.menu_new_window.clone(), NewWindow),
                     MenuItem::action(strings.menu_preferences.clone(), OpenPreferences),
                     MenuItem::separator(),
                     MenuItem::action(strings.menu_quit.clone(), QuitApplication),
@@ -710,6 +709,7 @@ fn build_menus(
             Menu {
                 name: strings.menu_file.into(),
                 items: vec![
+                    MenuItem::action(strings.menu_new_window.clone(), NewWindow),
                     MenuItem::action(strings.menu_open_file.clone(), OpenFile),
                     MenuItem::submenu(Menu {
                         name: strings.menu_open_recent_file.clone().into(),
@@ -1138,7 +1138,15 @@ mod tests {
         #[cfg(target_os = "macos")]
         assert_eq!(
             menu_names,
-            vec!["Velotype", "File", "Export", "Language", "Theme", "Workspace", "Help"]
+            vec![
+                "Velotype",
+                "File",
+                "Export",
+                "Language",
+                "Theme",
+                "Workspace",
+                "Help"
+            ]
         );
         #[cfg(not(target_os = "macos"))]
         assert_eq!(
@@ -1146,13 +1154,17 @@ mod tests {
             vec!["File", "Export", "Language", "Theme", "Workspace", "Help"]
         );
 
-        // App menu (index 0): New Window is always first regardless of platform.
+        // New Window belongs with file operations on macOS and remains the
+        // first File menu item on other platforms.
+        #[cfg(target_os = "macos")]
+        assert_eq!(action_name(&menus[1].items[0]), "New Window");
+        #[cfg(not(target_os = "macos"))]
         assert_eq!(action_name(&menus[0].items[0]), "New Window");
 
         // Open Recent File submenu location differs by platform.
         #[cfg(target_os = "macos")]
         assert_eq!(
-            submenu(&menus[1].items[1]).name.to_string(),
+            submenu(&menus[1].items[2]).name.to_string(),
             "Open Recent File"
         );
         #[cfg(not(target_os = "macos"))]
@@ -1163,15 +1175,21 @@ mod tests {
 
         // Preferences location differs by platform.
         #[cfg(target_os = "macos")]
-        assert_eq!(action_name(&menus[0].items[1]), "Preferences");
+        assert_eq!(action_name(&menus[0].items[0]), "Preferences");
         #[cfg(not(target_os = "macos"))]
         assert_eq!(action_name(&menus[0].items[3]), "Preferences");
 
         assert_eq!(action_name(&menus[EXPORT_IDX].items[0]), "HTML");
         assert_eq!(action_name(&menus[EXPORT_IDX].items[1]), "PDF");
         assert_eq!(action_name(&menus[LANGUAGE_IDX].items[0]), "简体中文");
-        assert_eq!(action_name(&menus[LANGUAGE_IDX].items[1]), "\u{2713} English");
-        assert_eq!(action_name(&menus[WORKSPACE_IDX].items[0]), "Toggle Workspace");
+        assert_eq!(
+            action_name(&menus[LANGUAGE_IDX].items[1]),
+            "\u{2713} English"
+        );
+        assert_eq!(
+            action_name(&menus[WORKSPACE_IDX].items[0]),
+            "Toggle Workspace"
+        );
     }
 
     #[test]
@@ -1182,7 +1200,7 @@ mod tests {
 
         #[cfg(target_os = "macos")]
         assert_eq!(
-            submenu(&menus[1].items[1]).name.to_string(),
+            submenu(&menus[1].items[2]).name.to_string(),
             i18n_manager.strings().menu_open_recent_file.as_str()
         );
         #[cfg(not(target_os = "macos"))]
@@ -1207,10 +1225,16 @@ mod tests {
             vec!["文件", "导出", "语言", "主题", "工作区", "帮助"]
         );
 
+        #[cfg(target_os = "macos")]
+        assert_eq!(action_name(&menus[1].items[0]), "新建窗口");
+        #[cfg(not(target_os = "macos"))]
         assert_eq!(action_name(&menus[0].items[0]), "新建窗口");
         assert_eq!(action_name(&menus[EXPORT_IDX].items[0]), "HTML");
         assert_eq!(action_name(&menus[EXPORT_IDX].items[1]), "PDF");
-        assert_eq!(action_name(&menus[LANGUAGE_IDX].items[0]), "\u{2713} 简体中文");
+        assert_eq!(
+            action_name(&menus[LANGUAGE_IDX].items[0]),
+            "\u{2713} 简体中文"
+        );
         assert_eq!(action_name(&menus[LANGUAGE_IDX].items[1]), "English");
         assert_eq!(action_name(&menus[WORKSPACE_IDX].items[0]), "切换工作区");
     }
@@ -1260,10 +1284,10 @@ mod tests {
         let i18n_manager = I18nManager::default();
         let menus = build_menus(&theme_manager, &i18n_manager, &[]);
 
-        // On macOS: File menu is index 1, Open Recent is item 1 within it.
+        // On macOS: File menu is index 1, Open Recent is item 2 within it.
         // On other platforms: File menu is index 0, Open Recent is item 2.
         #[cfg(target_os = "macos")]
-        let recent_menu = submenu(&menus[1].items[1]);
+        let recent_menu = submenu(&menus[1].items[2]);
         #[cfg(not(target_os = "macos"))]
         let recent_menu = submenu(&menus[0].items[2]);
 
@@ -1289,7 +1313,7 @@ mod tests {
         let menus = build_menus(&theme_manager, &i18n_manager, &recent_files);
 
         #[cfg(target_os = "macos")]
-        let recent_menu = submenu(&menus[1].items[1]);
+        let recent_menu = submenu(&menus[1].items[2]);
         #[cfg(not(target_os = "macos"))]
         let recent_menu = submenu(&menus[0].items[2]);
 
