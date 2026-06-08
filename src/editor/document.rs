@@ -161,22 +161,20 @@ fn find_matching_closing_fence(
     start_index: usize,
     opener: &FenceInfo,
 ) -> Option<usize> {
-    let mut last_match = None;
-
     for index in (start_index + 1)..lines.len() {
         let line = &lines[index];
+        // A fenced block closes at its first matching fence, as in CommonMark.
+        // Scanning for a later fence (the previous behavior) let any opener
+        // swallow the following blocks whose closing fences are bare, merging
+        // them and corrupting them on round-trip (issue #58). A bare closing
+        // fence is indistinguishable from an empty opener, so first-match is
+        // the only unambiguous rule.
         if is_closing_fence(line, opener) {
-            // An empty opener looks identical to a closing fence, so the
-            // greedy search below would merge adjacent empty-language blocks
-            // (issue #58). Close at the first match instead; greedy matching
-            // is only needed for info-tagged blocks that may wrap bare fences.
-            if opener.language.is_none() {
-                return Some(index);
-            }
-            last_match = Some(index);
-            continue;
+            return Some(index);
         }
 
+        // An info-tagged opener can never be a closing fence, so reaching one
+        // first means this block was never closed and stays unmatched.
         if parse_opening_fence(line)
             .as_ref()
             .and_then(|fence| fence.language.as_ref())
@@ -186,7 +184,7 @@ fn find_matching_closing_fence(
         }
     }
 
-    last_match
+    None
 }
 
 fn leading_indent_columns_and_bytes(line: &str) -> (usize, usize) {
@@ -1873,7 +1871,9 @@ mod tests {
     }
 
     #[test]
-    fn matching_closing_fence_prefers_outermost_match_before_next_opener() {
+    fn fence_closes_at_first_match_even_before_a_later_opener() {
+        // The first closing fence ends the block; later fences belong to
+        // whatever follows, not to this block (issue #58).
         let lines = vec![
             "```rust".to_string(),
             "```".to_string(),
@@ -1882,7 +1882,7 @@ mod tests {
             "```ts".to_string(),
         ];
         let opener = parse_opening_fence(&lines[0]).expect("opening fence");
-        assert_eq!(find_matching_closing_fence(&lines, 0, &opener), Some(3));
+        assert_eq!(find_matching_closing_fence(&lines, 0, &opener), Some(1));
     }
 
     #[test]
@@ -1895,6 +1895,22 @@ mod tests {
             "```".to_string(),
             "```".to_string(),
             "second".to_string(),
+            "```".to_string(),
+        ];
+        let opener = parse_opening_fence(&lines[0]).expect("opening fence");
+        assert_eq!(find_matching_closing_fence(&lines, 0, &opener), Some(2));
+    }
+
+    #[test]
+    fn info_tagged_fence_does_not_absorb_following_empty_blocks() {
+        // An info-string opener must still close at its own fence instead of
+        // swallowing later empty-language blocks (issue #58).
+        let lines = vec![
+            "```bash".to_string(),
+            "git clone url".to_string(),
+            "```".to_string(),
+            "```".to_string(),
+            "cargo build".to_string(),
             "```".to_string(),
         ];
         let opener = parse_opening_fence(&lines[0]).expect("opening fence");
@@ -2055,6 +2071,29 @@ mod tests {
                 editor.document.markdown_text(cx),
                 "```\nlet x = 1;\nprintln!(\"hi\");\n```"
             );
+        });
+    }
+
+    #[gpui::test]
+    async fn imports_consecutive_code_blocks_without_merging(cx: &mut TestAppContext) {
+        // An info-tagged block followed by language-less blocks: each must
+        // parse as its own code block rather than being merged (issue #58).
+        let source = "```bash\ngit clone url\n```\n\n```\ncargo build\n```\n\n```\nmake\n```";
+        let editor = cx.new(|cx| Editor::from_markdown(cx, source.to_string(), None));
+
+        editor.update(cx, |editor, cx| {
+            let visible = editor.document.visible_blocks();
+            let code_blocks: Vec<_> = visible
+                .iter()
+                .filter(|block| block.entity.read(cx).kind().is_code_block())
+                .collect();
+            assert_eq!(code_blocks.len(), 3);
+            assert_eq!(
+                code_blocks[0].entity.read(cx).display_text(),
+                "git clone url"
+            );
+            assert_eq!(code_blocks[1].entity.read(cx).display_text(), "cargo build");
+            assert_eq!(code_blocks[2].entity.read(cx).display_text(), "make");
         });
     }
 
