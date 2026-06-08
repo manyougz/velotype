@@ -78,7 +78,7 @@ pub(crate) fn open_editor_window(
     handle
 }
 
-fn open_file_in_new_window(cx: &mut App, path: &Path) -> anyhow::Result<()> {
+pub(crate) fn open_file_in_new_window(cx: &mut App, path: &Path) -> anyhow::Result<()> {
     let markdown = std::fs::read_to_string(path)
         .with_context(|| format!("failed to read '{}'", path.display()))?;
     open_editor_window(cx, markdown, Some(path.to_path_buf()));

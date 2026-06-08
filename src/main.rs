@@ -7,7 +7,14 @@
 
 use std::borrow::Cow;
 use std::path::PathBuf;
+#[cfg(target_os = "macos")]
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
+};
 
+#[cfg(target_os = "macos")]
+use futures::{StreamExt, channel::mpsc};
 use gpui::*;
 
 mod app_identity;
@@ -16,6 +23,8 @@ mod components;
 mod config;
 mod editor;
 mod export;
+#[cfg(any(target_os = "macos", test))]
+mod file_url;
 mod i18n;
 mod net;
 mod theme;
@@ -23,10 +32,33 @@ mod window_chrome;
 
 use app_menu::{init as init_app_menu, open_editor_window};
 use components::init_with_keybindings as init_editor;
+#[cfg(target_os = "macos")]
+use file_url::parse_file_url;
 use i18n::I18nManager;
 use theme::ThemeManager;
 
 struct VelotypeAssets;
+
+fn open_startup_window(cx: &mut App, startup_open: config::StartupOpenPreference) {
+    if startup_open == config::StartupOpenPreference::LastOpenedFile
+        && let Some(path) = config::first_existing_recent_markdown_file()
+    {
+        match std::fs::read_to_string(&path) {
+            Ok(markdown) => {
+                open_editor_window(cx, markdown, Some(path));
+                return;
+            }
+            Err(err) => {
+                eprintln!(
+                    "failed to read last opened file '{}': {err}",
+                    path.display()
+                );
+            }
+        }
+    }
+
+    open_editor_window(cx, String::new(), None);
+}
 
 impl AssetSource for VelotypeAssets {
     fn load(&self, path: &str) -> gpui::Result<Option<Cow<'static, [u8]>>> {
@@ -130,68 +162,100 @@ fn main() {
         return;
     }
 
-    Application::new()
-        .with_assets(VelotypeAssets)
-        .run(move |cx: &mut App| {
-            let preferences = config::load_or_create_app_preferences().unwrap_or_else(|err| {
-                eprintln!("failed to initialize app preferences: {err}");
-                Default::default()
-            });
-            I18nManager::init_with_language_id(cx, &preferences.default_language_id);
-            ThemeManager::init_with_theme_id(cx, &preferences.default_theme_id);
-            net::install_http_client(cx);
-            init_editor(cx, &preferences.keybindings);
-            init_app_menu(cx);
+    #[cfg(target_os = "macos")]
+    let (open_file_tx, mut open_file_rx) = mpsc::unbounded::<PathBuf>();
+    #[cfg(target_os = "macos")]
+    let open_file_requested = Arc::new(AtomicBool::new(false));
 
-            if input_paths.is_empty() {
-                if preferences.startup_open == config::StartupOpenPreference::LastOpenedFile
-                    && let Some(path) = config::first_existing_recent_markdown_file()
-                {
-                    match std::fs::read_to_string(&path) {
-                        Ok(markdown) => {
-                            open_editor_window(cx, markdown, Some(path));
-                            return;
-                        }
-                        Err(err) => {
-                            eprintln!(
-                                "failed to read last opened file '{}': {err}",
-                                path.display()
-                            );
-                        }
-                    }
-                }
-                open_editor_window(cx, String::new(), None);
-                return;
-            }
+    let app = Application::new().with_assets(VelotypeAssets);
 
-            for path in &input_paths {
-                let absolute_path = if path.is_absolute() {
-                    path.clone()
-                } else {
-                    match std::env::current_dir() {
-                        Ok(cwd) => cwd.join(path),
-                        Err(_) => path.clone(),
-                    }
+    #[cfg(target_os = "macos")]
+    {
+        let open_file_requested_for_callback = open_file_requested.clone();
+        app.on_open_urls(move |urls| {
+            for url in urls {
+                let Some(path) = parse_file_url(&url) else {
+                    continue;
                 };
-
-                let markdown = match std::fs::read_to_string(&absolute_path) {
-                    Ok(content) => {
-                        if let Err(err) = config::record_recent_file(&absolute_path) {
-                            eprintln!("failed to update recent file history: {err}");
-                        }
-                        content
-                    }
-                    Err(err) => {
-                        eprintln!(
-                            "failed to read '{}': {err}. opened as empty document.",
-                            absolute_path.display()
-                        );
-                        String::new()
-                    }
-                };
-                open_editor_window(cx, markdown, Some(absolute_path));
+                open_file_requested_for_callback.store(true, Ordering::SeqCst);
+                let _ = open_file_tx.unbounded_send(path);
             }
-            app_menu::install_menus(cx);
-            cx.refresh_windows();
         });
+    }
+
+    app.run(move |cx: &mut App| {
+        let preferences = config::load_or_create_app_preferences().unwrap_or_else(|err| {
+            eprintln!("failed to initialize app preferences: {err}");
+            Default::default()
+        });
+        I18nManager::init_with_language_id(cx, &preferences.default_language_id);
+        ThemeManager::init_with_theme_id(cx, &preferences.default_theme_id);
+        net::install_http_client(cx);
+        init_editor(cx, &preferences.keybindings);
+        init_app_menu(cx);
+
+        #[cfg(target_os = "macos")]
+        cx.spawn(async move |cx| {
+            while let Some(path) = open_file_rx.next().await {
+                let _ = cx.update(move |cx| {
+                    if let Err(err) = app_menu::open_file_in_new_window(cx, &path) {
+                        eprintln!("failed to open '{}': {err}", path.display());
+                    }
+                });
+            }
+        })
+        .detach();
+
+        if input_paths.is_empty() {
+            #[cfg(target_os = "macos")]
+            {
+                let startup_open = preferences.startup_open;
+                let open_file_requested = open_file_requested.clone();
+                cx.spawn(async move |cx| {
+                    cx.background_executor()
+                        .timer(std::time::Duration::from_millis(150))
+                        .await;
+                    if !open_file_requested.load(Ordering::SeqCst) {
+                        let _ = cx.update(move |cx| open_startup_window(cx, startup_open));
+                    }
+                })
+                .detach();
+            }
+
+            #[cfg(not(target_os = "macos"))]
+            open_startup_window(cx, preferences.startup_open);
+
+            return;
+        }
+
+        for path in &input_paths {
+            let absolute_path = if path.is_absolute() {
+                path.clone()
+            } else {
+                match std::env::current_dir() {
+                    Ok(cwd) => cwd.join(path),
+                    Err(_) => path.clone(),
+                }
+            };
+
+            let markdown = match std::fs::read_to_string(&absolute_path) {
+                Ok(content) => {
+                    if let Err(err) = config::record_recent_file(&absolute_path) {
+                        eprintln!("failed to update recent file history: {err}");
+                    }
+                    content
+                }
+                Err(err) => {
+                    eprintln!(
+                        "failed to read '{}': {err}. opened as empty document.",
+                        absolute_path.display()
+                    );
+                    String::new()
+                }
+            };
+            open_editor_window(cx, markdown, Some(absolute_path));
+        }
+        app_menu::install_menus(cx);
+        cx.refresh_windows();
+    });
 }
