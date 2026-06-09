@@ -1,5 +1,7 @@
 //! Source-offset mapping between canonical Markdown and rendered blocks.
 
+use std::ops::Range;
+
 use super::*;
 
 impl Editor {
@@ -391,6 +393,7 @@ impl Editor {
         quote_depth: usize,
         absolute_start: usize,
         mappings: &mut Vec<SourceTargetMapping>,
+        block_ranges: &mut HashMap<EntityId, Range<usize>>,
         cx: &App,
     ) -> usize {
         let (kind, list_ordinal, title, children) = {
@@ -625,10 +628,15 @@ impl Editor {
                     quote_depth,
                     absolute_start + total_len,
                     mappings,
+                    block_ranges,
                     cx,
                 );
                 previous_kind = Some(current_kind);
             }
+            block_ranges.insert(
+                block.entity_id(),
+                absolute_start..absolute_start + total_len,
+            );
             return total_len;
         }
 
@@ -645,15 +653,32 @@ impl Editor {
                 child_quote_depth,
                 absolute_start + total_len,
                 mappings,
+                block_ranges,
                 cx,
             );
         }
 
+        block_ranges.insert(
+            block.entity_id(),
+            absolute_start..absolute_start + total_len,
+        );
         total_len
     }
 
     pub(super) fn build_source_target_mappings(&self, cx: &App) -> Vec<SourceTargetMapping> {
+        self.build_source_target_mappings_with_block_ranges(cx).0
+    }
+
+    /// Like [`Self::build_source_target_mappings`], but also returns the source
+    /// span of every block keyed by entity id. Atomic blocks (e.g. tables) have
+    /// no per-block text mapping, so this is the only way to recover their full
+    /// source extent for selection/deletion.
+    pub(super) fn build_source_target_mappings_with_block_ranges(
+        &self,
+        cx: &App,
+    ) -> (Vec<SourceTargetMapping>, HashMap<EntityId, Range<usize>>) {
         let mut mappings = Vec::new();
+        let mut block_ranges = HashMap::new();
         let mut absolute = 0usize;
         let mut pending_empty_roots = 0usize;
         let mut wrote_non_empty_root = false;
@@ -668,6 +693,12 @@ impl Editor {
                 )
             };
             if is_empty_root {
+                // Empty roots carry no text mapping, but they still need a source
+                // span so a cross-block selection whose boundary lands on one can
+                // be resolved (otherwise deletion of the selection aborts). A
+                // zero-width anchor at the current cursor is the right position:
+                // 0 for a leading empty root, source end for a trailing one.
+                block_ranges.insert(block.entity_id(), absolute..absolute);
                 pending_empty_roots += 1;
                 continue;
             }
@@ -687,8 +718,15 @@ impl Editor {
                 absolute += pending_empty_roots;
             }
 
-            absolute +=
-                self.collect_single_block_source_mappings(block, 0, 0, absolute, &mut mappings, cx);
+            absolute += self.collect_single_block_source_mappings(
+                block,
+                0,
+                0,
+                absolute,
+                &mut mappings,
+                &mut block_ranges,
+                cx,
+            );
 
             wrote_non_empty_root = true;
             pending_empty_roots = 0;
@@ -696,6 +734,6 @@ impl Editor {
             absolute += 1;
         }
 
-        mappings
+        (mappings, block_ranges)
     }
 }

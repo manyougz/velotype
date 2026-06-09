@@ -168,5 +168,18 @@ mod tests {
 
         let lines = vec!["| A |".to_string(), "| --- |".to_string()];
         assert!(!should_split_plain_multiline_paste(&lines));
+
+        let lines = vec![
+            "```rust".to_string(),
+            "fn main() {}".to_string(),
+            "```".to_string(),
+        ];
+        assert!(!should_split_plain_multiline_paste(&lines));
+
+        let lines = vec!["> quote".to_string(), "> more".to_string()];
+        assert!(!should_split_plain_multiline_paste(&lines));
+
+        let lines = vec!["# Title".to_string(), "body".to_string()];
+        assert!(!should_split_plain_multiline_paste(&lines));
     }
 }

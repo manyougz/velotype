@@ -472,6 +472,89 @@ impl Editor {
         true
     }
 
+    /// Focus a cell when keyboard navigation enters a table from an adjacent
+    /// block. Entering from above lands on the first header cell; entering from
+    /// below lands on the first cell of the last body row, falling back to the
+    /// header when the table has no body rows.
+    fn focus_table_entry_cell(
+        &mut self,
+        table_block: &Entity<super::Block>,
+        from_top: bool,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        let Some(runtime) = table_block.read(cx).table_runtime.clone() else {
+            return false;
+        };
+        let cell = if from_top {
+            runtime.header.first().cloned()
+        } else {
+            runtime
+                .rows
+                .last()
+                .and_then(|row| row.first())
+                .cloned()
+                .or_else(|| runtime.header.first().cloned())
+        };
+        let Some(cell) = cell else {
+            return false;
+        };
+        self.focus_block(cell.entity_id());
+        cx.notify();
+        true
+    }
+
+    /// Move focus from a table edge to the block immediately above (delta < 0)
+    /// or below (delta > 0) it, mirroring how plain blocks transfer focus when
+    /// the caret leaves their first or last line. When the neighbor is itself a
+    /// table, drop into one of its cells so the caret stays editable instead of
+    /// landing on the table container. `to_block_start` lands the caret at the
+    /// neighbor's start (Block Up/Down semantics) rather than the nearest edge
+    /// (Move Up/Down semantics).
+    fn focus_block_adjacent_to_table(
+        &mut self,
+        table_block: &Entity<super::Block>,
+        delta: i32,
+        to_block_start: bool,
+        cx: &mut Context<Self>,
+    ) {
+        let visible = self.document.flatten_visible_blocks();
+        let Some(index) = visible
+            .iter()
+            .position(|visible| visible.entity.entity_id() == table_block.entity_id())
+        else {
+            return;
+        };
+        let target_index = if delta < 0 {
+            index.checked_sub(1)
+        } else {
+            Some(index + 1)
+        };
+        let Some(target) = target_index
+            .and_then(|target_index| visible.get(target_index))
+            .map(|visible| visible.entity.clone())
+        else {
+            return;
+        };
+        if target.read(cx).kind() == BlockKind::Table
+            && self.focus_table_entry_cell(&target, delta > 0, cx)
+        {
+            return;
+        }
+        self.focus_block(target.entity_id());
+        if to_block_start {
+            target.update(cx, |target, cx| target.move_to(0, cx));
+        } else {
+            let prefer_last_line = delta < 0;
+            let offset = target
+                .read(cx)
+                .entry_offset_for_vertical_focus(prefer_last_line, None);
+            target.update(cx, move |target, cx| {
+                target.move_to_with_preferred_x(offset, None, cx);
+            });
+        }
+        cx.notify();
+    }
+
     fn focus_table_cell_horizontal_neighbor(
         &mut self,
         table_block: &Entity<super::Block>,
@@ -524,12 +607,12 @@ impl Editor {
         } else {
             position.row.checked_add(delta as usize)
         };
-        let Some(next_row) = next_row else {
+        // Moving past the first/last row leaves the table for the adjacent
+        // block rather than stopping at the edge.
+        let Some(next_row) = next_row.filter(|row| *row <= max_row) else {
+            self.focus_block_adjacent_to_table(table_block, delta, false, cx);
             return;
         };
-        if next_row > max_row {
-            return;
-        }
 
         let next_position = TableCellPosition {
             row: next_row,
@@ -631,6 +714,14 @@ impl Editor {
                     1,
                     cx,
                 );
+            }
+            // Block Up/Down treat the table as a single block: leave it
+            // entirely for the block above/below rather than stepping by cell.
+            BlockEvent::RequestBlockUp => {
+                self.focus_block_adjacent_to_table(&binding.table_block, -1, true, cx);
+            }
+            BlockEvent::RequestBlockDown => {
+                self.focus_block_adjacent_to_table(&binding.table_block, 1, true, cx);
             }
             _ => {}
         }
@@ -1048,10 +1139,20 @@ impl Editor {
                 self.prepare_undo_capture(crate::components::UndoCaptureKind::NonCoalescible, cx);
 
                 let current_kind = block.read(cx).kind();
-                let mut first_title = leading.clone();
-                first_title.append_tree(InlineTextTree::from_markdown(&lines[0]));
-
-                let tail_lines = lines[1..].to_vec();
+                // Structural Markdown (tables, fences, containers) must be parsed
+                // as whole blocks. The plain-text path folds the first pasted line
+                // into the current paragraph, which would strip a table's header
+                // row, so structural pastes hand every line to the importer and
+                // leave the pre-cursor text in place.
+                let structural = !*split_physical_lines;
+                let leading_empty = leading.visible_len() == 0;
+                let (mut first_title, tail_lines) = if structural {
+                    (leading.clone(), lines.clone())
+                } else {
+                    let mut first_title = leading.clone();
+                    first_title.append_tree(InlineTextTree::from_markdown(&lines[0]));
+                    (first_title, lines[1..].to_vec())
+                };
                 if tail_lines.is_empty() {
                     first_title.append_tree(trailing.clone());
                     let cursor = first_title.visible_len();
@@ -1130,6 +1231,15 @@ impl Editor {
                         self.sync_table_record_from_runtime(&binding.table_block, cx);
                     }
                     self.focus_block(focus_block.entity_id());
+                }
+
+                // When structural content is pasted onto an empty line there is
+                // no pre-cursor text to keep, so drop the now-empty paragraph
+                // rather than leaving a blank line above the pasted blocks.
+                if structural && leading_empty {
+                    self.document.with_structure_mutation(cx, |document, cx| {
+                        document.remove_block_by_id_raw(block.entity_id(), cx);
+                    });
                 }
 
                 if quote_related {
@@ -1315,9 +1425,13 @@ impl Editor {
                     self.finalize_pending_undo_capture(cx);
                 }
             }
-            BlockEvent::RequestTableAxisPreview { kind, index } => {
+            BlockEvent::RequestTableAxisPreview {
+                kind,
+                index,
+                hovered,
+            } => {
                 if block.read(cx).kind() == BlockKind::Table {
-                    self.preview_table_axis(block.entity_id(), *kind, *index, cx);
+                    self.preview_table_axis(block.entity_id(), *kind, *index, *hovered, cx);
                 }
             }
             BlockEvent::RequestSelectTableAxis { kind, index } => {
@@ -1342,6 +1456,13 @@ impl Editor {
                 }
 
                 let target = visible_before[current_visible_index - 1].entity.clone();
+                // Entering a table from below lands in a body cell instead of
+                // the non-editable table container.
+                if target.read(cx).kind() == BlockKind::Table
+                    && self.focus_table_entry_cell(&target, false, cx)
+                {
+                    return;
+                }
                 let target_x = preferred_x.map(px);
                 let offset = target
                     .read(cx)
@@ -1358,6 +1479,13 @@ impl Editor {
                 }
 
                 let target = visible_before[current_visible_index + 1].entity.clone();
+                // Entering a table from above lands in a header cell instead of
+                // the non-editable table container.
+                if target.read(cx).kind() == BlockKind::Table
+                    && self.focus_table_entry_cell(&target, true, cx)
+                {
+                    return;
+                }
                 let target_x = preferred_x.map(px);
                 let offset = target
                     .read(cx)
@@ -1374,6 +1502,11 @@ impl Editor {
                 }
 
                 let target = visible_before[current_visible_index - 1].entity.clone();
+                if target.read(cx).kind() == BlockKind::Table
+                    && self.focus_table_entry_cell(&target, false, cx)
+                {
+                    return;
+                }
                 self.focus_block(target.entity_id());
                 target.update(cx, |target, cx| target.move_to(0, cx));
                 cx.notify();
@@ -1384,6 +1517,11 @@ impl Editor {
                 }
 
                 let target = visible_before[current_visible_index + 1].entity.clone();
+                if target.read(cx).kind() == BlockKind::Table
+                    && self.focus_table_entry_cell(&target, true, cx)
+                {
+                    return;
+                }
                 self.focus_block(target.entity_id());
                 target.update(cx, |target, cx| target.move_to(0, cx));
                 cx.notify();
@@ -1467,10 +1605,10 @@ impl Editor {
 mod tests {
     use super::Editor;
     use crate::components::{
-        BlockEvent, BlockKind, BlockRecord, CalloutVariant, Delete, DeleteBack, ExitCodeBlock,
-        InlineTextTree, Newline,
+        Block, BlockEvent, BlockKind, BlockRecord, CalloutVariant, Delete, DeleteBack,
+        ExitCodeBlock, InlineTextTree, Newline,
     };
-    use gpui::{AppContext, TestAppContext};
+    use gpui::{App, AppContext, Entity, TestAppContext};
 
     #[gpui::test]
     async fn request_quote_break_creates_new_root_leaf_quote_group(cx: &mut TestAppContext) {
@@ -2127,6 +2265,180 @@ mod tests {
         });
     }
 
+    fn table_root(editor: &Editor, cx: &App) -> Entity<Block> {
+        editor
+            .document
+            .visible_blocks()
+            .iter()
+            .map(|visible| visible.entity.clone())
+            .find(|block| block.read(cx).kind() == BlockKind::Table)
+            .expect("table root")
+    }
+
+    #[gpui::test]
+    async fn arrow_down_from_last_row_exits_table_to_following_block(cx: &mut TestAppContext) {
+        let markdown = ["| A | B |", "| --- | --- |", "| 1 | 2 |", "", "after"].join("\n");
+        let editor = cx.new(|cx| Editor::from_markdown(cx, markdown, None));
+
+        editor.update(cx, |editor, cx| {
+            let table = table_root(editor, cx);
+            let cell = table
+                .read(cx)
+                .table_runtime
+                .as_ref()
+                .expect("table runtime")
+                .rows
+                .last()
+                .and_then(|row| row.first())
+                .cloned()
+                .expect("last row cell");
+            editor.on_block_event(
+                cell,
+                &BlockEvent::RequestTableCellMoveVertical { delta: 1 },
+                cx,
+            );
+
+            let following = editor.document.visible_blocks()[1].entity.clone();
+            assert_eq!(following.read(cx).display_text(), "after");
+            assert_eq!(editor.pending_focus, Some(following.entity_id()));
+        });
+    }
+
+    #[gpui::test]
+    async fn arrow_up_from_header_exits_table_to_preceding_block(cx: &mut TestAppContext) {
+        let markdown = ["before", "", "| A | B |", "| --- | --- |", "| 1 | 2 |"].join("\n");
+        let editor = cx.new(|cx| Editor::from_markdown(cx, markdown, None));
+
+        editor.update(cx, |editor, cx| {
+            let table = table_root(editor, cx);
+            let cell = table
+                .read(cx)
+                .table_runtime
+                .as_ref()
+                .expect("table runtime")
+                .header
+                .first()
+                .cloned()
+                .expect("header cell");
+            editor.on_block_event(
+                cell,
+                &BlockEvent::RequestTableCellMoveVertical { delta: -1 },
+                cx,
+            );
+
+            let preceding = editor.document.visible_blocks()[0].entity.clone();
+            assert_eq!(preceding.read(cx).display_text(), "before");
+            assert_eq!(editor.pending_focus, Some(preceding.entity_id()));
+        });
+    }
+
+    #[gpui::test]
+    async fn arrow_down_into_table_focuses_header_cell(cx: &mut TestAppContext) {
+        let markdown = ["before", "", "| A | B |", "| --- | --- |", "| 1 | 2 |"].join("\n");
+        let editor = cx.new(|cx| Editor::from_markdown(cx, markdown, None));
+
+        editor.update(cx, |editor, cx| {
+            let paragraph = editor
+                .document
+                .first_root()
+                .expect("paragraph root")
+                .clone();
+            editor.on_block_event(
+                paragraph,
+                &BlockEvent::RequestFocusNext { preferred_x: None },
+                cx,
+            );
+
+            let header_cell = table_root(editor, cx)
+                .read(cx)
+                .table_runtime
+                .as_ref()
+                .expect("table runtime")
+                .header
+                .first()
+                .map(|cell| cell.entity_id());
+            assert_eq!(editor.pending_focus, header_cell);
+        });
+    }
+
+    #[gpui::test]
+    async fn arrow_up_into_table_focuses_last_row_cell(cx: &mut TestAppContext) {
+        let markdown = ["| A | B |", "| --- | --- |", "| 1 | 2 |", "", "after"].join("\n");
+        let editor = cx.new(|cx| Editor::from_markdown(cx, markdown, None));
+
+        editor.update(cx, |editor, cx| {
+            let paragraph = editor.document.visible_blocks()[1].entity.clone();
+            assert_eq!(paragraph.read(cx).display_text(), "after");
+            editor.on_block_event(
+                paragraph,
+                &BlockEvent::RequestFocusPrev { preferred_x: None },
+                cx,
+            );
+
+            let last_row_cell = table_root(editor, cx)
+                .read(cx)
+                .table_runtime
+                .as_ref()
+                .expect("table runtime")
+                .rows
+                .last()
+                .and_then(|row| row.first())
+                .map(|cell| cell.entity_id());
+            assert_eq!(editor.pending_focus, last_row_cell);
+        });
+    }
+
+    #[gpui::test]
+    async fn block_up_from_table_cell_exits_to_preceding_block(cx: &mut TestAppContext) {
+        let markdown = ["before", "", "| A | B |", "| --- | --- |", "| 1 | 2 |"].join("\n");
+        let editor = cx.new(|cx| Editor::from_markdown(cx, markdown, None));
+
+        editor.update(cx, |editor, cx| {
+            // Start from a body cell, not the header, to confirm Block Up leaves
+            // the whole table instead of stepping to the cell above.
+            let cell = table_root(editor, cx)
+                .read(cx)
+                .table_runtime
+                .as_ref()
+                .expect("table runtime")
+                .rows
+                .last()
+                .and_then(|row| row.first())
+                .cloned()
+                .expect("body cell");
+            editor.on_block_event(cell, &BlockEvent::RequestBlockUp, cx);
+
+            let preceding = editor.document.visible_blocks()[0].entity.clone();
+            assert_eq!(preceding.read(cx).display_text(), "before");
+            assert_eq!(editor.pending_focus, Some(preceding.entity_id()));
+        });
+    }
+
+    #[gpui::test]
+    async fn block_down_into_table_focuses_header_cell(cx: &mut TestAppContext) {
+        let markdown = ["before", "", "| A | B |", "| --- | --- |", "| 1 | 2 |"].join("\n");
+        let editor = cx.new(|cx| Editor::from_markdown(cx, markdown, None));
+
+        editor.update(cx, |editor, cx| {
+            let paragraph = editor
+                .document
+                .first_root()
+                .expect("paragraph root")
+                .clone();
+            editor.on_block_event(paragraph, &BlockEvent::RequestBlockDown, cx);
+
+            let header_cell = table_root(editor, cx)
+                .read(cx)
+                .table_runtime
+                .as_ref()
+                .expect("table runtime")
+                .header
+                .first()
+                .map(|cell| cell.entity_id());
+            assert_eq!(editor.pending_focus, header_cell);
+        });
+    }
+
     #[gpui::test]
     async fn plain_multiline_paste_with_scripts_splits_physical_lines(cx: &mut TestAppContext) {
         let editor = cx.new(|cx| Editor::from_markdown(cx, String::new(), None));
@@ -2154,6 +2466,85 @@ mod tests {
             assert_eq!(visible[1].entity.read(cx).display_text(), "CO2");
             assert_eq!(visible[2].entity.read(cx).display_text(), "xn");
             assert_eq!(editor.document.markdown_text(cx), "H~2~O\n\nCO~2~\n\nx^n^");
+        });
+    }
+
+    #[gpui::test]
+    async fn structural_paste_of_table_renders_native_table(cx: &mut TestAppContext) {
+        let editor = cx.new(|cx| Editor::from_markdown(cx, String::new(), None));
+
+        editor.update(cx, |editor, cx| {
+            let block = editor.document.visible_blocks()[0].entity.clone();
+            editor.on_block_event(
+                block,
+                &BlockEvent::RequestPasteMultiline {
+                    leading: InlineTextTree::plain(String::new()),
+                    lines: vec![
+                        "| A | B |".to_string(),
+                        "| --- | --- |".to_string(),
+                        "| 1 | 2 |".to_string(),
+                    ],
+                    trailing: InlineTextTree::plain(String::new()),
+                    split_physical_lines: false,
+                },
+                cx,
+            );
+
+            // The header row must survive: previously the first pasted line was
+            // folded into the paragraph, leaving the alignment row to masquerade
+            // as the header. The empty paste target is also dropped.
+            let visible = editor.document.visible_blocks();
+            assert_eq!(visible.len(), 1);
+            let table = visible[0].entity.read(cx);
+            assert_eq!(table.kind(), BlockKind::Table);
+            let data = table.record.table.as_ref().expect("table data");
+            assert_eq!(data.header[0].serialize_markdown(), "A");
+            assert_eq!(data.header[1].serialize_markdown(), "B");
+            assert_eq!(data.rows.len(), 1);
+            assert_eq!(data.rows[0][0].serialize_markdown(), "1");
+            assert_eq!(data.rows[0][1].serialize_markdown(), "2");
+        });
+    }
+
+    #[gpui::test]
+    async fn structural_paste_of_code_block_renders_native_code_block(cx: &mut TestAppContext) {
+        let editor = cx.new(|cx| Editor::from_markdown(cx, String::new(), None));
+
+        editor.update(cx, |editor, cx| {
+            let block = editor.document.visible_blocks()[0].entity.clone();
+            editor.on_block_event(
+                block,
+                &BlockEvent::RequestPasteMultiline {
+                    leading: InlineTextTree::plain(String::new()),
+                    lines: vec![
+                        "```rust".to_string(),
+                        "fn main() {}".to_string(),
+                        "```".to_string(),
+                    ],
+                    trailing: InlineTextTree::plain(String::new()),
+                    split_physical_lines: false,
+                },
+                cx,
+            );
+
+            // The fence is structural, so the whole paste goes through the block
+            // importer rather than the plain-text path: the opening ```rust line is
+            // no longer folded into a paragraph, and the empty paste target is
+            // dropped, leaving a single native code block.
+            let visible = editor.document.visible_blocks();
+            assert_eq!(visible.len(), 1);
+            let code = visible[0].entity.read(cx);
+            assert_eq!(
+                code.kind(),
+                BlockKind::CodeBlock {
+                    language: Some("rust".into())
+                }
+            );
+            assert_eq!(code.display_text(), "fn main() {}");
+            assert_eq!(
+                editor.document.markdown_text(cx),
+                "```rust\nfn main() {}\n```"
+            );
         });
     }
 

@@ -264,6 +264,8 @@ pub struct I18nStrings {
     pub table_axis_move_row_down: String,
     /// Table-axis menu item for deleting a row.
     pub table_axis_delete_row: String,
+    /// Table header-row menu item that toggles header styling on the top row.
+    pub table_header_row: String,
     /// Title of the table-insert dialog.
     pub table_insert_title: String,
     /// Body text of the table-insert dialog.
@@ -438,6 +440,7 @@ struct I18nStringsDe {
     table_axis_move_row_up: Option<String>,
     table_axis_move_row_down: Option<String>,
     table_axis_delete_row: Option<String>,
+    table_header_row: Option<String>,
     table_insert_title: Option<String>,
     table_insert_description: Option<String>,
     table_insert_body_rows: Option<String>,
@@ -600,6 +603,7 @@ const I18N_STRING_KEYS: &[&str] = &[
     "table_axis_move_row_up",
     "table_axis_move_row_down",
     "table_axis_delete_row",
+    "table_header_row",
     "table_insert_title",
     "table_insert_description",
     "table_insert_body_rows",
@@ -1010,6 +1014,7 @@ impl I18nStringsDe {
             table_axis_delete_row: self
                 .table_axis_delete_row
                 .unwrap_or(defaults.table_axis_delete_row),
+            table_header_row: self.table_header_row.unwrap_or(defaults.table_header_row),
             table_insert_title: self
                 .table_insert_title
                 .unwrap_or(defaults.table_insert_title),
@@ -1210,6 +1215,7 @@ impl I18nStrings {
             table_axis_move_row_up: "向上移动此行".into(),
             table_axis_move_row_down: "向下移动此行".into(),
             table_axis_delete_row: "删除此行".into(),
+            table_header_row: "标题行".into(),
             table_insert_title: "插入表格".into(),
             table_insert_description: "创建 1 个表头行，并配置正文行数与列数。".into(),
             table_insert_body_rows: "正文行数".into(),
@@ -1388,6 +1394,7 @@ impl I18nStrings {
             table_axis_move_row_up: "Move Row Up".into(),
             table_axis_move_row_down: "Move Row Down".into(),
             table_axis_delete_row: "Delete Row".into(),
+            table_header_row: "Header Row".into(),
             table_insert_title: "Insert Table".into(),
             table_insert_description:
                 "Create one header row and configure body rows and columns.".into(),

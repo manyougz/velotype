@@ -218,15 +218,24 @@ impl Editor {
         &mut self,
         table_block_id: EntityId,
         kind: TableAxisKind,
-        index: Option<usize>,
+        index: usize,
+        hovered: bool,
         cx: &mut Context<Self>,
     ) {
-        let preview = index.map(|index| TableAxisSelection {
+        let marker = TableAxisSelection {
             table_block_id,
             kind,
             index,
-        });
-        self.set_table_axis_preview(preview, cx);
+        };
+        if hovered {
+            self.set_table_axis_preview(Some(marker), cx);
+        } else if self.table_axis_preview == Some(marker) {
+            // Only clear on a leave that still owns the preview. Adjacent
+            // handles share one preview slot, and a leave can arrive after
+            // the next handle's enter; clearing unconditionally would erase
+            // the highlight the pointer just moved onto.
+            self.set_table_axis_preview(None, cx);
+        }
     }
 
     pub(super) fn select_table_axis(
@@ -299,7 +308,7 @@ impl Editor {
     pub(super) fn move_table_row(
         &mut self,
         table_block: &Entity<Block>,
-        row_index: usize,
+        visual_row: usize,
         delta: i32,
         cx: &mut Context<Self>,
     ) {
@@ -308,14 +317,16 @@ impl Editor {
             return;
         };
         let next_row = if delta < 0 {
-            row_index.checked_sub(delta.unsigned_abs() as usize)
+            visual_row.checked_sub(delta.unsigned_abs() as usize)
         } else {
-            row_index.checked_add(delta as usize)
+            visual_row.checked_add(delta as usize)
         };
         let Some(next_row) = next_row else {
             return;
         };
-        if next_row >= table.rows.len() {
+        // Visual rows are the header (0) plus every body row, so the last valid
+        // index is `rows.len()`.
+        if next_row > table.rows.len() {
             return;
         }
         let started_local_capture = if self.pending_undo_capture.is_none() {
@@ -324,7 +335,7 @@ impl Editor {
         } else {
             false
         };
-        table.swap_body_rows(row_index, next_row);
+        table.swap_visual_rows(visual_row, next_row);
         table_block.update(cx, move |block, _cx| {
             block.record.table = Some(table.clone());
         });
@@ -338,7 +349,7 @@ impl Editor {
         self.focus_table_cell_position(
             table_block,
             TableCellPosition {
-                row: next_row + 1,
+                row: next_row,
                 column: 0,
             },
             cx,
@@ -431,10 +442,12 @@ impl Editor {
             block.record.table = Some(table.clone());
         });
         self.rebuild_table_runtimes(cx);
+        // Row selections are addressed by visual index, where the first body row
+        // is `1` (the header is `0`).
         let selection = TableAxisSelection {
             table_block_id: table_block.entity_id(),
             kind: TableAxisKind::Row,
-            index: focus_row,
+            index: focus_row + 1,
         };
         self.set_table_axis_selection(Some(selection), cx);
         self.focus_table_cell_position(
@@ -445,6 +458,41 @@ impl Editor {
             },
             cx,
         );
+        self.mark_dirty(cx);
+        self.request_active_block_scroll_into_view(cx);
+        if started_local_capture {
+            self.finalize_pending_undo_capture(cx);
+        }
+        cx.notify();
+    }
+
+    pub(super) fn delete_table_header_row(
+        &mut self,
+        table_block: &Entity<Block>,
+        cx: &mut Context<Self>,
+    ) {
+        self.sync_table_record_from_runtime(table_block, cx);
+        let Some(mut table) = table_block.read(cx).record.table.clone() else {
+            return;
+        };
+        // The first body row is promoted into the header, so there must be at
+        // least one body row to delete the header.
+        if table.rows.is_empty() {
+            return;
+        }
+        let started_local_capture = if self.pending_undo_capture.is_none() {
+            self.prepare_undo_capture(UndoCaptureKind::NonCoalescible, cx);
+            true
+        } else {
+            false
+        };
+        table.remove_header_row();
+        table_block.update(cx, move |block, _cx| {
+            block.record.table = Some(table.clone());
+        });
+        self.rebuild_table_runtimes(cx);
+        self.clear_table_axis_selection(cx);
+        self.focus_table_cell_position(table_block, TableCellPosition { row: 0, column: 0 }, cx);
         self.mark_dirty(cx);
         self.request_active_block_scroll_into_view(cx);
         if started_local_capture {
@@ -554,7 +602,8 @@ impl Editor {
         };
         match selection.kind {
             TableAxisKind::Column => selection.index < runtime.header.len(),
-            TableAxisKind::Row => selection.index < runtime.rows.len(),
+            // Visual row index: `0` is the header, `1..=rows.len()` the body.
+            TableAxisKind::Row => selection.index <= runtime.rows.len(),
         }
     }
 
@@ -609,15 +658,17 @@ impl Editor {
                 .table_axis_preview
                 .filter(|selection| selection.table_block_id == block_id);
 
+            // `row` is the visual row index: `0` is the header and body rows
+            // follow at `1..`, matching how row selections are addressed.
             let mut apply_highlight = |cell: &Entity<Block>, row: usize, column: usize| {
                 let highlight = if selected.is_some_and(|selection| match selection.kind {
                     TableAxisKind::Column => selection.index == column,
-                    TableAxisKind::Row => selection.index == row.saturating_sub(1),
+                    TableAxisKind::Row => selection.index == row,
                 }) {
                     TableAxisHighlight::Selected
                 } else if preview.is_some_and(|selection| match selection.kind {
                     TableAxisKind::Column => selection.index == column,
-                    TableAxisKind::Row => selection.index == row.saturating_sub(1),
+                    TableAxisKind::Row => selection.index == row,
                 }) {
                     TableAxisHighlight::Preview
                 } else {

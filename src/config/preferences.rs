@@ -52,6 +52,7 @@ pub(crate) struct AppPreferences {
     pub(crate) startup_open: StartupOpenPreference,
     pub(crate) default_language_id: String,
     pub(crate) default_theme_id: String,
+    pub(crate) show_table_headers: bool,
     pub(crate) keybindings: BTreeMap<String, Vec<String>>,
 }
 
@@ -61,7 +62,39 @@ impl Default for AppPreferences {
             startup_open: StartupOpenPreference::NewFile,
             default_language_id: DEFAULT_LANGUAGE_ID.into(),
             default_theme_id: DEFAULT_THEME_ID.into(),
+            show_table_headers: true,
             keybindings: BTreeMap::new(),
+        }
+    }
+}
+
+/// Runtime-accessible editor settings mirrored from [`AppPreferences`] so the
+/// render path can read them without touching disk. Toggling persists the new
+/// value back to the preferences file.
+pub struct EditorSettings {
+    show_table_headers: bool,
+}
+
+impl Global for EditorSettings {}
+
+impl EditorSettings {
+    pub fn init(cx: &mut App, show_table_headers: bool) {
+        cx.set_global(Self { show_table_headers });
+    }
+
+    /// Whether table top rows are styled as headers. Defaults to `true` when
+    /// the global has not been installed (e.g. in unit tests).
+    pub fn show_table_headers(cx: &App) -> bool {
+        cx.try_global::<Self>()
+            .map(|settings| settings.show_table_headers)
+            .unwrap_or(true)
+    }
+
+    pub fn set_show_table_headers(cx: &mut App, show_table_headers: bool) {
+        cx.set_global(Self { show_table_headers });
+        if let Ok(mut preferences) = read_app_preferences() {
+            preferences.show_table_headers = show_table_headers;
+            let _ = save_app_preferences(&preferences);
         }
     }
 }
@@ -71,12 +104,18 @@ struct PreferencesFile {
     startup: StartupPreferencesFile,
     language: LanguagePreferencesFile,
     theme: ThemePreferencesFile,
+    editor: EditorPreferencesFile,
     keybindings: BTreeMap<String, Vec<String>>,
 }
 
 #[derive(Serialize)]
 struct StartupPreferencesFile {
     open: String,
+}
+
+#[derive(Serialize)]
+struct EditorPreferencesFile {
+    show_table_headers: bool,
 }
 
 #[derive(Serialize)]
@@ -100,6 +139,9 @@ impl From<&AppPreferences> for PreferencesFile {
             },
             theme: ThemePreferencesFile {
                 default_theme_id: value.default_theme_id.clone(),
+            },
+            editor: EditorPreferencesFile {
+                show_table_headers: value.show_table_headers,
             },
             keybindings: normalize_shortcut_config(&value.keybindings),
         }
@@ -180,10 +222,17 @@ fn app_preferences_from_toml_value(
         .map(|keybindings| normalize_shortcut_config(&keybindings))
         .unwrap_or_default();
 
+    let show_table_headers = value
+        .get("editor")
+        .and_then(|editor| editor.get("show_table_headers"))
+        .and_then(|value| value.as_bool())
+        .unwrap_or(true);
+
     AppPreferences {
         startup_open,
         default_language_id,
         default_theme_id,
+        show_table_headers,
         keybindings,
     }
 }
@@ -1479,6 +1528,7 @@ mod tests {
             startup_open: StartupOpenPreference::LastOpenedFile,
             default_language_id: "zh-CN".into(),
             default_theme_id: "velotype-light".into(),
+            show_table_headers: false,
             keybindings: BTreeMap::new(),
         };
 
@@ -1492,6 +1542,7 @@ mod tests {
         assert!(text.contains("open = \"last_opened_file\""));
         assert!(text.contains("default_language_id = \"zh-CN\""));
         assert!(text.contains("default_theme_id = \"velotype-light\""));
+        assert!(text.contains("show_table_headers = false"));
         let _ = std::fs::remove_dir_all(root);
     }
 
@@ -1558,6 +1609,7 @@ mod tests {
             startup_open: StartupOpenPreference::NewFile,
             default_language_id: "zh-CN".into(),
             default_theme_id: "velotype".into(),
+            show_table_headers: true,
             keybindings: BTreeMap::new(),
         };
         save_app_preferences_with_dirs(&preferences, &dirs)

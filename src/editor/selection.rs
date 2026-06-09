@@ -424,10 +424,45 @@ impl Editor {
         selection: NormalizedCrossBlockSelection,
         cx: &App,
     ) -> Option<Range<usize>> {
-        let mappings = self.source_mapping_by_entity_id(cx);
-        let start = self.endpoint_source_offset(selection.start, &mappings, cx)?;
-        let end = self.endpoint_source_offset(selection.end, &mappings, cx)?;
-        Some(start.min(end)..start.max(end))
+        let (mapping_list, block_ranges) = self.build_source_target_mappings_with_block_ranges(cx);
+        let mappings: HashMap<EntityId, SourceTargetMapping> = mapping_list
+            .into_iter()
+            .map(|mapping| (mapping.entity.entity_id(), mapping))
+            .collect();
+        let visible = self.document.visible_blocks();
+
+        // Resolve an endpoint to a source offset. Atomic blocks (tables, etc.)
+        // carry no per-block text mapping, so endpoint_source_offset returns
+        // None for them; fall back to the block's own source span, picking the
+        // side that keeps the block inside the selection.
+        let endpoint_offset =
+            |endpoint: CrossBlockSelectionEndpoint, index: usize, at_end: bool| -> Option<usize> {
+                if let Some(offset) = self.endpoint_source_offset(endpoint, &mappings, cx) {
+                    return Some(offset);
+                }
+                let entity = visible.get(index)?.entity.clone();
+                let range = block_ranges.get(&entity.entity_id())?;
+                Some(if at_end { range.end } else { range.start })
+            };
+
+        let start = endpoint_offset(selection.start, selection.start_index, false)?;
+        let end = endpoint_offset(selection.end, selection.end_index, true)?;
+        let (mut lo, mut hi) = (start.min(end), start.max(end));
+
+        // Endpoint offsets can never point *after* a zero-visible-len (atomic)
+        // block, so a table at the trailing boundary of the selection would be
+        // left behind. Union in the full source range of every atomic block
+        // whose visible index falls inside the selection so it is removed whole.
+        for index in selection.start_index..=selection.end_index {
+            let entity = visible.get(index)?.entity.clone();
+            if entity.read(cx).visible_len() == 0 {
+                if let Some(range) = block_ranges.get(&entity.entity_id()) {
+                    lo = lo.min(range.start);
+                    hi = hi.max(range.end);
+                }
+            }
+        }
+        Some(lo..hi)
     }
 
     fn rebuild_after_cross_block_source_edit(&mut self, source: String, cx: &mut Context<Self>) {
@@ -557,15 +592,19 @@ impl Editor {
             let full_block = range.start == 0
                 && range.end == len
                 && (selection.start_index != selection.end_index || len > 0);
-            let include_empty_middle =
-                len == 0 && selection.start_index < index && index < selection.end_index;
-            if range.is_empty() && !include_empty_middle {
+            // Cut deletes any atomic block covered by a multi-block selection
+            // (see cross_block_source_range_for_normalized), so the clipboard
+            // must serialize those blocks too, including boundary ones, not
+            // just interior. Otherwise cut would drop a table from the clipboard
+            // that it nonetheless removed from the document.
+            let include_atomic = len == 0 && selection.start_index != selection.end_index;
+            if range.is_empty() && !include_atomic {
                 continue;
             }
             chunks.push(self.markdown_chunk_for_block(
                 &entity,
                 range,
-                full_block || include_empty_middle,
+                full_block || include_atomic,
                 &source,
                 &mappings,
                 cx,
@@ -900,6 +939,192 @@ mod tests {
                 editor.cross_block_selected_markdown(cx).as_deref(),
                 Some("pha\nbeta\nga")
             );
+        });
+        cx.quit();
+    }
+
+    const TABLE_DOC: &str = "alpha\n\n| a | b |\n| --- | --- |\n| 1 | 2 |\n\ngamma";
+
+    #[test]
+    fn delete_selection_spanning_table_removes_table() {
+        let mut cx = TestAppContext::single();
+        init_editor_test_app(&mut cx);
+        let editor = cx.new(|cx| Editor::from_markdown(cx, TABLE_DOC.to_string(), None));
+
+        editor.update(&mut cx, |editor, cx| {
+            let visible = editor.document.visible_blocks().to_vec();
+            assert_eq!(visible.len(), 3);
+            let end_len = visible[2].entity.read(cx).visible_len();
+            // The table sits in the interior of the selection.
+            set_selection(editor, 0, 0, 2, end_len, cx);
+            assert!(editor.delete_cross_block_selection(cx));
+
+            let text = editor.document.markdown_text(cx);
+            assert!(!text.contains('|'), "table should be gone: {text:?}");
+            assert!(!text.contains("alpha"));
+            assert!(!text.contains("gamma"));
+        });
+        cx.quit();
+    }
+
+    #[test]
+    fn delete_selection_with_trailing_table_removes_table() {
+        let mut cx = TestAppContext::single();
+        init_editor_test_app(&mut cx);
+        let editor = cx.new(|cx| Editor::from_markdown(cx, TABLE_DOC.to_string(), None));
+
+        editor.update(&mut cx, |editor, cx| {
+            assert_eq!(editor.document.visible_blocks().len(), 3);
+            // Selection ends at the start of the table block: the previously
+            // broken case where the trailing atomic block was left behind.
+            set_selection(editor, 0, 0, 1, 0, cx);
+            assert!(editor.delete_cross_block_selection(cx));
+
+            // The table is removed in full; only `gamma` survives (deleting from
+            // the document start leaves the table's trailing blank line, which
+            // reparses to leading empty paragraphs, harmless and trimmable).
+            let text = editor.document.markdown_text(cx);
+            assert!(
+                !text.contains('|'),
+                "trailing table should be gone: {text:?}"
+            );
+            assert_eq!(text.trim(), "gamma");
+        });
+        cx.quit();
+    }
+
+    #[test]
+    fn delete_selection_of_only_table_removes_just_the_table() {
+        let mut cx = TestAppContext::single();
+        init_editor_test_app(&mut cx);
+        let editor = cx.new(|cx| Editor::from_markdown(cx, TABLE_DOC.to_string(), None));
+
+        editor.update(&mut cx, |editor, cx| {
+            let visible = editor.document.visible_blocks().to_vec();
+            assert_eq!(visible.len(), 3);
+            let alpha_len = visible[0].entity.read(cx).visible_len();
+            // Drag from the end of the paragraph above onto the table: only the
+            // table is removed, and re-parse normalizes the spacing.
+            set_selection(editor, 0, alpha_len, 1, 0, cx);
+            assert!(editor.delete_cross_block_selection(cx));
+
+            assert_eq!(editor.document.markdown_text(cx), "alpha\n\ngamma");
+        });
+        cx.quit();
+    }
+
+    #[test]
+    fn cut_selection_including_table_serializes_and_deletes_it() {
+        // Exercise cut's two halves directly (the clipboard markdown and the
+        // deleted source range) rather than dispatching the action, keeping this
+        // a focused unit test of the cut logic.
+        let mut cx = TestAppContext::single();
+        init_editor_test_app(&mut cx);
+        let editor = cx.new(|cx| Editor::from_markdown(cx, TABLE_DOC.to_string(), None));
+
+        editor.update(&mut cx, |editor, cx| {
+            let visible = editor.document.visible_blocks().to_vec();
+            assert_eq!(visible.len(), 3);
+            let end_len = visible[2].entity.read(cx).visible_len();
+            set_selection(editor, 0, 0, 2, end_len, cx);
+
+            // The clipboard markdown serializes the full table, matching what
+            // delete removes; otherwise cut would drop it from the clipboard.
+            let markdown = editor.cross_block_selected_markdown(cx).unwrap();
+            assert!(markdown.contains("| a | b |"), "clipboard: {markdown:?}");
+            assert!(markdown.contains("| 1 | 2 |"), "clipboard: {markdown:?}");
+            assert!(markdown.contains("alpha") && markdown.contains("gamma"));
+
+            assert!(editor.delete_cross_block_selection(cx));
+            assert!(
+                !editor.document.markdown_text(cx).contains('|'),
+                "document should no longer contain the table"
+            );
+        });
+        cx.quit();
+    }
+
+    #[test]
+    fn delete_selection_spanning_code_block_removes_it() {
+        let mut cx = TestAppContext::single();
+        init_editor_test_app(&mut cx);
+        // Code blocks edit their raw text, so they are deletable as an ordinary
+        // text range; this documents that visible_len-based behavior.
+        let doc = "alpha\n\n```\ncode\n```\n\ngamma";
+        let editor = cx.new(|cx| Editor::from_markdown(cx, doc.to_string(), None));
+
+        editor.update(&mut cx, |editor, cx| {
+            let visible = editor.document.visible_blocks().to_vec();
+            assert_eq!(visible.len(), 3);
+            let end_len = visible[2].entity.read(cx).visible_len();
+            set_selection(editor, 0, 0, 2, end_len, cx);
+            assert!(editor.delete_cross_block_selection(cx));
+
+            let text = editor.document.markdown_text(cx);
+            assert!(
+                !text.contains("code"),
+                "code block should be gone: {text:?}"
+            );
+        });
+        cx.quit();
+    }
+
+    #[test]
+    fn delete_selection_ending_on_trailing_empty_paragraph_removes_table() {
+        let mut cx = TestAppContext::single();
+        init_editor_test_app(&mut cx);
+        let doc = "alpha\n\n| a | b |\n| --- | --- |\n| 1 | 2 |";
+        let editor = cx.new(|cx| Editor::from_markdown(cx, doc.to_string(), None));
+
+        editor.update(&mut cx, |editor, cx| {
+            // Append a trailing empty paragraph, exactly as inserting a table at
+            // the end of a document does. Ending the selection on it used to
+            // abort deletion because empty roots had no source span.
+            let empty =
+                Editor::new_block(cx, crate::components::BlockRecord::paragraph(String::new()));
+            let index = editor.document.root_count();
+            editor
+                .document
+                .insert_blocks_at(None, index, vec![empty], cx);
+
+            let visible = editor.document.visible_blocks().to_vec();
+            assert_eq!(visible.len(), 3);
+            let alpha_len = visible[0].entity.read(cx).visible_len();
+            // From the end of `alpha` onto the trailing empty paragraph.
+            set_selection(editor, 0, alpha_len, 2, 0, cx);
+            assert!(editor.delete_cross_block_selection(cx));
+
+            let text = editor.document.markdown_text(cx);
+            assert!(!text.contains('|'), "table should be gone: {text:?}");
+            assert_eq!(text.trim(), "alpha");
+        });
+        cx.quit();
+    }
+
+    #[test]
+    fn delete_selection_starting_on_empty_paragraph_removes_table() {
+        let mut cx = TestAppContext::single();
+        init_editor_test_app(&mut cx);
+        let doc = "| a | b |\n| --- | --- |\n| 1 | 2 |\n\ngamma";
+        let editor = cx.new(|cx| Editor::from_markdown(cx, doc.to_string(), None));
+
+        editor.update(&mut cx, |editor, cx| {
+            // Prepend a leading empty paragraph; starting the highlight on it used
+            // to abort deletion (the user's "drag up from the text below into an
+            // empty block above the table" case).
+            let empty =
+                Editor::new_block(cx, crate::components::BlockRecord::paragraph(String::new()));
+            editor.document.insert_blocks_at(None, 0, vec![empty], cx);
+
+            let visible = editor.document.visible_blocks().to_vec();
+            assert_eq!(visible.len(), 3);
+            // From the empty paragraph (index 0) to the start of `gamma`.
+            set_selection(editor, 0, 0, 2, 0, cx);
+            assert!(editor.delete_cross_block_selection(cx));
+
+            let text = editor.document.markdown_text(cx);
+            assert!(!text.contains('|'), "table should be gone: {text:?}");
+            assert_eq!(text.trim(), "gamma");
         });
         cx.quit();
     }

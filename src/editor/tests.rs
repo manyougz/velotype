@@ -3,7 +3,8 @@ use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use gpui::{
-    AnyWindowHandle, AppContext, KeyDownEvent, Keystroke, TestAppContext, VisualTestContext,
+    AnyWindowHandle, AppContext, ClickEvent, KeyDownEvent, Keystroke, TestAppContext,
+    VisualTestContext,
 };
 
 use super::{Editor, ViewMode};
@@ -982,7 +983,8 @@ async fn moving_table_row_updates_focus_and_selection(cx: &mut TestAppContext) {
 
     editor.update(cx, |editor, cx| {
         let table = editor.document.first_root().expect("table root").clone();
-        editor.move_table_row(&table, 1, -1, cx);
+        // Visual row 2 is the second body row; move it up above the first.
+        editor.move_table_row(&table, 2, -1, cx);
 
         let record = table.read(cx).record.table.as_ref().expect("table record");
         assert_eq!(record.rows[0][0].serialize_markdown(), "3");
@@ -991,7 +993,7 @@ async fn moving_table_row_updates_focus_and_selection(cx: &mut TestAppContext) {
             Some(super::TableAxisSelection {
                 table_block_id: table.entity_id(),
                 kind: crate::components::TableAxisKind::Row,
-                index: 0,
+                index: 1,
             })
         );
 
@@ -1001,6 +1003,139 @@ async fn moving_table_row_updates_focus_and_selection(cx: &mut TestAppContext) {
             .as_ref()
             .expect("rebuilt runtime");
         assert_eq!(editor.pending_focus, Some(runtime.rows[0][0].entity_id()));
+    });
+}
+
+#[gpui::test]
+async fn moving_first_body_row_up_swaps_with_header(cx: &mut TestAppContext) {
+    let markdown = ["| A | B |", "| --- | --- |", "| 1 | 2 |", "| 3 | 4 |"].join("\n");
+    let editor = cx.new(|cx| Editor::from_markdown(cx, markdown, None));
+
+    editor.update(cx, |editor, cx| {
+        let table = editor.document.first_root().expect("table root").clone();
+        // Visual row 1 (first body row) moves up into the header position.
+        editor.move_table_row(&table, 1, -1, cx);
+
+        let record = table.read(cx).record.table.as_ref().expect("table record");
+        assert_eq!(record.header[0].serialize_markdown(), "1");
+        assert_eq!(record.rows[0][0].serialize_markdown(), "A");
+        assert_eq!(
+            editor.table_axis_selection,
+            Some(super::TableAxisSelection {
+                table_block_id: table.entity_id(),
+                kind: crate::components::TableAxisKind::Row,
+                index: 0,
+            })
+        );
+    });
+}
+
+#[gpui::test]
+async fn moving_header_row_down_swaps_with_first_body(cx: &mut TestAppContext) {
+    let markdown = ["| A | B |", "| --- | --- |", "| 1 | 2 |", "| 3 | 4 |"].join("\n");
+    let editor = cx.new(|cx| Editor::from_markdown(cx, markdown, None));
+
+    editor.update(cx, |editor, cx| {
+        let table = editor.document.first_root().expect("table root").clone();
+        // Visual row 0 (header) moves down, swapping with the first body row.
+        editor.move_table_row(&table, 0, 1, cx);
+
+        let record = table.read(cx).record.table.as_ref().expect("table record");
+        assert_eq!(record.header[0].serialize_markdown(), "1");
+        assert_eq!(record.rows[0][0].serialize_markdown(), "A");
+        assert_eq!(
+            editor.table_axis_selection,
+            Some(super::TableAxisSelection {
+                table_block_id: table.entity_id(),
+                kind: crate::components::TableAxisKind::Row,
+                index: 1,
+            })
+        );
+    });
+}
+
+#[gpui::test]
+async fn selecting_first_body_row_does_not_highlight_header(cx: &mut TestAppContext) {
+    use crate::components::{TableAxisHighlight, TableAxisKind};
+    let markdown = ["| A | B |", "| --- | --- |", "| 1 | 2 |", "| 3 | 4 |"].join("\n");
+    let editor = cx.new(|cx| Editor::from_markdown(cx, markdown, None));
+
+    editor.update(cx, |editor, cx| {
+        let table = editor.document.first_root().expect("table root").clone();
+        // Visual row 1 is the first body row; the header (row 0) must stay clear.
+        editor.select_table_axis(table.entity_id(), TableAxisKind::Row, 1, cx);
+
+        let runtime = table.read(cx).table_runtime.clone().expect("runtime");
+        for cell in &runtime.header {
+            assert_eq!(
+                cell.read(cx).table_axis_highlight,
+                TableAxisHighlight::None,
+                "header should not be highlighted"
+            );
+        }
+        for cell in &runtime.rows[0] {
+            assert_eq!(
+                cell.read(cx).table_axis_highlight,
+                TableAxisHighlight::Selected
+            );
+        }
+        for cell in &runtime.rows[1] {
+            assert_eq!(cell.read(cx).table_axis_highlight, TableAxisHighlight::None);
+        }
+    });
+}
+
+#[gpui::test]
+async fn selecting_header_row_highlights_only_header(cx: &mut TestAppContext) {
+    use crate::components::{TableAxisHighlight, TableAxisKind};
+    let markdown = ["| A | B |", "| --- | --- |", "| 1 | 2 |"].join("\n");
+    let editor = cx.new(|cx| Editor::from_markdown(cx, markdown, None));
+
+    editor.update(cx, |editor, cx| {
+        let table = editor.document.first_root().expect("table root").clone();
+        editor.select_table_axis(table.entity_id(), TableAxisKind::Row, 0, cx);
+
+        let runtime = table.read(cx).table_runtime.clone().expect("runtime");
+        for cell in &runtime.header {
+            assert_eq!(
+                cell.read(cx).table_axis_highlight,
+                TableAxisHighlight::Selected
+            );
+        }
+        for cell in &runtime.rows[0] {
+            assert_eq!(cell.read(cx).table_axis_highlight, TableAxisHighlight::None);
+        }
+    });
+}
+
+#[gpui::test]
+async fn body_row_preview_survives_stale_header_leave(cx: &mut TestAppContext) {
+    use crate::components::TableAxisKind;
+    let markdown = ["| A | B |", "| --- | --- |", "| 1 | 2 |"].join("\n");
+    let editor = cx.new(|cx| Editor::from_markdown(cx, markdown, None));
+
+    editor.update(cx, |editor, cx| {
+        let table = editor.document.first_root().expect("table root").clone();
+        let id = table.entity_id();
+
+        // Pointer crosses from the header handle down onto the first body row.
+        // The body handle's enter arrives first, then the header handle's leave;
+        // the stale leave must not clear the preview the pointer moved onto.
+        editor.preview_table_axis(id, TableAxisKind::Row, 1, true, cx);
+        editor.preview_table_axis(id, TableAxisKind::Row, 0, false, cx);
+        assert_eq!(
+            editor.table_axis_preview,
+            Some(super::TableAxisSelection {
+                table_block_id: id,
+                kind: TableAxisKind::Row,
+                index: 1,
+            }),
+            "body row preview must survive the header's stale leave"
+        );
+
+        // Leaving the body handle that owns the preview still clears it.
+        editor.preview_table_axis(id, TableAxisKind::Row, 1, false, cx);
+        assert_eq!(editor.table_axis_preview, None);
     });
 }
 
@@ -1023,6 +1158,29 @@ async fn deleting_table_column_moves_selection_to_nearest_survivor(cx: &mut Test
                 index: 1,
             })
         );
+    });
+}
+
+#[gpui::test]
+async fn deleting_table_header_promotes_next_row(cx: &mut TestAppContext) {
+    let markdown = ["| A | B |", "| --- | --- |", "| 1 | 2 |"].join("\n");
+    let editor = cx.new(|cx| Editor::from_markdown(cx, markdown, None));
+
+    editor.update(cx, |editor, cx| {
+        let table = editor.document.first_root().expect("table root").clone();
+        editor.delete_table_header_row(&table, cx);
+
+        let record = table.read(cx).record.table.as_ref().expect("table record");
+        assert_eq!(record.header[0].serialize_markdown(), "1");
+        assert_eq!(record.header[1].serialize_markdown(), "2");
+        assert!(record.rows.is_empty());
+
+        let runtime = table
+            .read(cx)
+            .table_runtime
+            .as_ref()
+            .expect("rebuilt runtime");
+        assert_eq!(editor.pending_focus, Some(runtime.header[0].entity_id()));
     });
 }
 
@@ -2337,6 +2495,106 @@ async fn tab_key_keeps_table_cell_navigation(cx: &mut TestAppContext) {
 
     editor.update(cx, |editor, _cx| {
         assert_eq!(editor.active_entity_id, Some(second_cell_id));
+    });
+}
+
+#[gpui::test]
+async fn right_arrow_at_cell_end_moves_to_next_cell(cx: &mut TestAppContext) {
+    init_editor_test_app(cx);
+    let markdown = ["| A | B |", "| --- | --- |", "| 1 | 2 |"].join("\n");
+    let (editor, cx) =
+        cx.add_window_view(move |_window, cx| Editor::from_markdown(cx, markdown, None));
+
+    let second_cell_id = editor.update(cx, |editor, cx| {
+        let table = editor.document.first_root().expect("table root").clone();
+        let runtime = table
+            .read(cx)
+            .table_runtime
+            .as_ref()
+            .expect("table runtime")
+            .clone();
+        let first = runtime.rows[0][0].clone();
+        let second = runtime.rows[0][1].clone();
+        editor.focus_block(first.entity_id());
+        first.update(cx, |block, block_cx| {
+            block.move_to(block.visible_len(), block_cx);
+        });
+        second.entity_id()
+    });
+    redraw(cx);
+
+    cx.simulate_keystrokes("right");
+    redraw(cx);
+
+    editor.update(cx, |editor, _cx| {
+        assert_eq!(editor.active_entity_id, Some(second_cell_id));
+    });
+}
+
+#[gpui::test]
+async fn left_arrow_at_cell_start_moves_to_previous_cell(cx: &mut TestAppContext) {
+    init_editor_test_app(cx);
+    let markdown = ["| A | B |", "| --- | --- |", "| 1 | 2 |"].join("\n");
+    let (editor, cx) =
+        cx.add_window_view(move |_window, cx| Editor::from_markdown(cx, markdown, None));
+
+    let first_cell_id = editor.update(cx, |editor, cx| {
+        let table = editor.document.first_root().expect("table root").clone();
+        let runtime = table
+            .read(cx)
+            .table_runtime
+            .as_ref()
+            .expect("table runtime")
+            .clone();
+        let first = runtime.rows[0][0].clone();
+        let second = runtime.rows[0][1].clone();
+        editor.focus_block(second.entity_id());
+        second.update(cx, |block, block_cx| {
+            block.move_to(0, block_cx);
+        });
+        first.entity_id()
+    });
+    redraw(cx);
+
+    cx.simulate_keystrokes("left");
+    redraw(cx);
+
+    editor.update(cx, |editor, _cx| {
+        assert_eq!(editor.active_entity_id, Some(first_cell_id));
+    });
+}
+
+#[gpui::test]
+async fn inserting_table_at_document_end_adds_trailing_paragraph(cx: &mut TestAppContext) {
+    let cx = cx.add_empty_window();
+    let editor = cx.new(|cx| Editor::from_markdown(cx, String::new(), None));
+
+    cx.update(|window, cx| {
+        editor.update(cx, |editor, cx| {
+            editor.table_insert_dialog = Some(super::context_menu::TableInsertDialogState {
+                target: super::context_menu::TableInsertTarget::Append,
+                body_rows: 2,
+                columns: 2,
+            });
+            editor.on_confirm_table_insert_dialog(&ClickEvent::default(), window, cx);
+        });
+    });
+
+    editor.update(cx, |editor, cx| {
+        let roots = editor.document.visible_blocks();
+        let kinds = roots
+            .iter()
+            .map(|visible| visible.entity.read(cx).kind())
+            .collect::<Vec<_>>();
+        let table_index = kinds
+            .iter()
+            .position(|kind| *kind == BlockKind::Table)
+            .expect("table inserted");
+        // The table is the last meaningful block, so an empty paragraph is
+        // appended after it to give the caret somewhere to land.
+        assert_eq!(kinds.get(table_index + 1), Some(&BlockKind::Paragraph));
+        assert_eq!(table_index + 1, kinds.len() - 1);
+        assert_eq!(roots[table_index + 1].entity.read(cx).display_text(), "");
     });
 }
 
