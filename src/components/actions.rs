@@ -29,6 +29,10 @@ actions!(
         End,
         BlockUp,
         BlockDown,
+        PageUp,
+        PageDown,
+        JumpToTop,
+        JumpToBottom,
         SelectLeft,
         SelectRight,
         WordSelectLeft,
@@ -124,6 +128,10 @@ pub(crate) enum ShortcutCommand {
     End,
     BlockUp,
     BlockDown,
+    PageUp,
+    PageDown,
+    JumpToTop,
+    JumpToBottom,
     SelectLeft,
     SelectRight,
     WordSelectLeft,
@@ -281,6 +289,37 @@ const SHORTCUT_DEFINITIONS: &[ShortcutDefinition] = &[
         category: ShortcutCategory::Navigation,
         default_keys: &["ctrl-down", "alt-down"],
         context: BLOCK_CONTEXT,
+    },
+    // Page scroll and document jumps operate on the editor viewport rather than
+    // a single block, so they use global bindings (no context) and stay active
+    // in both Rendered and Source mode.
+    ShortcutDefinition {
+        command: ShortcutCommand::PageUp,
+        id: "page_up",
+        category: ShortcutCategory::Navigation,
+        default_keys: &["pageup"],
+        context: None,
+    },
+    ShortcutDefinition {
+        command: ShortcutCommand::PageDown,
+        id: "page_down",
+        category: ShortcutCategory::Navigation,
+        default_keys: &["pagedown"],
+        context: None,
+    },
+    ShortcutDefinition {
+        command: ShortcutCommand::JumpToTop,
+        id: "jump_to_top",
+        category: ShortcutCategory::Navigation,
+        default_keys: &["ctrl-home", "cmd-up"],
+        context: None,
+    },
+    ShortcutDefinition {
+        command: ShortcutCommand::JumpToBottom,
+        id: "jump_to_bottom",
+        category: ShortcutCategory::Navigation,
+        default_keys: &["ctrl-end", "cmd-down"],
+        context: None,
     },
     ShortcutDefinition {
         command: ShortcutCommand::SelectLeft,
@@ -621,6 +660,10 @@ fn key_binding_for(
         ShortcutCommand::End => KeyBinding::new(key, End, context),
         ShortcutCommand::BlockUp => KeyBinding::new(key, BlockUp, context),
         ShortcutCommand::BlockDown => KeyBinding::new(key, BlockDown, context),
+        ShortcutCommand::PageUp => KeyBinding::new(key, PageUp, context),
+        ShortcutCommand::PageDown => KeyBinding::new(key, PageDown, context),
+        ShortcutCommand::JumpToTop => KeyBinding::new(key, JumpToTop, context),
+        ShortcutCommand::JumpToBottom => KeyBinding::new(key, JumpToBottom, context),
         ShortcutCommand::SelectLeft => KeyBinding::new(key, SelectLeft, context),
         ShortcutCommand::SelectRight => KeyBinding::new(key, SelectRight, context),
         ShortcutCommand::WordSelectLeft => KeyBinding::new(key, WordSelectLeft, context),
@@ -762,6 +805,26 @@ mod tests {
                 "ctrl-shift-right".to_string(),
                 "alt-shift-right".to_string()
             ]
+        );
+    }
+
+    #[test]
+    fn page_navigation_shortcuts_have_defaults() {
+        assert_eq!(
+            resolved_shortcut_keys(&BTreeMap::new(), ShortcutCommand::PageUp),
+            vec!["pageup".to_string()]
+        );
+        assert_eq!(
+            resolved_shortcut_keys(&BTreeMap::new(), ShortcutCommand::PageDown),
+            vec!["pagedown".to_string()]
+        );
+        assert_eq!(
+            resolved_shortcut_keys(&BTreeMap::new(), ShortcutCommand::JumpToTop),
+            vec!["ctrl-home".to_string(), "cmd-up".to_string()]
+        );
+        assert_eq!(
+            resolved_shortcut_keys(&BTreeMap::new(), ShortcutCommand::JumpToBottom),
+            vec!["ctrl-end".to_string(), "cmd-down".to_string()]
         );
     }
 
