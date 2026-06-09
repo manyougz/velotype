@@ -187,6 +187,10 @@ pub struct I18nStrings {
     pub preferences_shortcut_end: String,
     pub preferences_shortcut_block_up: String,
     pub preferences_shortcut_block_down: String,
+    pub preferences_shortcut_page_up: String,
+    pub preferences_shortcut_page_down: String,
+    pub preferences_shortcut_jump_to_top: String,
+    pub preferences_shortcut_jump_to_bottom: String,
     pub preferences_shortcut_select_left: String,
     pub preferences_shortcut_select_right: String,
     pub preferences_shortcut_word_select_left: String,
@@ -388,6 +392,10 @@ struct I18nStringsDe {
     preferences_shortcut_end: Option<String>,
     preferences_shortcut_block_up: Option<String>,
     preferences_shortcut_block_down: Option<String>,
+    preferences_shortcut_page_up: Option<String>,
+    preferences_shortcut_page_down: Option<String>,
+    preferences_shortcut_jump_to_top: Option<String>,
+    preferences_shortcut_jump_to_bottom: Option<String>,
     preferences_shortcut_select_left: Option<String>,
     preferences_shortcut_select_right: Option<String>,
     preferences_shortcut_word_select_left: Option<String>,
@@ -551,6 +559,10 @@ const I18N_STRING_KEYS: &[&str] = &[
     "preferences_shortcut_end",
     "preferences_shortcut_block_up",
     "preferences_shortcut_block_down",
+    "preferences_shortcut_page_up",
+    "preferences_shortcut_page_down",
+    "preferences_shortcut_jump_to_top",
+    "preferences_shortcut_jump_to_bottom",
     "preferences_shortcut_select_left",
     "preferences_shortcut_select_right",
     "preferences_shortcut_word_select_left",
@@ -866,6 +878,18 @@ impl I18nStringsDe {
             preferences_shortcut_block_down: self
                 .preferences_shortcut_block_down
                 .unwrap_or(defaults.preferences_shortcut_block_down),
+            preferences_shortcut_page_up: self
+                .preferences_shortcut_page_up
+                .unwrap_or(defaults.preferences_shortcut_page_up),
+            preferences_shortcut_page_down: self
+                .preferences_shortcut_page_down
+                .unwrap_or(defaults.preferences_shortcut_page_down),
+            preferences_shortcut_jump_to_top: self
+                .preferences_shortcut_jump_to_top
+                .unwrap_or(defaults.preferences_shortcut_jump_to_top),
+            preferences_shortcut_jump_to_bottom: self
+                .preferences_shortcut_jump_to_bottom
+                .unwrap_or(defaults.preferences_shortcut_jump_to_bottom),
             preferences_shortcut_select_left: self
                 .preferences_shortcut_select_left
                 .unwrap_or(defaults.preferences_shortcut_select_left),
@@ -1162,6 +1186,10 @@ impl I18nStrings {
             preferences_shortcut_end: "行尾".into(),
             preferences_shortcut_block_up: "上一块开头".into(),
             preferences_shortcut_block_down: "下一块开头".into(),
+            preferences_shortcut_page_up: "上翻一页".into(),
+            preferences_shortcut_page_down: "下翻一页".into(),
+            preferences_shortcut_jump_to_top: "跳至开头".into(),
+            preferences_shortcut_jump_to_bottom: "跳至末尾".into(),
             preferences_shortcut_select_left: "向左选择".into(),
             preferences_shortcut_select_right: "向右选择".into(),
             preferences_shortcut_word_select_left: "向左选择单词".into(),
@@ -1341,6 +1369,10 @@ impl I18nStrings {
             preferences_shortcut_end: "Line End".into(),
             preferences_shortcut_block_up: "Block Up".into(),
             preferences_shortcut_block_down: "Block Down".into(),
+            preferences_shortcut_page_up: "Page Up".into(),
+            preferences_shortcut_page_down: "Page Down".into(),
+            preferences_shortcut_jump_to_top: "Jump to Top".into(),
+            preferences_shortcut_jump_to_bottom: "Jump to Bottom".into(),
             preferences_shortcut_select_left: "Select Left".into(),
             preferences_shortcut_select_right: "Select Right".into(),
             preferences_shortcut_word_select_left: "Word Select Left".into(),

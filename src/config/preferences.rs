@@ -822,6 +822,10 @@ impl PreferencesWindow {
             ShortcutCommand::End => strings.preferences_shortcut_end.clone(),
             ShortcutCommand::BlockUp => strings.preferences_shortcut_block_up.clone(),
             ShortcutCommand::BlockDown => strings.preferences_shortcut_block_down.clone(),
+            ShortcutCommand::PageUp => strings.preferences_shortcut_page_up.clone(),
+            ShortcutCommand::PageDown => strings.preferences_shortcut_page_down.clone(),
+            ShortcutCommand::JumpToTop => strings.preferences_shortcut_jump_to_top.clone(),
+            ShortcutCommand::JumpToBottom => strings.preferences_shortcut_jump_to_bottom.clone(),
             ShortcutCommand::SelectLeft => strings.preferences_shortcut_select_left.clone(),
             ShortcutCommand::SelectRight => strings.preferences_shortcut_select_right.clone(),
             ShortcutCommand::WordSelectLeft => {
