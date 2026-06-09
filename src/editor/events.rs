@@ -401,6 +401,68 @@ impl Editor {
         self.bump_scrollbar_visibility(cx);
     }
 
+    pub(crate) fn on_page_up(
+        &mut self,
+        _: &crate::components::PageUp,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let page = self.scroll_handle.bounds().size.height;
+        self.scroll_viewport_by(page, cx);
+    }
+
+    pub(crate) fn on_page_down(
+        &mut self,
+        _: &crate::components::PageDown,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let page = self.scroll_handle.bounds().size.height;
+        self.scroll_viewport_by(-page, cx);
+    }
+
+    pub(crate) fn on_jump_to_top(
+        &mut self,
+        _: &crate::components::JumpToTop,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.set_vertical_scroll_offset(px(0.0), cx);
+    }
+
+    pub(crate) fn on_jump_to_bottom(
+        &mut self,
+        _: &crate::components::JumpToBottom,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let max_offset_y = self.scroll_handle.max_offset().height.max(px(0.0));
+        self.set_vertical_scroll_offset(-max_offset_y, cx);
+    }
+
+    /// Scrolls the viewport vertically by `delta`. A positive `delta` moves
+    /// toward the start of the document; a negative one moves toward the end.
+    /// One page is the current viewport height, so the step tracks window size.
+    fn scroll_viewport_by(&mut self, delta: Pixels, cx: &mut Context<Self>) {
+        let target = self.scroll_handle.offset().y + delta;
+        self.set_vertical_scroll_offset(target, cx);
+    }
+
+    /// Applies an absolute vertical scroll offset, clamped to the scrollable
+    /// range. Offsets run from 0 at the top to `-max_offset` at the bottom.
+    fn set_vertical_scroll_offset(&mut self, target_y: Pixels, cx: &mut Context<Self>) {
+        let max_offset_y = self.scroll_handle.max_offset().height.max(px(0.0));
+        let mut offset = self.scroll_handle.offset();
+        offset.y = target_y.min(px(0.0)).max(-max_offset_y);
+        self.scroll_handle.set_offset(offset);
+        // A direct viewport scroll should stick, so cancel any queued pass that
+        // would otherwise re-center the active block on the next frame.
+        self.pending_scroll_active_block_into_view = false;
+        self.pending_scroll_recheck_after_layout = false;
+        self.bump_scrollbar_visibility(cx);
+        cx.notify();
+    }
+
     pub(crate) fn start_scrollbar_drag(
         &mut self,
         pointer_offset_y: f32,
