@@ -5,7 +5,9 @@ use std::time::Duration;
 use gpui::*;
 
 use super::{Editor, TableAxisSelection, ViewMode};
-use crate::components::{DismissTransientUi, TableAxisKind, TableColumnAlignment, TableData};
+use crate::components::{
+    BlockRecord, DismissTransientUi, TableAxisKind, TableColumnAlignment, TableData,
+};
 use crate::i18n::I18nManager;
 use crate::theme::Theme;
 
@@ -226,6 +228,17 @@ impl Editor {
             return;
         }
         cx.stop_propagation();
+        // Right-clicking inside a table cell, or any block where inserting a
+        // table makes no sense (code, math, etc.), offers no insert menu.
+        if self.table_cell_binding(entity_id).is_some() {
+            return;
+        }
+        let allows_insert = self
+            .focusable_entity_by_id(entity_id)
+            .is_none_or(|block| block.read(cx).kind().allows_context_table_insert());
+        if !allows_insert {
+            return;
+        }
         let target = TableInsertTarget::After(self.root_ancestor_entity_id(entity_id));
         self.open_insert_context_menu(event.position, target, cx);
     }
@@ -382,6 +395,25 @@ impl Editor {
             }
         }
 
+        // A table inserted as the last block in its container leaves no line
+        // below it, so in rendered mode the caret cannot move past the table.
+        // Add a trailing empty paragraph to land on when nothing follows it.
+        if let Some(location) = self.document.find_block_location(new_block.entity_id()) {
+            let sibling_count = match location.parent.as_ref() {
+                Some(parent) => parent.read(cx).children.len(),
+                None => self.document.root_count(),
+            };
+            if location.index + 1 >= sibling_count {
+                let trailing = Self::new_block(cx, BlockRecord::paragraph(String::new()));
+                self.document.insert_blocks_at(
+                    location.parent,
+                    location.index + 1,
+                    vec![trailing],
+                    cx,
+                );
+            }
+        }
+
         self.rebuild_table_runtimes(cx);
         if let Some(first_cell) = new_block
             .read(cx)
@@ -487,7 +519,7 @@ impl Editor {
             .record
             .table
             .as_ref()
-            .map(|table| selection.index + 1 < table.rows.len())
+            .map(|table| selection.index < table.rows.len())
             .unwrap_or(false);
         if !can_move {
             return;
@@ -560,7 +592,26 @@ impl Editor {
             return;
         };
         self.close_context_menu(cx);
-        self.delete_table_row(&table_block, selection.index, cx);
+        // Visual index 0 is the header: deleting it promotes the first body row.
+        if selection.index == 0 {
+            self.delete_table_header_row(&table_block, cx);
+        } else {
+            self.delete_table_row(&table_block, selection.index - 1, cx);
+        }
+    }
+
+    pub(super) fn on_toggle_table_headers(
+        &mut self,
+        _event: &ClickEvent,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let next = !crate::config::EditorSettings::show_table_headers(cx);
+        crate::config::EditorSettings::set_show_table_headers(cx, next);
+        self.close_context_menu(cx);
+        // The preference is read while rendering table cells; re-render the
+        // editor (and with it every table) to reflect the new styling.
+        cx.notify();
     }
 
     pub(super) fn on_delete_table_column(
@@ -836,8 +887,44 @@ impl Editor {
                             cx,
                         ),
                     ],
-                    TableAxisKind::Row => vec![
-                        Self::render_axis_menu_item(
+                    TableAxisKind::Row => {
+                        let mut items: Vec<AnyElement> = Vec::new();
+                        // The header row (visual index 0) shares the normal row
+                        // menu, with its Header Row styling toggle added on top.
+                        if selection.index == 0 {
+                            let headers_shown =
+                                crate::config::EditorSettings::show_table_headers(cx);
+                            items.push(
+                                div()
+                                    .id("table-header-toggle")
+                                    .h(px(d.menu_item_height))
+                                    .px(px(d.menu_item_padding_x))
+                                    .flex()
+                                    .items_center()
+                                    .justify_between()
+                                    .gap(px(d.menu_item_padding_x))
+                                    .rounded(px(d.menu_item_radius))
+                                    .bg(c.dialog_surface)
+                                    .text_size(px(d.menu_text_size))
+                                    .font_weight(t.dialog_body_weight.to_font_weight())
+                                    .text_color(c.dialog_secondary_button_text)
+                                    .child(s.table_header_row.clone())
+                                    .child(if headers_shown { "✓" } else { "" })
+                                    .hover(|this| this.bg(c.dialog_secondary_button_hover))
+                                    .cursor_pointer()
+                                    .on_click(cx.listener(Self::on_toggle_table_headers))
+                                    .into_any_element(),
+                            );
+                            items.push(
+                                div()
+                                    .mx(px(d.menu_separator_margin_x))
+                                    .my(px(d.menu_separator_margin_y))
+                                    .h(px(d.menu_separator_height))
+                                    .bg(c.dialog_border)
+                                    .into_any_element(),
+                            );
+                        }
+                        items.push(Self::render_axis_menu_item(
                             theme,
                             "table-axis-move-row-up",
                             s.table_axis_move_row_up.clone(),
@@ -845,32 +932,43 @@ impl Editor {
                             false,
                             Self::on_move_table_row_up,
                             cx,
-                        ),
-                        Self::render_axis_menu_item(
+                        ));
+                        items.push(Self::render_axis_menu_item(
                             theme,
                             "table-axis-move-row-down",
                             s.table_axis_move_row_down.clone(),
-                            selection.index + 1 < table.rows.len(),
+                            selection.index < table.rows.len(),
                             false,
                             Self::on_move_table_row_down,
                             cx,
-                        ),
-                        div()
-                            .mx(px(d.menu_separator_margin_x))
-                            .my(px(d.menu_separator_margin_y))
-                            .h(px(d.menu_separator_height))
-                            .bg(c.dialog_border)
-                            .into_any_element(),
-                        Self::render_axis_menu_item(
+                        ));
+                        items.push(
+                            div()
+                                .mx(px(d.menu_separator_margin_x))
+                                .my(px(d.menu_separator_margin_y))
+                                .h(px(d.menu_separator_height))
+                                .bg(c.dialog_border)
+                                .into_any_element(),
+                        );
+                        // Deleting the header (index 0) promotes the first body
+                        // row, so it only needs one body row; deleting a body row
+                        // must leave at least one behind.
+                        let delete_enabled = if selection.index == 0 {
+                            !table.rows.is_empty()
+                        } else {
+                            table.rows.len() > 1
+                        };
+                        items.push(Self::render_axis_menu_item(
                             theme,
                             "table-axis-delete-row",
                             s.table_axis_delete_row.clone(),
-                            table.rows.len() > 1,
+                            delete_enabled,
                             true,
                             Self::on_delete_table_row,
                             cx,
-                        ),
-                    ],
+                        ));
+                        items
+                    }
                 };
 
                 Some(

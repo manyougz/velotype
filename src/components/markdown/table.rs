@@ -142,11 +142,21 @@ impl TableData {
         }
     }
 
-    /// Swaps two body rows when both indices are valid and distinct.
-    pub fn swap_body_rows(&mut self, row_a: usize, row_b: usize) {
+    /// Swaps two rows addressed by their visual index, where row `0` is the
+    /// header and rows `1..=rows.len()` are the body rows. Swapping the header
+    /// with the first body row exchanges header and body content, mirroring how
+    /// the row handles treat the header as just another movable row.
+    pub fn swap_visual_rows(&mut self, row_a: usize, row_b: usize) {
         self.normalize_shape();
-        if row_a < self.rows.len() && row_b < self.rows.len() && row_a != row_b {
-            self.rows.swap(row_a, row_b);
+        let total = self.rows.len() + 1;
+        if row_a >= total || row_b >= total || row_a == row_b {
+            return;
+        }
+        match (row_a, row_b) {
+            (0, other) | (other, 0) => {
+                std::mem::swap(&mut self.header, &mut self.rows[other - 1]);
+            }
+            (a, b) => self.rows.swap(a - 1, b - 1),
         }
     }
 
@@ -172,6 +182,18 @@ impl TableData {
             return;
         }
         self.rows.remove(row_index);
+    }
+
+    /// Removes the header row by promoting the first body row into its place.
+    /// Returns false (leaving the table unchanged) when there are no body rows,
+    /// since a pipe table must keep a header row.
+    pub fn remove_header_row(&mut self) -> bool {
+        self.normalize_shape();
+        if self.rows.is_empty() {
+            return false;
+        }
+        self.header = self.rows.remove(0);
+        true
     }
 
     /// Removes one column while preserving at least one column.
@@ -859,7 +881,7 @@ mod tests {
     }
 
     #[test]
-    fn swap_body_rows_exchanges_row_contents() {
+    fn swap_visual_rows_exchanges_header_with_first_body_row() {
         let mut table = TableData {
             header: vec![InlineTextTree::plain("A".to_string())],
             rows: vec![
@@ -868,9 +890,17 @@ mod tests {
             ],
             alignments: vec![TableColumnAlignment::Left],
         };
-        table.swap_body_rows(0, 1);
+        // Visual row 0 is the header; swapping it with visual row 1 exchanges
+        // header and first-body content.
+        table.swap_visual_rows(0, 1);
+        assert_eq!(table.header[0].serialize_markdown(), "1");
+        assert_eq!(table.rows[0][0].serialize_markdown(), "A");
+        assert_eq!(table.rows[1][0].serialize_markdown(), "2");
+
+        // Two body rows (visual 1 and 2) swap like ordinary rows.
+        table.swap_visual_rows(1, 2);
         assert_eq!(table.rows[0][0].serialize_markdown(), "2");
-        assert_eq!(table.rows[1][0].serialize_markdown(), "1");
+        assert_eq!(table.rows[1][0].serialize_markdown(), "A");
     }
 
     #[test]
@@ -902,6 +932,29 @@ mod tests {
         assert_eq!(table.rows.len(), 1);
         table.remove_body_row(0);
         assert_eq!(table.rows.len(), 1);
+    }
+
+    #[test]
+    fn remove_header_row_promotes_first_body_row() {
+        let mut table = parse_root_table_region(&[
+            "| A | B |".to_string(),
+            "| --- | --- |".to_string(),
+            "| 1 | 2 |".to_string(),
+            "| 3 | 4 |".to_string(),
+        ])
+        .expect("valid table");
+
+        assert!(table.remove_header_row());
+        assert_eq!(table.header[0].serialize_markdown(), "1");
+        assert_eq!(table.header[1].serialize_markdown(), "2");
+        assert_eq!(table.rows.len(), 1);
+        assert_eq!(table.rows[0][0].serialize_markdown(), "3");
+
+        // Promoting the last remaining row leaves a header-only table.
+        assert!(table.remove_header_row());
+        assert!(table.rows.is_empty());
+        assert!(!table.remove_header_row());
+        assert_eq!(table.header[0].serialize_markdown(), "3");
     }
 
     #[test]

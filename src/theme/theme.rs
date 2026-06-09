@@ -1137,8 +1137,11 @@ impl Theme {
                 dialog_secondary_button_bg: Hsla::from(rgba(0x27272aff)),
                 dialog_secondary_button_hover: Hsla::from(rgba(0x3f3f46ff)),
                 dialog_secondary_button_text: Hsla::from(rgba(0xf4f4f5ff)),
-                dialog_danger_button_bg: Hsla::from(rgba(0x7f1d1dff)),
-                dialog_danger_button_hover: Hsla::from(rgba(0x991b1bff)),
+                // Doubles as the destructive menu-item text color (e.g. Delete
+                // Row/Column), so it must stay legible on the dark menu surface
+                // rather than the muted red used previously.
+                dialog_danger_button_bg: Hsla::from(rgba(0xef4444ff)),
+                dialog_danger_button_hover: Hsla::from(rgba(0xdc2626ff)),
                 dialog_danger_button_text: Hsla::from(rgba(0xfef2f2ff)),
             },
             dimensions: ThemeDimensions {

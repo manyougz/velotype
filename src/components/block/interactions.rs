@@ -645,7 +645,14 @@ impl Block {
                 self.cursor_blink_epoch = std::time::Instant::now();
                 cx.notify();
             } else {
-                self.move_to(self.previous_boundary(self.cursor_offset()), cx);
+                let previous = self.previous_boundary(self.cursor_offset());
+                // At the start of a table cell, step into the previous cell
+                // rather than stalling at the edge (same path as Shift+Tab).
+                if previous == self.cursor_offset() && self.is_table_cell() {
+                    cx.emit(BlockEvent::RequestTableCellMoveHorizontal { delta: -1 });
+                    return;
+                }
+                self.move_to(previous, cx);
             }
         } else {
             self.move_to(self.selected_range.start, cx);
@@ -666,7 +673,14 @@ impl Block {
                 self.cursor_blink_epoch = std::time::Instant::now();
                 cx.notify();
             } else {
-                self.move_to(self.next_boundary(self.selected_range.end), cx);
+                let next = self.next_boundary(self.selected_range.end);
+                // At the end of a table cell, step into the next cell rather
+                // than stalling at the edge (same path as Tab).
+                if next == self.selected_range.end && self.is_table_cell() {
+                    cx.emit(BlockEvent::RequestTableCellMoveHorizontal { delta: 1 });
+                    return;
+                }
+                self.move_to(next, cx);
             }
         } else {
             self.move_to(self.selected_range.end, cx);
