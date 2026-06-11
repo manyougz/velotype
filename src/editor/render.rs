@@ -9,7 +9,7 @@ use gpui::*;
 use super::{Editor, InfoDialogKind, workspace::workspace_panel_width_for_viewport};
 use crate::app_menu::dispatch_menu_action_for_editor;
 use crate::components::CalloutVariant;
-use crate::components::{Block, BlockKind, NoRecentFiles};
+use crate::components::{AddLanguageConfig, AddThemeConfig, Block, BlockKind, NoRecentFiles};
 use crate::i18n::{I18nManager, I18nStrings};
 use crate::theme::{Theme, ThemeDimensions, ThemeManager};
 use crate::window_chrome::{custom_titlebar_height, render_custom_titlebar};
@@ -248,6 +248,74 @@ fn menu_item_visual_height(item: &OwnedMenuItem, dimensions: &ThemeDimensions) -
             dimensions.menu_item_height
         }
     }
+}
+
+const SCROLLABLE_IMPORT_MENU_VISIBLE_ITEMS: usize = 12;
+
+fn menu_items_visual_height_with_gaps(
+    items: &[OwnedMenuItem],
+    dimensions: &ThemeDimensions,
+) -> f32 {
+    if items.is_empty() {
+        return 0.0;
+    }
+
+    let items_height: f32 = items
+        .iter()
+        .map(|item| menu_item_visual_height(item, dimensions))
+        .sum();
+    items_height + dimensions.menu_panel_gap * items.len().saturating_sub(1) as f32
+}
+
+fn import_menu_split_index(items: &[OwnedMenuItem]) -> Option<usize> {
+    let [
+        prefix @ ..,
+        OwnedMenuItem::Separator,
+        OwnedMenuItem::Action { action, .. },
+    ] = items
+    else {
+        return None;
+    };
+
+    if action.as_ref().as_any().is::<AddThemeConfig>()
+        || action.as_ref().as_any().is::<AddLanguageConfig>()
+    {
+        Some(prefix.len())
+    } else {
+        None
+    }
+}
+
+fn scrollable_import_menu_scroll_height(
+    scroll_items: &[OwnedMenuItem],
+    footer_items: &[OwnedMenuItem],
+    viewport_height: f32,
+    top_offset: f32,
+    dimensions: &ThemeDimensions,
+) -> f32 {
+    let visible_count = scroll_items.len().min(SCROLLABLE_IMPORT_MENU_VISIBLE_ITEMS);
+    if visible_count == 0 {
+        return 0.0;
+    }
+
+    let default_height =
+        menu_items_visual_height_with_gaps(&scroll_items[..visible_count], dimensions);
+    let footer_height = menu_items_visual_height_with_gaps(footer_items, dimensions);
+    let footer_gap = if footer_items.is_empty() {
+        0.0
+    } else {
+        dimensions.menu_panel_gap
+    };
+    let available_height = viewport_height
+        - top_offset
+        - dimensions.menu_panel_top
+        - dimensions.menu_panel_padding * 2.0
+        - footer_height
+        - footer_gap
+        - 8.0;
+    let min_height = dimensions.menu_item_height.min(default_height).max(1.0);
+
+    default_height.min(available_height.max(min_height))
 }
 
 fn submenu_panel_top(
@@ -609,6 +677,123 @@ impl Editor {
         )
     }
 
+    fn render_in_window_menu_item(
+        &self,
+        item: OwnedMenuItem,
+        item_index: usize,
+        theme: &Theme,
+        editor: WeakEntity<Self>,
+    ) -> AnyElement {
+        let c = &theme.colors;
+        let d = &theme.dimensions;
+        let t = &theme.typography;
+
+        match item {
+            OwnedMenuItem::Separator => div()
+                .id(("app-menu-separator", item_index))
+                .flex_shrink_0()
+                .mx(px(d.menu_separator_margin_x))
+                .my(px(d.menu_separator_margin_y))
+                .h(px(d.menu_separator_height))
+                .bg(c.dialog_border)
+                .into_any_element(),
+            OwnedMenuItem::Action { name, action, .. } => {
+                let is_disabled = action.as_ref().as_any().is::<NoRecentFiles>();
+                let click_editor = editor.clone();
+                let hover_editor = editor.clone();
+                let base = div()
+                    .id(("app-menu-item", item_index))
+                    .w_full()
+                    .h(px(d.menu_item_height))
+                    .flex_shrink_0()
+                    .px(px(d.menu_item_padding_x))
+                    .flex()
+                    .items_center()
+                    .rounded(px(d.menu_item_radius))
+                    .bg(c.dialog_surface)
+                    .text_size(px(d.menu_text_size))
+                    .font_weight(t.dialog_body_weight.to_font_weight())
+                    .text_color(if is_disabled {
+                        c.dialog_muted
+                    } else {
+                        c.dialog_secondary_button_text
+                    })
+                    .child(name)
+                    .on_hover(move |hovered, _window, cx| {
+                        if *hovered {
+                            let _ =
+                                hover_editor.update(cx, |editor, cx| editor.close_menu_submenu(cx));
+                        }
+                    });
+
+                if is_disabled {
+                    base.into_any_element()
+                } else {
+                    base.hover(|this| this.bg(c.dialog_secondary_button_hover))
+                        .active(|this| this.opacity(0.92))
+                        .cursor_pointer()
+                        .on_click(move |_, window, cx| {
+                            let _ = click_editor.update(cx, |editor, cx| editor.close_menu_bar(cx));
+                            dispatch_menu_action_for_editor(
+                                action.as_ref(),
+                                &click_editor,
+                                window,
+                                cx,
+                            );
+                        })
+                        .into_any_element()
+                }
+            }
+            OwnedMenuItem::Submenu(submenu) => {
+                let is_open = self.menu_submenu_open == Some(item_index);
+                let hover_editor = editor.clone();
+                div()
+                    .id(("app-menu-submenu", item_index))
+                    .w_full()
+                    .h(px(d.menu_item_height))
+                    .flex_shrink_0()
+                    .px(px(d.menu_item_padding_x))
+                    .flex()
+                    .items_center()
+                    .justify_between()
+                    .rounded(px(d.menu_item_radius))
+                    .bg(if is_open {
+                        c.dialog_secondary_button_hover
+                    } else {
+                        c.dialog_surface
+                    })
+                    .hover(|this| this.bg(c.dialog_secondary_button_hover))
+                    .cursor_pointer()
+                    .text_size(px(d.menu_text_size))
+                    .font_weight(t.dialog_body_weight.to_font_weight())
+                    .text_color(c.dialog_secondary_button_text)
+                    .child(submenu.name.to_string())
+                    .child(">")
+                    .on_hover(move |hovered, _window, cx| {
+                        if *hovered {
+                            let _ = hover_editor
+                                .update(cx, |editor, cx| editor.open_menu_submenu(item_index, cx));
+                        }
+                    })
+                    .into_any_element()
+            }
+            OwnedMenuItem::SystemMenu(os_menu) => div()
+                .id(("app-menu-system", item_index))
+                .w_full()
+                .h(px(d.menu_item_height))
+                .flex_shrink_0()
+                .px(px(d.menu_item_padding_x))
+                .flex()
+                .items_center()
+                .rounded(px(d.menu_item_radius))
+                .bg(c.dialog_surface)
+                .text_size(px(d.menu_text_size))
+                .text_color(c.dialog_muted)
+                .child(os_menu.name.to_string())
+                .into_any_element(),
+        }
+    }
+
     /// Renders the currently open in-window fallback menu as a floating
     /// panel. `menus` and `menu_labels` are fetched and computed once at
     /// the caller and shared with [`Self::render_in_window_menu_bar`].
@@ -619,6 +804,7 @@ impl Editor {
         menus: Option<&[gpui::OwnedMenu]>,
         menu_labels: &[SharedString],
         top_offset: f32,
+        viewport_height: f32,
     ) -> Option<AnyElement> {
         let open_index = self.menu_bar_open?;
         let menus = menus?;
@@ -778,112 +964,6 @@ impl Editor {
                 }
             });
 
-        let items = menu_items
-            .iter()
-            .cloned()
-            .enumerate()
-            .map(|(item_index, item)| match item {
-                OwnedMenuItem::Separator => div()
-                    .id(("app-menu-separator", item_index))
-                    .mx(px(d.menu_separator_margin_x))
-                    .my(px(d.menu_separator_margin_y))
-                    .h(px(d.menu_separator_height))
-                    .bg(c.dialog_border)
-                    .into_any_element(),
-                OwnedMenuItem::Action { name, action, .. } => {
-                    let is_disabled = action.as_ref().as_any().is::<NoRecentFiles>();
-                    let editor = editor.clone();
-                    let hover_editor = editor.clone();
-                    let base = div()
-                        .id(("app-menu-item", item_index))
-                        .w_full()
-                        .h(px(d.menu_item_height))
-                        .px(px(d.menu_item_padding_x))
-                        .flex()
-                        .items_center()
-                        .rounded(px(d.menu_item_radius))
-                        .bg(c.dialog_surface)
-                        .text_size(px(d.menu_text_size))
-                        .font_weight(t.dialog_body_weight.to_font_weight())
-                        .text_color(if is_disabled {
-                            c.dialog_muted
-                        } else {
-                            c.dialog_secondary_button_text
-                        })
-                        .child(name)
-                        .on_hover(move |hovered, _window, cx| {
-                            if *hovered {
-                                let _ = hover_editor
-                                    .update(cx, |editor, cx| editor.close_menu_submenu(cx));
-                            }
-                        });
-
-                    if is_disabled {
-                        base.into_any_element()
-                    } else {
-                        base.hover(|this| this.bg(c.dialog_secondary_button_hover))
-                            .active(|this| this.opacity(0.92))
-                            .cursor_pointer()
-                            .on_click(move |_, window, cx| {
-                                let _ = editor.update(cx, |editor, cx| editor.close_menu_bar(cx));
-                                dispatch_menu_action_for_editor(
-                                    action.as_ref(),
-                                    &editor,
-                                    window,
-                                    cx,
-                                );
-                            })
-                            .into_any_element()
-                    }
-                }
-                OwnedMenuItem::Submenu(submenu) => {
-                    let is_open = self.menu_submenu_open == Some(item_index);
-                    let hover_editor = editor.clone();
-                    div()
-                        .id(("app-menu-submenu", item_index))
-                        .w_full()
-                        .h(px(d.menu_item_height))
-                        .px(px(d.menu_item_padding_x))
-                        .flex()
-                        .items_center()
-                        .justify_between()
-                        .rounded(px(d.menu_item_radius))
-                        .bg(if is_open {
-                            c.dialog_secondary_button_hover
-                        } else {
-                            c.dialog_surface
-                        })
-                        .hover(|this| this.bg(c.dialog_secondary_button_hover))
-                        .cursor_pointer()
-                        .text_size(px(d.menu_text_size))
-                        .font_weight(t.dialog_body_weight.to_font_weight())
-                        .text_color(c.dialog_secondary_button_text)
-                        .child(submenu.name.to_string())
-                        .child(">")
-                        .on_hover(move |hovered, _window, cx| {
-                            if *hovered {
-                                let _ = hover_editor.update(cx, |editor, cx| {
-                                    editor.open_menu_submenu(item_index, cx)
-                                });
-                            }
-                        })
-                        .into_any_element()
-                }
-                OwnedMenuItem::SystemMenu(os_menu) => div()
-                    .id(("app-menu-system", item_index))
-                    .w_full()
-                    .h(px(d.menu_item_height))
-                    .px(px(d.menu_item_padding_x))
-                    .flex()
-                    .items_center()
-                    .rounded(px(d.menu_item_radius))
-                    .bg(c.dialog_surface)
-                    .text_size(px(d.menu_text_size))
-                    .text_color(c.dialog_muted)
-                    .child(os_menu.name.to_string())
-                    .into_any_element(),
-            });
-
         let main_panel = div()
             .id(("app-menu-panel", open_index))
             .absolute()
@@ -900,9 +980,73 @@ impl Editor {
             .border_color(c.dialog_border)
             .rounded(px(d.menu_panel_radius))
             .shadow_lg()
-            .on_hover(cx.listener(Self::on_menu_panel_hover))
-            .children(items)
-            .into_any_element();
+            .on_hover(cx.listener(Self::on_menu_panel_hover));
+        let main_panel = if let Some(split_index) = import_menu_split_index(&menu_items) {
+            let scroll_items = &menu_items[..split_index];
+            let footer_items = &menu_items[split_index..];
+            let scroll_height = scrollable_import_menu_scroll_height(
+                scroll_items,
+                footer_items,
+                viewport_height,
+                top_offset,
+                d,
+            );
+            let scroll_area = (!scroll_items.is_empty()).then(|| {
+                div()
+                    .id(("app-menu-scroll-area", open_index))
+                    .w_full()
+                    .h(px(scroll_height))
+                    .flex_shrink_0()
+                    .min_h(px(0.0))
+                    .overflow_y_scroll()
+                    .child(
+                        div()
+                            .w_full()
+                            .flex()
+                            .flex_col()
+                            .gap(px(d.menu_panel_gap))
+                            .children(scroll_items.iter().cloned().enumerate().map(
+                                |(item_index, item)| {
+                                    self.render_in_window_menu_item(
+                                        item,
+                                        item_index,
+                                        theme,
+                                        editor.clone(),
+                                    )
+                                },
+                            )),
+                    )
+                    .into_any_element()
+            });
+            let footer_elements =
+                footer_items
+                    .iter()
+                    .cloned()
+                    .enumerate()
+                    .map(|(footer_index, item)| {
+                        self.render_in_window_menu_item(
+                            item,
+                            split_index + footer_index,
+                            theme,
+                            editor.clone(),
+                        )
+                    });
+
+            main_panel
+                .children(scroll_area)
+                .children(footer_elements)
+                .into_any_element()
+        } else {
+            let items = menu_items
+                .iter()
+                .cloned()
+                .enumerate()
+                .map(|(item_index, item)| {
+                    self.render_in_window_menu_item(item, item_index, theme, editor.clone())
+                });
+
+            main_panel.children(items).into_any_element()
+        };
 
         let layer = div()
             .id(("app-menu-panel-layer", open_index))
@@ -1846,6 +1990,7 @@ impl Render for Editor {
             menus.as_deref(),
             &menu_labels,
             titlebar_height,
+            f32::from(window.viewport_size().height.max(px(1.0))),
         ) {
             base.child(menu_panel)
         } else {
@@ -1877,14 +2022,40 @@ impl Render for Editor {
 mod tests {
     use super::{
         NoRecentFiles, RenderedRowSpacingInfo, callout_row_top_gap, editor_text_font,
-        in_window_menu_bar_height_for_target_os, menu_bar_button_width, menu_panel_left,
-        menu_panel_width_for_labels, owned_menu_item_labels, rendered_row_top_gap,
+        import_menu_split_index, in_window_menu_bar_height_for_target_os, menu_bar_button_width,
+        menu_items_visual_height_with_gaps, menu_panel_left, menu_panel_width_for_labels,
+        owned_menu_item_labels, rendered_row_top_gap, scrollable_import_menu_scroll_height,
         submenu_bridge_geometry, supports_in_window_menu_for_target_os,
         tibetan_font_fallbacks_for_target_os,
     };
+    use crate::components::{AddLanguageConfig, AddThemeConfig};
     use crate::theme::Theme;
     use gpui::{OwnedMenu, OwnedMenuItem};
     use uuid::Uuid;
+
+    fn disabled_menu_action(name: &str) -> OwnedMenuItem {
+        OwnedMenuItem::Action {
+            name: name.into(),
+            action: Box::new(NoRecentFiles),
+            os_action: None,
+        }
+    }
+
+    fn add_theme_menu_action() -> OwnedMenuItem {
+        OwnedMenuItem::Action {
+            name: "Add Theme Config".into(),
+            action: Box::new(AddThemeConfig),
+            os_action: None,
+        }
+    }
+
+    fn add_language_menu_action() -> OwnedMenuItem {
+        OwnedMenuItem::Action {
+            name: "Add Language Config".into(),
+            action: Box::new(AddLanguageConfig),
+            os_action: None,
+        }
+    }
 
     #[test]
     fn contiguous_quote_rows_collapse_inter_row_gap() {
@@ -2128,6 +2299,68 @@ mod tests {
         assert!(
             menu_panel_width_for_labels(&long_labels, dimensions) > dimensions.menu_panel_width
         );
+    }
+
+    #[test]
+    fn import_menu_split_detects_theme_and_language_import_tails() {
+        let theme_items = vec![
+            disabled_menu_action("Velotype"),
+            OwnedMenuItem::Separator,
+            add_theme_menu_action(),
+        ];
+        let language_items = vec![
+            disabled_menu_action("English"),
+            OwnedMenuItem::Separator,
+            add_language_menu_action(),
+        ];
+        let regular_items = vec![
+            disabled_menu_action("Open"),
+            OwnedMenuItem::Separator,
+            disabled_menu_action("Save"),
+        ];
+        let malformed_import_items =
+            vec![disabled_menu_action("Velotype"), add_theme_menu_action()];
+
+        assert_eq!(import_menu_split_index(&theme_items), Some(1));
+        assert_eq!(import_menu_split_index(&language_items), Some(1));
+        assert_eq!(import_menu_split_index(&regular_items), None);
+        assert_eq!(import_menu_split_index(&malformed_import_items), None);
+    }
+
+    #[test]
+    fn scrollable_import_menu_height_caps_visible_items_and_clamps_to_viewport() {
+        let theme = Theme::default_theme();
+        let dimensions = &theme.dimensions;
+        let scroll_items = (0..20)
+            .map(|index| disabled_menu_action(&format!("Custom Theme {index}")))
+            .collect::<Vec<_>>();
+        let footer_items = vec![OwnedMenuItem::Separator, add_theme_menu_action()];
+        let expected_large_height =
+            menu_items_visual_height_with_gaps(&scroll_items[..12], dimensions);
+        let full_scroll_content_height =
+            menu_items_visual_height_with_gaps(&scroll_items, dimensions);
+        let footer_height = menu_items_visual_height_with_gaps(&footer_items, dimensions);
+
+        let large_height = scrollable_import_menu_scroll_height(
+            &scroll_items,
+            &footer_items,
+            2000.0,
+            0.0,
+            dimensions,
+        );
+        let small_height = scrollable_import_menu_scroll_height(
+            &scroll_items,
+            &footer_items,
+            180.0,
+            0.0,
+            dimensions,
+        );
+
+        assert!((large_height - expected_large_height).abs() < f32::EPSILON);
+        assert!(full_scroll_content_height > large_height);
+        assert!(large_height < expected_large_height + footer_height);
+        assert!(small_height < large_height);
+        assert!(small_height >= dimensions.menu_item_height);
     }
 
     #[test]
