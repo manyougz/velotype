@@ -10,7 +10,9 @@ use crate::components::markdown::inline::{
     InlineTextTree,
 };
 use crate::components::markdown::link::parse_link_reference_definitions;
-use crate::components::{Block, BlockKind, BlockRecord, IndentBlock, Newline, TableCellPosition};
+use crate::components::{
+    Block, BlockKind, BlockRecord, DeleteBack, IndentBlock, Newline, TableCellPosition,
+};
 use crate::i18n::I18nManager;
 use crate::theme::ThemeManager;
 use gpui::{
@@ -188,27 +190,40 @@ async fn enter_inside_multiline_inline_code_inserts_hard_line_without_splitting(
 }
 
 #[gpui::test]
-async fn inline_math_focus_uses_markdown_source_then_reparses_on_blur(cx: &mut TestAppContext) {
+async fn inline_math_focus_stays_rendered_rich_and_keeps_links(cx: &mut TestAppContext) {
     let cx = cx.add_empty_window();
     let block = cx.new(|cx| {
         Block::with_record(
             cx,
             BlockRecord::new(
                 BlockKind::Paragraph,
-                InlineTextTree::from_markdown("**bold** $x^2$"),
+                InlineTextTree::from_markdown("**bold** $x^2$ [repo](https://example.com)"),
             ),
         )
     });
 
-    block.update(cx, |block, _cx| {
-        assert_eq!(block.display_text(), "bold $x^2$");
-        assert!(block.sync_inline_math_source_edit_for_focus(true));
-        assert!(block.uses_raw_text_editing());
-        assert_eq!(block.display_text(), "**bold** $x^2$");
-        assert!(block.sync_inline_math_source_edit_for_focus(false));
+    block.update(cx, |block, cx| {
+        // The math source is shown inline (`$x^2$`) while bold and the link stay
+        // collapsed; the block never falls back to raw Markdown editing.
+        assert_eq!(block.display_text(), "bold $x^2$ repo");
+
+        // Focusing with the caret inside the math keeps the rendered-rich
+        // projection rather than dumping the whole block to raw source, so the
+        // link in the same block keeps its link attribute.
+        let caret = "bold $".len();
+        block.move_to(caret, cx);
+        block.sync_inline_projection_for_focus(true);
         assert!(!block.uses_raw_text_editing());
-        assert_eq!(block.display_text(), "bold $x^2$");
-        assert_eq!(block.record.title.serialize_markdown(), "**bold** $x^2$");
+        assert!(block.record.title.has_mixed_inline_visuals());
+        assert!(block.record.title.has_inline_links());
+        assert!(
+            block.inline_spans().iter().any(|span| span.link.is_some()),
+            "link must stay styled while editing the math in the same block"
+        );
+        assert_eq!(
+            block.record.title.serialize_markdown(),
+            "**bold** $x^2$ [repo](https://example.com)"
+        );
     });
 }
 
@@ -232,10 +247,35 @@ async fn script_spans_focus_stay_rendered_rich(cx: &mut TestAppContext) {
             block.inline_spans()[1].style.script,
             InlineScript::Superscript
         );
-        assert!(!block.sync_inline_math_source_edit_for_focus(true));
         assert!(!block.uses_raw_text_editing());
         assert_eq!(block.display_text(), "x2 and H2O");
         assert_eq!(block.record.title.serialize_markdown(), "x^2^ and H~2~O");
+    });
+}
+
+#[gpui::test]
+async fn link_anchor_emphasis_delimiters_are_revealed_when_caret_inside(cx: &mut TestAppContext) {
+    let cx = cx.add_empty_window();
+    let block = cx.new(|cx| {
+        Block::with_record(
+            cx,
+            BlockRecord::new(
+                BlockKind::Paragraph,
+                InlineTextTree::from_markdown("[**bold**](https://example.com)"),
+            ),
+        )
+    });
+
+    block.update(cx, |block, cx| {
+        // Collapsed, only the styled anchor text is shown.
+        assert_eq!(block.display_text(), "bold");
+
+        // With the caret inside the bold anchor text, the projection reveals both
+        // the link syntax and the anchor's own `**` emphasis markers, so they can
+        // be edited instead of staying invisible.
+        block.move_to(2, cx);
+        block.sync_inline_projection_for_focus(true);
+        assert_eq!(block.display_text(), "[**bold**](https://example.com)");
     });
 }
 
@@ -1576,6 +1616,40 @@ async fn editing_link_destination_inside_projection_preserves_link(cx: &mut Test
 }
 
 #[gpui::test]
+async fn typing_after_inline_link_preserves_link(cx: &mut TestAppContext) {
+    let block = cx.new(|cx| {
+        Block::with_record(
+            cx,
+            BlockRecord::new(
+                BlockKind::Paragraph,
+                InlineTextTree::from_markdown("[Link](https://example.com/) x"),
+            ),
+        )
+    });
+
+    block.update(cx, |block, cx| {
+        // Place the caret past the link (in the trailing text) so the edit does
+        // not touch the link's projected run, then type. This is the case that
+        // previously re-parsed from collapsed text and dropped the link.
+        block.selected_range = 0..0;
+        block.sync_inline_projection_for_focus(true);
+        let end = block.display_text().len();
+        block.selected_range = end..end;
+        block.sync_inline_projection_for_focus(true);
+        block.replace_text_in_visible_range(end..end, "y", None, false, cx);
+    });
+
+    assert_eq!(
+        block.read_with(cx, |block, _cx| block.record.title.serialize_markdown()),
+        "[Link](https://example.com/) xy"
+    );
+    assert_eq!(
+        block.read_with(cx, |block, _cx| block.inline_link_at(0).map(str::to_string)),
+        Some("https://example.com/".to_string())
+    );
+}
+
+#[gpui::test]
 async fn deleting_adjacent_text_preserves_reference_style_link_syntax(cx: &mut TestAppContext) {
     let block = cx.new(|cx| {
         let mut block = Block::with_record(
@@ -2743,4 +2817,125 @@ async fn code_block_without_language_keeps_plain_rendering(cx: &mut TestAppConte
     });
 
     assert!(block.read_with(cx, |block, _cx| block.code_highlight_result().is_none()));
+}
+
+#[gpui::test]
+async fn editing_link_anchor_in_math_block_matches_plain_paragraph(cx: &mut TestAppContext) {
+    // A block mixing inline math with a link is "source preserving", which used
+    // to route its link edits through the markdown-space path. That path assumed
+    // the anchor label began right after `[`, so the anchor's own emphasis
+    // markers shifted the mapping and edits landed on the wrong character. Inline
+    // links now edit through the link projection in every block, so deleting a
+    // revealed anchor delimiter touches the delimiter, not a label character.
+    let cx = cx.add_empty_window();
+    let block = cx.new(|cx| {
+        Block::with_record(
+            cx,
+            BlockRecord::new(
+                BlockKind::Paragraph,
+                InlineTextTree::from_markdown("$x^2$ [**bold**](https://e.com)"),
+            ),
+        )
+    });
+
+    cx.update(|window, cx| {
+        block.update(cx, |block, cx| {
+            block.move_to("$x^2$ bo".len(), cx);
+            block.sync_inline_projection_for_focus(true);
+
+            // Caret just past the revealed opening `**` of the bold anchor.
+            let projected = block.display_text().to_string();
+            assert_eq!(projected, "$x^2$ [**bold**](https://e.com)");
+            let after_open = projected.find("[**").unwrap() + "[**".len();
+            block.selected_range = after_open..after_open;
+
+            block.on_delete_back(&DeleteBack, window, cx);
+
+            let markdown = block.record.title.serialize_markdown();
+            assert!(
+                markdown.starts_with("$x^2$ "),
+                "math source preserved: {markdown:?}"
+            );
+            assert!(
+                markdown.contains("bold"),
+                "anchor label must stay intact, only the delimiter is edited: {markdown:?}"
+            );
+        });
+    });
+}
+
+#[gpui::test]
+async fn completing_link_in_math_block_places_caret_after_closing_paren(cx: &mut TestAppContext) {
+    // A block mixing math with a link edits in markdown space. Typing the closing
+    // `)` completes the link, and the caret must land just past it (like a plain
+    // paragraph) rather than inside the anchor before `]`.
+    let cx = cx.add_empty_window();
+    let block = cx.new(|cx| {
+        Block::with_record(
+            cx,
+            BlockRecord::new(
+                BlockKind::Paragraph,
+                InlineTextTree::from_markdown("$x$ [link](google.com"),
+            ),
+        )
+    });
+
+    cx.update(|window, cx| {
+        block.update(cx, |block, cx| {
+            block.move_to(block.visible_len(), cx);
+            block.sync_inline_projection_for_focus(true);
+            block.replace_text_in_range(None, ")", window, cx);
+            block.sync_inline_projection_for_focus(true);
+
+            assert_eq!(
+                block.record.title.serialize_markdown(),
+                "$x$ [link](google.com)"
+            );
+            assert_eq!(block.display_text(), "$x$ [link](google.com)");
+            let end = block.visible_len();
+            assert_eq!(block.selected_range, end..end);
+        });
+    });
+}
+
+#[gpui::test]
+async fn rtl_selection_across_trailing_link_keeps_block_end_anchor(cx: &mut TestAppContext) {
+    // A link sitting at the very end of a block that also contains inline math
+    // stays expanded while the projection is rebuilt on every render. Dragging a
+    // selection right-to-left from the block end across the link used to collapse
+    // the anchor onto the closing `]` of the anchor text, because the trailing
+    // `](url)` delimiters all share one clean offset and the remap snapped back
+    // to the inner cursor position. The anchor must stay at the block end.
+    let cx = cx.add_empty_window();
+    let block = cx.new(|cx| {
+        Block::with_record(
+            cx,
+            BlockRecord::new(
+                BlockKind::Paragraph,
+                InlineTextTree::from_markdown("$x$ [link](google.com)"),
+            ),
+        )
+    });
+
+    block.update(cx, |block, cx| {
+        block.move_to(block.visible_len(), cx);
+        block.sync_inline_projection_for_focus(true);
+        let end = block.visible_len();
+        assert_eq!(block.display_text(), "$x$ [link](google.com)");
+
+        // Start an RTL selection at the block end and drag the head left,
+        // re-syncing the projection after each move like the render loop does.
+        block.move_to(end, cx);
+        block.sync_inline_projection_for_focus(true);
+        for target in (0..end).rev() {
+            block.select_to(target, cx);
+            block.sync_inline_projection_for_focus(true);
+            assert_eq!(
+                block.selected_range,
+                target..end,
+                "RTL selection anchor must stay at the block end (head {target})"
+            );
+            assert!(block.selection_reversed);
+        }
+    });
 }

@@ -2014,7 +2014,6 @@ mod tests {
             editor.update(cx, |editor, cx| {
                 let block = editor.document.visible_blocks()[0].entity.clone();
                 block.update(cx, |block, block_cx| {
-                    assert!(!block.sync_inline_math_source_edit_for_focus(true));
                     block.move_to(block.visible_len(), block_cx);
                     block.on_newline(&Newline, window, block_cx);
                 });
@@ -2032,7 +2031,7 @@ mod tests {
     }
 
     #[gpui::test]
-    async fn enter_inside_inline_math_source_edit_creates_new_block(cx: &mut TestAppContext) {
+    async fn enter_inside_inline_math_paragraph_creates_new_block(cx: &mut TestAppContext) {
         let cx = cx.add_empty_window();
         let editor = cx.new(|cx| Editor::from_markdown(cx, "$n^2$".to_string(), None));
 
@@ -2040,7 +2039,6 @@ mod tests {
             editor.update(cx, |editor, cx| {
                 let block = editor.document.visible_blocks()[0].entity.clone();
                 block.update(cx, |block, block_cx| {
-                    assert!(block.sync_inline_math_source_edit_for_focus(true));
                     block.move_to(block.visible_len(), block_cx);
                     block.on_newline(&Newline, window, block_cx);
                 });
@@ -2153,6 +2151,36 @@ mod tests {
             assert_eq!(block.selected_range, 3..3);
             assert!(block.uses_raw_text_editing());
             assert_eq!(editor.document.markdown_text(cx), "$$\n\n$$");
+        });
+    }
+
+    #[gpui::test]
+    async fn dollar_dollar_prefix_then_enter_wraps_existing_line(cx: &mut TestAppContext) {
+        let cx = cx.add_empty_window();
+        let editor = cx.new(|cx| Editor::from_markdown(cx, "E = mc^2".to_string(), None));
+
+        cx.update(|window, cx| {
+            editor.update(cx, |editor, cx| {
+                let block = editor.document.visible_blocks()[0].entity.clone();
+                block.update(cx, |block, block_cx| {
+                    // Home, type the fence in front of the formula, then Enter.
+                    block.move_to(0, block_cx);
+                    block.replace_text_in_visible_range(0..0, "$$", None, false, block_cx);
+                    block.move_to("$$".len(), block_cx);
+                    block.on_newline(&Newline, window, block_cx);
+                });
+            });
+        });
+
+        editor.update(cx, |editor, cx| {
+            let visible = editor.document.visible_blocks();
+            assert_eq!(visible.len(), 1);
+            let block = visible[0].entity.read(cx);
+            assert_eq!(block.kind(), BlockKind::MathBlock);
+            // The pre-existing text is kept as the formula body.
+            assert_eq!(block.display_text(), "$$\nE = mc^2\n$$");
+            assert_eq!(block.selected_range, "$$\n".len().."$$\n".len());
+            assert_eq!(editor.document.markdown_text(cx), "$$\nE = mc^2\n$$");
         });
     }
 

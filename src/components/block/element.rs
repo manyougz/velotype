@@ -1161,10 +1161,10 @@ impl Element for BlockTextElement {
         window: &mut Window,
         cx: &mut App,
     ) {
-        let (focus_handle, hovered_link) = {
+        let (focus_handle, hovering_link) = {
             let input = self.input.read(cx);
             let text_bounds = source_text_bounds(bounds, prepaint.source_line_number_gutter_width);
-            let hovered_link = !self.is_placeholder
+            let hovering_link = !self.is_placeholder
                 && !input.is_source_raw_mode()
                 && prepaint.hitbox.is_hovered(window)
                 && link_at_position(
@@ -1175,11 +1175,17 @@ impl Element for BlockTextElement {
                     window.mouse_position(),
                 )
                 .is_some();
-            (input.focus_handle.clone(), hovered_link)
+            (input.focus_handle.clone(), hovering_link)
         };
 
-        if hovered_link {
-            window.set_cursor_style(CursorStyle::PointingHand, &prepaint.hitbox);
+        if hovering_link {
+            // The hand cursor only appears while the Cmd/Ctrl follow modifier is
+            // held (matching the gesture that opens the link); a plain hover keeps
+            // the text cursor. The editor root repaints on follow-modifier
+            // toggles, so this re-evaluates even when the pointer stays still.
+            if window.modifiers().secondary() {
+                window.set_cursor_style(CursorStyle::PointingHand, &prepaint.hitbox);
+            }
         }
 
         if focus_handle.is_focused(window) {
@@ -1259,8 +1265,8 @@ mod tests {
     };
     use crate::components::{Block, BlockKind, BlockRecord, InlineTextTree, TableCellPosition};
     use gpui::{
-        AppContext, Bounds, Hsla, SharedString, TestAppContext, TextAlign, TextRun,
-        VisualTestContext, font, point, px, rgba, size,
+        AppContext, Bounds, Hsla, Modifiers, MouseButton, MouseDownEvent, SharedString,
+        TestAppContext, TextAlign, TextRun, VisualTestContext, font, point, px, rgba, size,
     };
 
     fn shaped_lines(
@@ -1370,6 +1376,75 @@ mod tests {
 
         assert_eq!(hit, Some("https://example.com".to_string()));
         assert_eq!(miss_right, None);
+    }
+
+    #[gpui::test]
+    async fn secondary_click_follows_link_while_plain_click_edits(cx: &mut TestAppContext) {
+        let cx = cx.add_empty_window();
+        let block = cx.new(|cx| {
+            Block::with_record(
+                cx,
+                BlockRecord::new(
+                    BlockKind::Paragraph,
+                    InlineTextTree::from_markdown("a [link](https://example.com) bbbb"),
+                ),
+            )
+        });
+
+        let display_text = block.read_with(cx, |block, _cx| block.display_text().to_string());
+        let lines = shaped_lines(&display_text, px(320.0), cx);
+        let bounds = Bounds::new(point(px(0.0), px(0.0)), size(px(320.0), px(20.0)));
+
+        let link_position = block.read_with(cx, |block, _cx| {
+            let span = block
+                .inline_spans()
+                .iter()
+                .find(|span| span.link.is_some())
+                .expect("link span should exist");
+            let layout = &lines[0];
+            let start = layout
+                .position_for_index(span.range.start, px(20.0))
+                .expect("start position");
+            let end = layout
+                .position_for_index(span.range.end, px(20.0))
+                .expect("end position");
+            point((start.x + end.x) / 2.0, px(10.0))
+        });
+
+        block.update(cx, |block, _cx| {
+            block.last_layout = Some(lines.clone());
+            block.last_bounds = Some(bounds);
+            block.last_line_height = px(20.0);
+            block.selected_range = 0..0;
+        });
+
+        let mut event = MouseDownEvent {
+            button: MouseButton::Left,
+            position: link_position,
+            modifiers: Modifiers::default(),
+            click_count: 1,
+            first_mouse: false,
+        };
+
+        // A plain click on the link moves the caret into the text for editing.
+        cx.update(|window, app| {
+            block.update(app, |block, cx| block.on_mouse_down(&event, window, cx));
+        });
+        block.read_with(cx, |block, _cx| {
+            assert_ne!(block.selected_range, 0..0);
+        });
+
+        // Cmd/Ctrl+click follows the link instead: the caret is left untouched
+        // and no drag-selection begins.
+        block.update(cx, |block, _cx| block.selected_range = 0..0);
+        event.modifiers = Modifiers::secondary_key();
+        cx.update(|window, app| {
+            block.update(app, |block, cx| block.on_mouse_down(&event, window, cx));
+        });
+        block.read_with(cx, |block, _cx| {
+            assert_eq!(block.selected_range, 0..0);
+            assert!(!block.is_selecting);
+        });
     }
 
     #[gpui::test]

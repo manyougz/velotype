@@ -1901,12 +1901,25 @@ impl Render for Editor {
             .on_click(cx.listener(Self::on_toggle_view_mode));
         let content_area = content_area.child(view_mode_toggle);
 
+        // Repaint when the Cmd/Ctrl follow modifier toggles so a hovered link's
+        // hand cursor updates without moving the pointer. `ModifiersChanged` is
+        // dispatched along the focused element's path to the root, and this root
+        // is an ancestor of every block, so one listener here covers a link in any
+        // block while editing. Gated to the secondary modifier so Shift during
+        // selection does not repaint.
+        let follow_modifier_active = window.modifiers().secondary();
+
         let base = div()
             .w_full()
             .h_full()
             .relative()
             .bg(theme.colors.editor_background)
             .font(editor_text_font())
+            .on_modifiers_changed(move |event, window, _| {
+                if event.modifiers.secondary() != follow_modifier_active {
+                    window.refresh();
+                }
+            })
             .capture_action(cx.listener(Self::on_copy_capture))
             .capture_action(cx.listener(Self::on_cut_capture))
             .capture_action(cx.listener(Self::on_delete_capture))

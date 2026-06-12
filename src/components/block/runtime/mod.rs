@@ -145,7 +145,6 @@ pub struct Block {
     /// instead of re-allocating per frame. Refreshed in `sync_render_cache`,
     /// `rebuild_inline_projection`, and `clear_inline_projection`.
     cached_display_text: SharedString,
-    inline_math_source_edit_original: Option<InlineTextTree>,
     collapsed_caret_affinity: CollapsedCaretAffinity,
     /// When true, block-level shortcuts and inline formatting are
     /// suppressed; the block stores raw text for source-mode editing.
@@ -243,7 +242,6 @@ impl Block {
             projection: None,
             projection_cache_key: None,
             cached_display_text: SharedString::default(),
-            inline_math_source_edit_original: None,
             collapsed_caret_affinity: CollapsedCaretAffinity::Default,
             edit_mode,
             show_source_line_numbers: false,
@@ -419,90 +417,6 @@ impl Block {
         self.record.title.has_mixed_inline_visuals()
     }
 
-    pub(crate) fn inline_math_source_editing(&self) -> bool {
-        self.inline_math_source_edit_original.is_some()
-    }
-
-    pub(crate) fn split_inline_math_source_edit_for_newline(&mut self) -> Option<InlineTextTree> {
-        self.inline_math_source_edit_original.as_ref()?;
-
-        let raw_markdown = self.record.title.visible_text().to_string();
-        let len = raw_markdown.len();
-        let start = self.selected_range.start.min(len);
-        let end = self.selected_range.end.min(len);
-        let leading_raw = &raw_markdown[..start];
-        let trailing_raw = &raw_markdown[end..];
-        let leading = InlineTextTree::from_markdown_with_link_references(
-            leading_raw,
-            &self.link_reference_definitions,
-        );
-        let trailing = InlineTextTree::from_markdown_with_link_references(
-            trailing_raw,
-            &self.link_reference_definitions,
-        );
-
-        self.inline_math_source_edit_original = None;
-        self.record.set_title(leading);
-        self.edit_mode = EditMode::for_kind(&self.record.kind);
-        self.clear_inline_projection();
-        self.sync_render_cache();
-        let cursor = self.visible_len();
-        self.selected_range = cursor..cursor;
-        self.marked_range = None;
-        self.collapsed_caret_affinity = CollapsedCaretAffinity::Default;
-
-        Some(trailing)
-    }
-
-    pub(crate) fn sync_inline_math_source_edit_for_focus(&mut self, focused: bool) -> bool {
-        if focused
-            && self.inline_math_source_edit_original.is_none()
-            && self.edit_mode == EditMode::RenderedRich
-            && self.record.title.has_inline_math()
-        {
-            let clean_selection = self.selected_range.clone();
-            let clean_marked = self.marked_range.clone();
-            let markdown_map = self.record.title.markdown_offset_map();
-            let markdown_selection = markdown_map.visible_to_markdown_range(clean_selection);
-            let markdown_marked =
-                clean_marked.map(|range| markdown_map.visible_to_markdown_range(range));
-            let original = self.record.title.clone();
-            let raw_markdown = original.serialize_markdown();
-            self.inline_math_source_edit_original = Some(original);
-            self.clear_inline_projection();
-            self.record.title = InlineTextTree::plain(raw_markdown);
-            self.edit_mode = EditMode::SourceRaw;
-            self.sync_render_cache();
-            let len = self.visible_len();
-            self.selected_range =
-                markdown_selection.start.min(len)..markdown_selection.end.min(len);
-            self.marked_range =
-                markdown_marked.map(|range| range.start.min(len)..range.end.min(len));
-            self.collapsed_caret_affinity = CollapsedCaretAffinity::Default;
-            return true;
-        }
-
-        if !focused && let Some(_original) = self.inline_math_source_edit_original.take() {
-            let raw_markdown = self.record.title.visible_text().to_string();
-            let parsed = InlineTextTree::from_markdown_with_link_references(
-                &raw_markdown,
-                &self.link_reference_definitions,
-            );
-            let markdown_selection = self.selected_range.clone();
-            let markdown_marked = self.marked_range.clone();
-            let map = parsed.markdown_offset_map();
-            self.record.set_title(parsed);
-            self.edit_mode = EditMode::for_kind(&self.record.kind);
-            self.sync_render_cache();
-            self.selected_range = map.markdown_to_visible_range(markdown_selection);
-            self.marked_range = markdown_marked.map(|range| map.markdown_to_visible_range(range));
-            self.collapsed_caret_affinity = CollapsedCaretAffinity::Default;
-            return true;
-        }
-
-        false
-    }
-
     pub(crate) fn footnote_definition_id(&self) -> Option<String> {
         self.kind()
             .is_footnote_definition()
@@ -584,6 +498,7 @@ impl Block {
             .clone()
             .map(|range| self.current_to_clean_range(range));
         let (clean_anchor, clean_focus) = self.clean_selection_anchor_focus();
+        let (anchor_affinity, focus_affinity) = self.selection_endpoint_affinities();
         let collapsed_affinity = self.current_collapsed_caret_affinity();
         let keep_projection =
             self.projection.is_some() && self.edit_mode.supports_inline_projection();
@@ -601,7 +516,12 @@ impl Block {
                 );
                 self.assign_collapsed_selection_offset(offset, collapsed_affinity, None);
             } else {
-                self.set_selection_from_clean_anchor_focus(clean_anchor, clean_focus);
+                self.set_selection_from_clean_anchor_focus(
+                    clean_anchor,
+                    clean_focus,
+                    anchor_affinity,
+                    focus_affinity,
+                );
                 self.collapsed_caret_affinity = CollapsedCaretAffinity::Default;
             }
             self.marked_range = clean_marked.map(|range| self.clean_to_current_range(range));
@@ -754,6 +674,7 @@ impl Block {
         mark_inserted_text: bool,
         cx: &mut Context<Self>,
     ) {
+        let old_visible_len = self.record.title.visible_text().len();
         let markdown_range = self.current_range_to_markdown_range(visible_range.clone());
         let mut markdown = self.record.title.serialize_markdown();
         let replaced_text = markdown[markdown_range.clone()].to_string();
@@ -793,6 +714,14 @@ impl Block {
             self.quote_reparse_requested = true;
         }
 
+        // Typing a closing marker (for example the `)` that completes a link)
+        // absorbs that markup into a span, so the clean text grows by less than
+        // the inserted text. Flag it so the caret is placed just past the new
+        // closing delimiter instead of landing inside the span.
+        let caret_may_have_closed_span = !new_text.is_empty()
+            && !mark_inserted_text
+            && next_title.visible_text().len() < old_visible_len + new_text.len();
+
         self.apply_title_edit(
             next_title,
             cursor_clean,
@@ -801,7 +730,7 @@ impl Block {
             selected_clean
                 .as_ref()
                 .and_then(|range| (!range.is_empty()).then_some(false)),
-            false,
+            caret_may_have_closed_span,
             cx,
         );
     }
@@ -851,6 +780,7 @@ impl Block {
             return;
         }
         let (clean_anchor, clean_focus) = self.clean_selection_anchor_focus();
+        let (anchor_affinity, focus_affinity) = self.selection_endpoint_affinities();
         let collapsed_affinity = self.current_collapsed_caret_affinity();
         self.rebuild_inline_projection(clean_selected.clone(), clean_marked.clone());
         if let Some(snapshot) = projected_link_selection
@@ -879,7 +809,12 @@ impl Block {
             );
             self.assign_collapsed_selection_offset(offset, collapsed_affinity, None);
         } else {
-            self.set_selection_from_clean_anchor_focus(clean_anchor, clean_focus);
+            self.set_selection_from_clean_anchor_focus(
+                clean_anchor,
+                clean_focus,
+                anchor_affinity,
+                focus_affinity,
+            );
             self.collapsed_caret_affinity = CollapsedCaretAffinity::Default;
         }
         self.marked_range = clean_marked.map(|range| self.clean_to_current_range(range));
@@ -936,6 +871,23 @@ impl Block {
         self.projection
             .as_ref()
             .and_then(|projection| projection.link_run_fully_covering_range(range))
+    }
+
+    fn collapsed_caret_affinity_for_display_offset(&self, offset: usize) -> CollapsedCaretAffinity {
+        self.projection
+            .as_ref()
+            .map(|projection| projection.collapsed_affinity_for_display_offset(offset))
+            .unwrap_or(CollapsedCaretAffinity::Default)
+    }
+
+    /// Affinity of the current selection's anchor and focus, used to restore
+    /// each endpoint accurately when the projection is rebuilt.
+    fn selection_endpoint_affinities(&self) -> (CollapsedCaretAffinity, CollapsedCaretAffinity) {
+        let (anchor, focus) = self.selection_anchor_focus();
+        (
+            self.collapsed_caret_affinity_for_display_offset(anchor),
+            self.collapsed_caret_affinity_for_display_offset(focus),
+        )
     }
 
     fn current_collapsed_caret_affinity(&self) -> CollapsedCaretAffinity {
@@ -1685,6 +1637,29 @@ impl Block {
 
         let inserted_attributes = self.replacement_attributes_for_visible_range(&visible_range);
 
+        // Inline `[label](url)` links round-trip through their projected source,
+        // so edit them via the link projection even when the block is otherwise
+        // source-preserving (for example it also contains inline math). This keeps
+        // a link's anchor text editable the same way in every block; reference and
+        // autolink links stay on the markdown-space path below, which preserves
+        // their original source spelling.
+        if !self.uses_raw_text_editing()
+            && let Some(link_run) = self
+                .projected_link_run_fully_covering_range(&visible_range)
+                .filter(|run| !run.link.is_source_preserving())
+                .cloned()
+        {
+            self.apply_link_projection_edit(
+                &link_run,
+                visible_range,
+                new_text,
+                selected_range_relative,
+                mark_inserted_text,
+                cx,
+            );
+            return;
+        }
+
         if self.should_use_markdown_space_link_edit() {
             self.apply_markdown_space_title_edit(
                 visible_range,
@@ -1696,13 +1671,12 @@ impl Block {
             return;
         }
 
-        if !self.uses_raw_text_editing()
-            && let Some(link_run) = self
-                .projected_link_run_fully_covering_range(&visible_range)
-                .cloned()
-        {
-            self.apply_link_projection_edit(
-                &link_run,
+        // Editing outside an inline link's run would otherwise re-derive the
+        // inline tree from collapsed visible text, which no longer contains the
+        // `[label](url)` markers and silently drops the link. Edit in markdown
+        // space (as source-preserving links already do) so the link round-trips.
+        if !self.uses_raw_text_editing() && self.record.title.has_inline_links() {
+            self.apply_markdown_space_title_edit(
                 visible_range,
                 new_text,
                 selected_range_relative,
@@ -1839,23 +1813,21 @@ impl Block {
         cx.notify();
     }
 
-    pub(crate) fn enter_math_block(&mut self, cx: &mut Context<Self>) {
-        const EMPTY_DISPLAY_MATH_SOURCE: &str = "$$\n\n$$";
-        const EMPTY_DISPLAY_MATH_CURSOR: usize = "$$\n".len();
+    /// Convert the current paragraph into a display-math block. `body` becomes
+    /// the formula source between the fences (empty for a fresh `$$` block), and
+    /// the caret lands at the start of that body line.
+    pub(crate) fn enter_math_block(&mut self, body: &str, cx: &mut Context<Self>) {
+        let source = format!("$$\n{body}\n$$");
+        let cursor = "$$\n".len();
 
         self.prepare_undo_capture(UndoCaptureKind::NonCoalescible, cx);
         self.clear_inline_projection();
         self.record.kind = BlockKind::MathBlock;
-        self.record
-            .set_title(InlineTextTree::plain(EMPTY_DISPLAY_MATH_SOURCE));
+        self.record.set_title(InlineTextTree::plain(source));
         self.quote_reparse_requested = false;
         self.sync_edit_mode_from_kind();
         self.sync_render_cache();
-        self.assign_collapsed_selection_offset(
-            EMPTY_DISPLAY_MATH_CURSOR,
-            CollapsedCaretAffinity::Default,
-            None,
-        );
+        self.assign_collapsed_selection_offset(cursor, CollapsedCaretAffinity::Default, None);
         self.marked_range = None;
         self.cursor_blink_epoch = Instant::now();
         self.clear_vertical_motion();
@@ -2119,10 +2091,22 @@ impl Block {
         self.selection_reversed = !self.selected_range.is_empty() && clamped_focus < clamped_anchor;
     }
 
-    fn set_selection_from_clean_anchor_focus(&mut self, anchor: usize, focus: usize) {
+    fn set_selection_from_clean_anchor_focus(
+        &mut self,
+        anchor: usize,
+        focus: usize,
+        anchor_affinity: CollapsedCaretAffinity,
+        focus_affinity: CollapsedCaretAffinity,
+    ) {
+        // Map each endpoint back through its own affinity. Several display
+        // positions can share one clean offset (a trailing link's `](url)`
+        // delimiters all collapse onto the anchor-text end), so the plain
+        // clean->display cursor map would snap an endpoint that sat after the
+        // closing delimiter back to just inside it. Honoring the captured
+        // affinity keeps such endpoints in place across a projection rebuild.
         self.set_selection_from_anchor_focus(
-            self.clean_to_current_cursor_offset(anchor),
-            self.clean_to_current_cursor_offset(focus),
+            self.clean_to_current_cursor_offset_with_affinity(anchor, anchor_affinity),
+            self.clean_to_current_cursor_offset_with_affinity(focus, focus_affinity),
         );
     }
 

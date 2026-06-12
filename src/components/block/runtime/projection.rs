@@ -451,26 +451,34 @@ impl ExpandedInlineProjection {
                     let current_fragment = &fragments[current_index];
                     let current_len = current_fragment.text.len();
                     let current_clean_range = local_clean_cursor..local_clean_cursor + current_len;
-                    projected_fragments.push(current_fragment.clone());
-                    segments.push(ExpandedInlineSegment {
-                        display_range: display_cursor..display_cursor + current_len,
-                        clean_range: current_clean_range.clone(),
-                        fragment_index: current_index,
+                    // While the link is expanded, reveal each label fragment's
+                    // own emphasis markers so anchor text edits like ordinary text.
+                    let label_kinds = if expand_link {
+                        Self::expanded_kinds_for_fragment(
+                            fragments,
+                            current_index,
+                            current_fragment.style,
+                            current_clean_range.clone(),
+                            &clean_selected,
+                            clean_marked.as_ref(),
+                        )
+                    } else {
+                        Vec::new()
+                    };
+                    push_projected_fragment(
+                        current_fragment,
+                        current_index,
+                        current_clean_range.clone(),
+                        &label_kinds,
                         link_group,
-                        kind: if expand_link {
-                            ExpandedInlineSegmentKind::StyledText
-                        } else {
-                            ExpandedInlineSegmentKind::PlainText
-                        },
-                    });
-                    for offset in 0..=current_len {
-                        clean_to_display_cursor[current_clean_range.start + offset] =
-                            display_cursor + offset;
-                    }
-                    for offset in 1..=current_len {
-                        display_to_clean.push(current_clean_range.start + offset);
-                    }
-                    display_cursor += current_len;
+                        expand_link,
+                        &mut projected_fragments,
+                        &mut segments,
+                        &mut clean_to_display_cursor,
+                        &mut display_to_clean,
+                        &mut display_cursor,
+                        &mut any_expanded,
+                    );
                     local_clean_cursor = current_clean_range.end;
                 }
                 if expand_link {
@@ -573,77 +581,20 @@ impl ExpandedInlineProjection {
                 clean_marked.as_ref(),
             );
 
-            for kind in &expanded_kinds {
-                any_expanded = true;
-                let marker = kind.open_marker().to_string();
-                let marker_len = marker.len();
-                let marker_style = marker_style_for_projection(fragment.style, *kind);
-                projected_fragments.push(InlineFragment {
-                    text: marker,
-                    style: marker_style,
-                    html_style: fragment.html_style,
-                    link: None,
-                    footnote: None,
-                    math: None,
-                });
-                segments.push(ExpandedInlineSegment {
-                    display_range: display_cursor..display_cursor + marker_len,
-                    clean_range: clean_range.start..clean_range.start,
-                    fragment_index,
-                    link_group: None,
-                    kind: ExpandedInlineSegmentKind::OpeningDelimiter(*kind),
-                });
-                for _ in 0..marker_len {
-                    display_to_clean.push(clean_range.start);
-                }
-                display_cursor += marker_len;
-            }
-
-            let text_segment_kind = if expanded_kinds.is_empty() {
-                ExpandedInlineSegmentKind::PlainText
-            } else {
-                ExpandedInlineSegmentKind::StyledText
-            };
-            projected_fragments.push(fragment.clone());
-            segments.push(ExpandedInlineSegment {
-                display_range: display_cursor..display_cursor + fragment_len,
-                clean_range: clean_range.clone(),
+            push_projected_fragment(
+                fragment,
                 fragment_index,
-                link_group: None,
-                kind: text_segment_kind,
-            });
-            for offset in 0..=fragment_len {
-                clean_to_display_cursor[clean_range.start + offset] = display_cursor + offset;
-            }
-            for offset in 1..=fragment_len {
-                display_to_clean.push(clean_range.start + offset);
-            }
-            display_cursor += fragment_len;
-
-            for kind in expanded_kinds.iter().rev() {
-                let marker = kind.close_marker().to_string();
-                let marker_len = marker.len();
-                let marker_style = marker_style_for_projection(fragment.style, *kind);
-                projected_fragments.push(InlineFragment {
-                    text: marker,
-                    style: marker_style,
-                    html_style: fragment.html_style,
-                    link: None,
-                    footnote: None,
-                    math: None,
-                });
-                segments.push(ExpandedInlineSegment {
-                    display_range: display_cursor..display_cursor + marker_len,
-                    clean_range: clean_range.end..clean_range.end,
-                    fragment_index,
-                    link_group: None,
-                    kind: ExpandedInlineSegmentKind::ClosingDelimiter(*kind),
-                });
-                for _ in 0..marker_len {
-                    display_to_clean.push(clean_range.end);
-                }
-                display_cursor += marker_len;
-            }
+                clean_range.clone(),
+                &expanded_kinds,
+                None,
+                false,
+                &mut projected_fragments,
+                &mut segments,
+                &mut clean_to_display_cursor,
+                &mut display_to_clean,
+                &mut display_cursor,
+                &mut any_expanded,
+            );
 
             clean_cursor = clean_range.end;
             fragment_index += 1;
@@ -995,4 +946,98 @@ fn marker_style_for_projection(mut style: InlineStyle, kind: ExpandedInlineKind)
         style.script = InlineScript::Normal;
     }
     style
+}
+
+/// Emit one inline fragment, wrapped in the projected emphasis delimiters for
+/// `kinds`. Shared by standalone and link-label fragments so anchor text reveals
+/// its bold/italic/code markers like ordinary text. `force_styled` keeps a
+/// marker-less fragment styled (link labels while a link run is expanded).
+#[allow(clippy::too_many_arguments)]
+fn push_projected_fragment(
+    fragment: &InlineFragment,
+    fragment_index: usize,
+    clean_range: Range<usize>,
+    kinds: &[ExpandedInlineKind],
+    link_group: Option<usize>,
+    force_styled: bool,
+    projected_fragments: &mut Vec<InlineFragment>,
+    segments: &mut Vec<ExpandedInlineSegment>,
+    clean_to_display_cursor: &mut [usize],
+    display_to_clean: &mut Vec<usize>,
+    display_cursor: &mut usize,
+    any_expanded: &mut bool,
+) {
+    let fragment_len = fragment.text.len();
+
+    for kind in kinds {
+        *any_expanded = true;
+        let marker = kind.open_marker().to_string();
+        let marker_len = marker.len();
+        let marker_style = marker_style_for_projection(fragment.style, *kind);
+        projected_fragments.push(InlineFragment {
+            text: marker,
+            style: marker_style,
+            html_style: fragment.html_style,
+            link: None,
+            footnote: None,
+            math: None,
+        });
+        segments.push(ExpandedInlineSegment {
+            display_range: *display_cursor..*display_cursor + marker_len,
+            clean_range: clean_range.start..clean_range.start,
+            fragment_index,
+            link_group,
+            kind: ExpandedInlineSegmentKind::OpeningDelimiter(*kind),
+        });
+        for _ in 0..marker_len {
+            display_to_clean.push(clean_range.start);
+        }
+        *display_cursor += marker_len;
+    }
+
+    let text_segment_kind = if kinds.is_empty() && !force_styled {
+        ExpandedInlineSegmentKind::PlainText
+    } else {
+        ExpandedInlineSegmentKind::StyledText
+    };
+    projected_fragments.push(fragment.clone());
+    segments.push(ExpandedInlineSegment {
+        display_range: *display_cursor..*display_cursor + fragment_len,
+        clean_range: clean_range.clone(),
+        fragment_index,
+        link_group,
+        kind: text_segment_kind,
+    });
+    for offset in 0..=fragment_len {
+        clean_to_display_cursor[clean_range.start + offset] = *display_cursor + offset;
+    }
+    for offset in 1..=fragment_len {
+        display_to_clean.push(clean_range.start + offset);
+    }
+    *display_cursor += fragment_len;
+
+    for kind in kinds.iter().rev() {
+        let marker = kind.close_marker().to_string();
+        let marker_len = marker.len();
+        let marker_style = marker_style_for_projection(fragment.style, *kind);
+        projected_fragments.push(InlineFragment {
+            text: marker,
+            style: marker_style,
+            html_style: fragment.html_style,
+            link: None,
+            footnote: None,
+            math: None,
+        });
+        segments.push(ExpandedInlineSegment {
+            display_range: *display_cursor..*display_cursor + marker_len,
+            clean_range: clean_range.end..clean_range.end,
+            fragment_index,
+            link_group,
+            kind: ExpandedInlineSegmentKind::ClosingDelimiter(*kind),
+        });
+        for _ in 0..marker_len {
+            display_to_clean.push(clean_range.end);
+        }
+        *display_cursor += marker_len;
+    }
 }

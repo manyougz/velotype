@@ -522,10 +522,14 @@ impl InlineTextTree {
         })
     }
 
-    pub(crate) fn has_inline_math(&self) -> bool {
+    /// Whether any fragment carries an inline `[label](url)` link. Unlike
+    /// reference/autolink links these are not "source preserving", but their
+    /// `[...](...)` markers are still stripped from the fragment text, so an
+    /// edit that re-derives the tree from visible text alone would drop them.
+    pub(crate) fn has_inline_links(&self) -> bool {
         self.fragments
             .iter()
-            .any(|fragment| fragment.math.is_some())
+            .any(|fragment| matches!(fragment.link, Some(InlineLink::Inline { .. })))
     }
 
     pub(crate) fn has_mixed_inline_visuals(&self) -> bool {

@@ -233,18 +233,6 @@ impl Block {
             return;
         }
 
-        if self.inline_math_source_editing() {
-            self.prepare_undo_capture(UndoCaptureKind::NonCoalescible, cx);
-            if let Some(trailing) = self.split_inline_math_source_edit_for_newline() {
-                self.mark_changed(cx);
-                cx.emit(BlockEvent::RequestNewline {
-                    trailing,
-                    source_already_mutated: true,
-                });
-            }
-            return;
-        }
-
         if self.is_source_raw_mode() {
             if !self.selected_range.is_empty() {
                 self.replace_text_in_range(None, "", window, cx);
@@ -266,12 +254,18 @@ impl Block {
             return;
         }
 
+        // `$$` then Enter opens a display-math block. Keying off the caret sitting
+        // right after a leading `$$` (rather than the line being exactly `$$`)
+        // means it also fires after pressing Home on an existing line and typing
+        // the fence in front of a formula: the rest of the line becomes the math
+        // body instead of being split off into a new paragraph.
         if self.kind() == BlockKind::Paragraph
             && self.selected_range.is_empty()
-            && self.cursor_offset() == self.visible_len()
-            && self.display_text() == "$$"
+            && self.cursor_offset() == "$$".len()
+            && self.display_text().starts_with("$$")
         {
-            self.enter_math_block(cx);
+            let body = self.display_text()["$$".len()..].to_string();
+            self.enter_math_block(&body, cx);
             return;
         }
 
@@ -1275,6 +1269,14 @@ impl Block {
         let offset = self.index_for_mouse_position(event.position);
         let was_focused = self.focus_handle.is_focused(window);
 
+        // Cmd/Ctrl+click follows a rendered link instead of editing it, so the
+        // block is neither focused nor selected; the link opens on mouse-up.
+        if event.modifiers.secondary() && self.pointer_link_hit(event.position).is_some() {
+            self.is_selecting = false;
+            cx.stop_propagation();
+            return;
+        }
+
         if was_focused {
             self.is_selecting = true;
             if event.modifiers.shift {
@@ -1289,6 +1291,54 @@ impl Block {
         }
     }
 
+    /// Resolve the inline link under a pointer position against the most recent
+    /// rendered text layout, if any. Returns `None` while the block shows raw
+    /// source or when the pointer is not over a link.
+    pub(crate) fn pointer_link_hit(&self, position: Point<Pixels>) -> Option<super::InlineLinkHit> {
+        self.last_layout
+            .as_ref()
+            .zip(self.last_bounds)
+            .and_then(|(lines, bounds)| {
+                super::element::link_at_position(
+                    self,
+                    lines,
+                    bounds,
+                    self.last_line_height,
+                    position,
+                )
+            })
+            .cloned()
+    }
+
+    /// Handle mouse-down on a rendered inline link (in a mixed inline-visual
+    /// block). A Cmd/Ctrl+click is claimed here so it follows the link instead
+    /// of focusing the block; the destination opens on the matching mouse-up.
+    pub(crate) fn on_rendered_link_mouse_down(
+        &mut self,
+        event: &MouseDownEvent,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        // Only Cmd/Ctrl+click follows the link; a plain click falls through so
+        // the block focuses for editing like any other inline text.
+        if event.modifiers.secondary() {
+            cx.stop_propagation();
+        }
+    }
+
+    /// Open a rendered inline link's destination through the editor prompt.
+    pub(crate) fn open_rendered_link(
+        &mut self,
+        link: &super::InlineLinkHit,
+        cx: &mut Context<Self>,
+    ) {
+        cx.stop_propagation();
+        cx.emit(BlockEvent::RequestOpenLink {
+            prompt_target: link.prompt_target.clone(),
+            open_target: link.open_target.clone(),
+        });
+    }
+
     pub(crate) fn on_mouse_up(
         &mut self,
         event: &MouseUpEvent,
@@ -1296,6 +1346,16 @@ impl Block {
         cx: &mut Context<Self>,
     ) {
         self.is_selecting = false;
+
+        // Cmd/Ctrl+click follows a rendered link, using the same open-link
+        // prompt as the double-click gesture below.
+        if event.modifiers.secondary()
+            && let Some(link) = self.pointer_link_hit(event.position)
+        {
+            self.open_rendered_link(&link, cx);
+            return;
+        }
+
         if event.click_count >= 2 {
             let footnote = self
                 .last_layout
@@ -1317,26 +1377,8 @@ impl Block {
                 return;
             }
 
-            let link = self
-                .last_layout
-                .as_ref()
-                .zip(self.last_bounds)
-                .and_then(|(lines, bounds)| {
-                    super::element::link_at_position(
-                        self,
-                        lines,
-                        bounds,
-                        self.last_line_height,
-                        event.position,
-                    )
-                })
-                .cloned();
-            if let Some(link) = link {
-                cx.stop_propagation();
-                cx.emit(BlockEvent::RequestOpenLink {
-                    prompt_target: link.prompt_target,
-                    open_target: link.open_target,
-                });
+            if let Some(link) = self.pointer_link_hit(event.position) {
+                self.open_rendered_link(&link, cx);
             }
         }
     }
