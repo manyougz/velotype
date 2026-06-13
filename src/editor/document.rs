@@ -1918,6 +1918,22 @@ mod tests {
     }
 
     #[test]
+    fn empty_language_fence_closes_at_first_match() {
+        // Adjacent empty-language blocks must stay separate rather than the
+        // first absorbing the second's fences as body content (issue #58).
+        let lines = vec![
+            "```".to_string(),
+            "first".to_string(),
+            "```".to_string(),
+            "```".to_string(),
+            "second".to_string(),
+            "```".to_string(),
+        ];
+        let opener = parse_opening_fence(&lines[0]).expect("opening fence");
+        assert_eq!(find_matching_closing_fence(&lines, 0, &opener), Some(2));
+    }
+
+    #[test]
     fn next_opening_without_prior_closing_leaves_fence_unmatched() {
         let lines = vec![
             "```rust".to_string(),

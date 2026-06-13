@@ -189,6 +189,18 @@ const CLOSE_WINDOW_DEFAULT_KEYS: &[&str] = &["cmd-w"];
 #[cfg(not(target_os = "macos"))]
 const CLOSE_WINDOW_DEFAULT_KEYS: &[&str] = &["ctrl-q"];
 
+// On macOS cmd-q is the system quit shortcut; Windows/Linux use Alt+F4 (OS-handled).
+#[cfg(target_os = "macos")]
+const QUIT_APPLICATION_DEFAULT_KEYS: &[&str] = &["cmd-q"];
+#[cfg(not(target_os = "macos"))]
+const QUIT_APPLICATION_DEFAULT_KEYS: &[&str] = &[];
+
+// On macOS cmd-w closes the current window; no app-level binding needed on other platforms.
+#[cfg(target_os = "macos")]
+const CLOSE_WINDOW_DEFAULT_KEYS: &[&str] = &["cmd-w"];
+#[cfg(not(target_os = "macos"))]
+const CLOSE_WINDOW_DEFAULT_KEYS: &[&str] = &["ctrl-q"];
+
 const SHORTCUT_DEFINITIONS: &[ShortcutDefinition] = &[
     ShortcutDefinition {
         command: ShortcutCommand::Newline,
