@@ -1,6 +1,8 @@
-//! A pill-shaped toggle switch component.
+//! A pill-shaped toggle switch component with slide animation.
 
-use gpui::*;
+use std::time::Duration;
+
+use gpui::{prelude::FluentBuilder, *};
 
 use crate::theme::ThemeManager;
 
@@ -40,9 +42,7 @@ impl Switch {
 }
 
 impl RenderOnce for Switch {
-    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
-        use gpui::prelude::FluentBuilder as _;
-
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let theme = cx.global::<ThemeManager>().current().clone();
         let c = &theme.colors;
 
@@ -63,10 +63,50 @@ impl RenderOnce for Switch {
         } else {
             c.dialog_secondary_button_text
         };
-        // Track: 36×20. px(2) leaves 32px of inner width.
-        // Thumb: 16×16. When unchecked: ml=0 (2px from left edge).
-        // When checked: ml=16 (2px from right edge).
-        let thumb_margin: f32 = if checked { 16.0 } else { 0.0 };
+
+        // Keep the visual position across renders so we can detect changes.
+        let toggle_state = window.use_keyed_state::<bool>(self.id.clone(), cx, |_, _| checked);
+        let prev_checked = *toggle_state.read(cx);
+        let target: f32 = if checked { 16.0 } else { 0.0 };
+        let origin: f32 = if prev_checked { 16.0 } else { 0.0 };
+        let needs_animation = prev_checked != checked;
+        let duration = Duration::from_secs_f64(0.18);
+
+        if needs_animation {
+            cx.spawn({
+                let toggle_state = toggle_state.clone();
+                async move |cx| {
+                    cx.background_executor().timer(duration).await;
+                    _ = toggle_state.update(cx, |state, _| *state = checked);
+                }
+            })
+            .detach();
+        }
+
+        let thumb = div()
+            .w(px(16.0))
+            .h(px(16.0))
+            .rounded(px(8.0))
+            .bg(thumb_color)
+            .map(|mut this| {
+                if needs_animation {
+                    this.with_animation(
+                        ElementId::NamedInteger("switch-move".into(), checked as u64),
+                        Animation::new(duration),
+                        move |mut this, delta| {
+                            let margin = origin + (target - origin) * delta;
+                            this.style().margin.left =
+                                Some(Length::Definite(DefiniteLength::from(px(margin))));
+                            this
+                        },
+                    )
+                    .into_any_element()
+                } else {
+                    this.style().margin.left =
+                        Some(Length::Definite(DefiniteLength::from(px(target))));
+                    this.into_any_element()
+                }
+            });
 
         div()
             .id(self.id)
@@ -78,14 +118,7 @@ impl RenderOnce for Switch {
             .rounded(px(10.0))
             .bg(track_color)
             .when(!disabled, |this| this.cursor_pointer())
-            .child(
-                div()
-                    .w(px(16.0))
-                    .h(px(16.0))
-                    .ml(px(thumb_margin))
-                    .rounded(px(8.0))
-                    .bg(thumb_color),
-            )
+            .child(thumb)
             .when_some(self.on_click, |this, on_click| this.on_click(on_click))
     }
 }
