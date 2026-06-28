@@ -992,15 +992,6 @@ impl Editor {
         self.clear_table_axis_selection(cx);
     }
 
-    pub(crate) fn on_view_mode_toggle_hover(
-        &mut self,
-        hovered: &bool,
-        _window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        self.set_view_mode_toggle_hovered(*hovered, cx);
-    }
-
     pub(crate) fn on_editor_scroll_wheel(
         &mut self,
         _event: &ScrollWheelEvent,

@@ -301,6 +301,14 @@ pub struct I18nStrings {
     pub image_loading_with_alt_template: String,
     /// Placeholder shown in the code-block language input when no language is set.
     pub code_language_placeholder: String,
+    /// Label for the sidebar/files toggle button in the status bar.
+    pub status_bar_files: String,
+    /// Label for source mode in the status bar mode switch.
+    pub status_bar_mode_source: String,
+    /// Label for rendered mode in the status bar mode switch.
+    pub status_bar_mode_rendered: String,
+    /// Suffix shown after the word count number.
+    pub status_bar_word_count_suffix: String,
 }
 
 /// Partial string set used by JSON language packs.
@@ -478,6 +486,10 @@ struct I18nStringsDe {
     image_loading_without_alt: Option<String>,
     image_loading_with_alt_template: Option<String>,
     code_language_placeholder: Option<String>,
+    status_bar_files: Option<String>,
+    status_bar_mode_source: Option<String>,
+    status_bar_mode_rendered: Option<String>,
+    status_bar_word_count_suffix: Option<String>,
 }
 
 const I18N_STRING_KEYS: &[&str] = &[
@@ -653,6 +665,10 @@ const I18N_STRING_KEYS: &[&str] = &[
     "image_loading_without_alt",
     "image_loading_with_alt_template",
     "code_language_placeholder",
+    "status_bar_files",
+    "status_bar_mode_source",
+    "status_bar_mode_rendered",
+    "status_bar_word_count_suffix",
 ];
 
 impl I18nStringsDe {
@@ -1118,6 +1134,18 @@ impl I18nStringsDe {
             code_language_placeholder: self
                 .code_language_placeholder
                 .unwrap_or(defaults.code_language_placeholder),
+            status_bar_files: self
+                .status_bar_files
+                .unwrap_or(defaults.status_bar_files),
+            status_bar_mode_source: self
+                .status_bar_mode_source
+                .unwrap_or(defaults.status_bar_mode_source),
+            status_bar_mode_rendered: self
+                .status_bar_mode_rendered
+                .unwrap_or(defaults.status_bar_mode_rendered),
+            status_bar_word_count_suffix: self
+                .status_bar_word_count_suffix
+                .unwrap_or(defaults.status_bar_word_count_suffix),
         }
     }
 }
@@ -1306,6 +1334,10 @@ impl I18nStrings {
             image_loading_without_alt: "正在加载图片...".into(),
             image_loading_with_alt_template: "正在加载 {alt}".into(),
             code_language_placeholder: "语言".into(),
+            status_bar_files: "文件".into(),
+            status_bar_mode_source: "源码".into(),
+            status_bar_mode_rendered: "渲染".into(),
+            status_bar_word_count_suffix: "字".into(),
             ..Self::en_us()
         };
         strings.image_paste_failed_title = "图片粘贴失败".into();
@@ -1511,6 +1543,10 @@ impl I18nStrings {
             image_loading_without_alt: "Loading image...".into(),
             image_loading_with_alt_template: "Loading {alt}".into(),
             code_language_placeholder: "language".into(),
+            status_bar_files: "Files".into(),
+            status_bar_mode_source: "Source".into(),
+            status_bar_mode_rendered: "Rendered".into(),
+            status_bar_word_count_suffix: "words".into(),
         }
     }
 

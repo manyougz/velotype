@@ -49,7 +49,7 @@ enum WorkspaceSelection {
 
 #[derive(Default)]
 pub(super) struct WorkspaceState {
-    is_open: bool,
+    pub(super) is_open: bool,
     active_tab: WorkspaceTab,
     root: Option<PathBuf>,
     file_tree: Option<WorkspaceTreeNode>,

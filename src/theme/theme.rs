@@ -226,6 +226,14 @@ pub struct ThemeColors {
     pub dialog_danger_button_hover: Hsla,
     /// Danger button text colour.
     pub dialog_danger_button_text: Hsla,
+    /// Background of the editor status bar.
+    pub status_bar_background: Hsla,
+    /// Primary text colour in the status bar.
+    pub status_bar_text: Hsla,
+    /// Dimmed/secondary text colour in the status bar.
+    pub status_bar_text_dim: Hsla,
+    /// Hover background for clickable status bar items.
+    pub status_bar_button_hover: Hsla,
 }
 
 /// All configurable dimensions (paddings, gaps, sizes) for the editor UI.
@@ -451,6 +459,14 @@ pub struct ThemeDimensions {
     pub view_mode_toggle_border_width: f32,
     /// Text size of the view-mode toggle.
     pub view_mode_toggle_text_size: f32,
+    /// Height of the status bar.
+    pub status_bar_height: f32,
+    /// Horizontal padding inside the status bar.
+    pub status_bar_padding_x: f32,
+    /// Gap between items in the status bar.
+    pub status_bar_item_gap: f32,
+    /// Font size for status bar text.
+    pub status_bar_text_size: f32,
 }
 
 /// All configurable typography settings (font sizes, weights, line heights).
@@ -595,6 +611,10 @@ struct ThemeColorsDe {
     dialog_danger_button_bg: Hsla,
     dialog_danger_button_hover: Hsla,
     dialog_danger_button_text: Hsla,
+    status_bar_background: Option<Hsla>,
+    status_bar_text: Option<Hsla>,
+    status_bar_text_dim: Option<Hsla>,
+    status_bar_button_hover: Option<Hsla>,
 }
 
 impl<'de> Deserialize<'de> for ThemeColors {
@@ -793,6 +813,18 @@ impl<'de> Deserialize<'de> for ThemeColors {
             dialog_danger_button_bg: raw.dialog_danger_button_bg,
             dialog_danger_button_hover: raw.dialog_danger_button_hover,
             dialog_danger_button_text: raw.dialog_danger_button_text,
+            status_bar_background: raw
+                .status_bar_background
+                .unwrap_or_else(|| Hsla::from(rgba(0x1c1c1fff))),
+            status_bar_text: raw
+                .status_bar_text
+                .unwrap_or_else(|| Hsla::from(rgba(0xd4d4d8cc))),
+            status_bar_text_dim: raw
+                .status_bar_text_dim
+                .unwrap_or_else(|| Hsla::from(rgba(0x71717aff))),
+            status_bar_button_hover: raw
+                .status_bar_button_hover
+                .unwrap_or_else(|| Hsla::from(rgba(0x3f3f46ff))),
         })
     }
 }
@@ -910,6 +942,10 @@ struct ThemeDimensionsDe {
     view_mode_toggle_radius: Option<f32>,
     view_mode_toggle_border_width: Option<f32>,
     view_mode_toggle_text_size: Option<f32>,
+    status_bar_height: Option<f32>,
+    status_bar_padding_x: Option<f32>,
+    status_bar_item_gap: Option<f32>,
+    status_bar_text_size: Option<f32>,
 }
 
 impl<'de> Deserialize<'de> for ThemeDimensions {
@@ -1033,6 +1069,10 @@ impl<'de> Deserialize<'de> for ThemeDimensions {
             view_mode_toggle_radius: raw.view_mode_toggle_radius.unwrap_or(999.0),
             view_mode_toggle_border_width: raw.view_mode_toggle_border_width.unwrap_or(1.0),
             view_mode_toggle_text_size: raw.view_mode_toggle_text_size.unwrap_or(11.0),
+            status_bar_height: raw.status_bar_height.unwrap_or(28.0),
+            status_bar_padding_x: raw.status_bar_padding_x.unwrap_or(12.0),
+            status_bar_item_gap: raw.status_bar_item_gap.unwrap_or(12.0),
+            status_bar_text_size: raw.status_bar_text_size.unwrap_or(11.0),
         })
     }
 }
@@ -1143,6 +1183,10 @@ impl Theme {
                 dialog_danger_button_bg: Hsla::from(rgba(0xef4444ff)),
                 dialog_danger_button_hover: Hsla::from(rgba(0xdc2626ff)),
                 dialog_danger_button_text: Hsla::from(rgba(0xfef2f2ff)),
+                status_bar_background: Hsla::from(rgba(0x1c1c1fff)),
+                status_bar_text: Hsla::from(rgba(0xd4d4d8cc)),
+                status_bar_text_dim: Hsla::from(rgba(0x71717aff)),
+                status_bar_button_hover: Hsla::from(rgba(0x3f3f46ff)),
             },
             dimensions: ThemeDimensions {
                 editor_padding: 24.0,
@@ -1255,6 +1299,10 @@ impl Theme {
                 view_mode_toggle_radius: 999.0,
                 view_mode_toggle_border_width: 1.0,
                 view_mode_toggle_text_size: 11.0,
+                status_bar_height: 28.0,
+                status_bar_padding_x: 12.0,
+                status_bar_item_gap: 12.0,
+                status_bar_text_size: 11.0,
             },
             typography: ThemeTypography {
                 text_size: 17.0,
@@ -1378,6 +1426,10 @@ impl Theme {
                 dialog_danger_button_bg: Hsla::from(rgba(0xdc2626ff)),
                 dialog_danger_button_hover: Hsla::from(rgba(0xb91c1cff)),
                 dialog_danger_button_text: Hsla::from(rgba(0xffffffff)),
+                status_bar_background: Hsla::from(rgba(0xe2e8f0ff)),
+                status_bar_text: Hsla::from(rgba(0x334155ff)),
+                status_bar_text_dim: Hsla::from(rgba(0x64748bff)),
+                status_bar_button_hover: Hsla::from(rgba(0xcbd5e1ff)),
             },
             dimensions: base.dimensions,
             typography: base.typography,

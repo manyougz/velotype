@@ -6,7 +6,7 @@ use std::path::PathBuf;
 use anyhow::Context as _;
 use gpui::prelude::FluentBuilder;
 use gpui::*;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use super::{VelotypeConfigDirs, read_recent_files};
 use crate::components::{
@@ -22,6 +22,38 @@ use crate::window_chrome::{
 
 const DEFAULT_THEME_ID: &str = "velotype";
 const DEFAULT_LANGUAGE_ID: &str = "en-US";
+
+/// A user-configurable button shown in the status bar.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct StatusBarButton {
+    pub id: String,
+    pub label: String,
+    pub action_id: String,
+}
+
+/// Status bar visibility and component toggles.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct StatusBarPreferences {
+    pub enabled: bool,
+    pub show_word_count: bool,
+    pub show_cursor_position: bool,
+    pub show_sidebar_toggle: bool,
+    pub show_mode_switch: bool,
+    pub custom_buttons: Vec<StatusBarButton>,
+}
+
+impl Default for StatusBarPreferences {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            show_word_count: true,
+            show_cursor_position: true,
+            show_sidebar_toggle: true,
+            show_mode_switch: true,
+            custom_buttons: Vec::new(),
+        }
+    }
+}
 
 /// Startup document selection stored in `config.toml`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -84,6 +116,7 @@ pub(crate) struct AppPreferences {
     pub(crate) show_table_headers: bool,
     pub(crate) image_paste_behavior: ImagePasteBehavior,
     pub(crate) keybindings: BTreeMap<String, Vec<String>>,
+    pub(crate) status_bar: StatusBarPreferences,
 }
 
 impl Default for AppPreferences {
@@ -95,6 +128,7 @@ impl Default for AppPreferences {
             show_table_headers: true,
             image_paste_behavior: ImagePasteBehavior::None,
             keybindings: BTreeMap::new(),
+            status_bar: StatusBarPreferences::default(),
         }
     }
 }
@@ -141,6 +175,7 @@ struct PreferencesFile {
     language: LanguagePreferencesFile,
     theme: ThemePreferencesFile,
     editor: EditorPreferencesFile,
+    status_bar: StatusBarPreferencesFile,
     keybindings: BTreeMap<String, Vec<String>>,
 }
 
@@ -165,6 +200,30 @@ struct ThemePreferencesFile {
     default_theme_id: String,
 }
 
+#[derive(Serialize)]
+struct StatusBarPreferencesFile {
+    enabled: bool,
+    show_word_count: bool,
+    show_cursor_position: bool,
+    show_sidebar_toggle: bool,
+    show_mode_switch: bool,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    custom_buttons: Vec<StatusBarButton>,
+}
+
+impl From<&StatusBarPreferences> for StatusBarPreferencesFile {
+    fn from(value: &StatusBarPreferences) -> Self {
+        Self {
+            enabled: value.enabled,
+            show_word_count: value.show_word_count,
+            show_cursor_position: value.show_cursor_position,
+            show_sidebar_toggle: value.show_sidebar_toggle,
+            show_mode_switch: value.show_mode_switch,
+            custom_buttons: value.custom_buttons.clone(),
+        }
+    }
+}
+
 impl From<&AppPreferences> for PreferencesFile {
     fn from(value: &AppPreferences) -> Self {
         Self {
@@ -181,6 +240,7 @@ impl From<&AppPreferences> for PreferencesFile {
                 show_table_headers: value.show_table_headers,
                 image_paste_behavior: value.image_paste_behavior.as_str().into(),
             },
+            status_bar: StatusBarPreferencesFile::from(&value.status_bar),
             keybindings: normalize_shortcut_config(&value.keybindings),
         }
     }
@@ -272,6 +332,58 @@ fn app_preferences_from_toml_value(
         .map(ImagePasteBehavior::from_str)
         .unwrap_or(ImagePasteBehavior::None);
 
+    let status_bar = value
+        .get("status_bar")
+        .map(|sb| {
+            let enabled = sb.get("enabled").and_then(|v| v.as_bool()).unwrap_or(true);
+            let show_word_count = sb
+                .get("show_word_count")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(true);
+            let show_cursor_position = sb
+                .get("show_cursor_position")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(true);
+            let show_sidebar_toggle = sb
+                .get("show_sidebar_toggle")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(true);
+            let show_mode_switch = sb
+                .get("show_mode_switch")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(true);
+            let custom_buttons = sb
+                .get("custom_buttons")
+                .and_then(|v| v.as_array())
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|item| {
+                            let id = item.get("id")?.as_str()?.to_string();
+                            let label = item.get("label")?.as_str()?.to_string();
+                            Some(StatusBarButton {
+                                id,
+                                label,
+                                action_id: item
+                                    .get("action_id")
+                                    .and_then(|a| a.as_str())
+                                    .unwrap_or("")
+                                    .to_string(),
+                            })
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
+            StatusBarPreferences {
+                enabled,
+                show_word_count,
+                show_cursor_position,
+                show_sidebar_toggle,
+                show_mode_switch,
+                custom_buttons,
+            }
+        })
+        .unwrap_or_default();
+
     AppPreferences {
         startup_open,
         default_language_id,
@@ -279,6 +391,7 @@ fn app_preferences_from_toml_value(
         show_table_headers,
         image_paste_behavior,
         keybindings,
+        status_bar,
     }
 }
 
@@ -1606,7 +1719,7 @@ pub(crate) fn open_preferences_window(cx: &mut App) -> WindowHandle<PreferencesW
 #[cfg(test)]
 mod tests {
     use super::{
-        AppPreferences, ImagePasteBehavior, StartupOpenPreference,
+        AppPreferences, ImagePasteBehavior, StartupOpenPreference, StatusBarPreferences,
         load_or_create_app_preferences_with_dirs_and_locales, open_preferences_window_with_state,
         read_app_preferences_with_dirs, save_app_preferences_with_dirs,
         save_preferences_from_window_with_dirs,
@@ -1727,6 +1840,7 @@ mod tests {
             show_table_headers: false,
             image_paste_behavior: ImagePasteBehavior::CopyToAssetsFolder,
             keybindings: BTreeMap::new(),
+            status_bar: StatusBarPreferences::default(),
         };
 
         save_app_preferences_with_dirs(&preferences, &dirs)
@@ -1810,6 +1924,7 @@ mod tests {
             show_table_headers: true,
             image_paste_behavior: ImagePasteBehavior::None,
             keybindings: BTreeMap::new(),
+            status_bar: StatusBarPreferences::default(),
         };
         save_app_preferences_with_dirs(&preferences, &dirs)
             .expect("preferences should save to config.toml");
