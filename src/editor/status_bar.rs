@@ -24,7 +24,7 @@ impl Editor {
         _window: &Window,
         cx: &mut Context<Self>,
     ) -> Option<AnyElement> {
-        let prefs = self.status_bar_preferences();
+        let prefs = self.status_bar_preferences(cx);
         if !prefs.enabled {
             return None;
         }
@@ -108,8 +108,8 @@ impl Editor {
         Some(bar)
     }
 
-    fn status_bar_preferences(&self) -> StatusBarPreferences {
-        StatusBarPreferences::default()
+    fn status_bar_preferences(&self, cx: &App) -> StatusBarPreferences {
+        crate::config::preferences::EditorSettings::status_bar_preferences(cx)
     }
 
     /// Returns (line, col), both 1-based, from the source-mode selection snapshot.

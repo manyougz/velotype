@@ -12,7 +12,7 @@ use super::{VelotypeConfigDirs, read_recent_files};
 use crate::components::{
     ShortcutCategory, ShortcutCommand, ShortcutDefinition, install_keybindings,
     normalize_shortcut_config, normalize_shortcut_keys, resolved_shortcut_keys,
-    shortcut_conflict_for, shortcut_definitions,
+    shortcut_conflict_for, shortcut_definitions, switch::Switch,
 };
 use crate::i18n::{I18nManager, language_id_for_locale_preferences};
 use crate::theme::{Theme, ThemeCatalogEntry, ThemeManager};
@@ -133,18 +133,45 @@ impl Default for AppPreferences {
     }
 }
 
+/// Status Bar Settings
+struct StatusBarSettings {
+    status_bar_enabled: bool,
+    status_bar_show_word_count: bool,
+    status_bar_show_cursor_position: bool,
+    status_bar_show_sidebar_toggle: bool,
+    status_bar_show_mode_switch: bool,
+}
+
 /// Runtime-accessible editor settings mirrored from [`AppPreferences`] so the
 /// render path can read them without touching disk. Toggling persists the new
 /// value back to the preferences file.
 pub struct EditorSettings {
     show_table_headers: bool,
+    status_bar_settings: StatusBarSettings,
 }
 
 impl Global for EditorSettings {}
 
 impl EditorSettings {
     pub fn init(cx: &mut App, show_table_headers: bool) {
-        cx.set_global(Self { show_table_headers });
+        let status_bar = read_app_preferences()
+            .ok()
+            .map(|p| p.status_bar)
+            .unwrap_or_default();
+        Self::set_global(cx, show_table_headers, &status_bar);
+    }
+
+    fn set_global(cx: &mut App, show_table_headers: bool, status_bar: &StatusBarPreferences) {
+        cx.set_global(Self {
+            show_table_headers,
+            status_bar_settings: StatusBarSettings {
+                status_bar_enabled: status_bar.enabled,
+                status_bar_show_word_count: status_bar.show_word_count,
+                status_bar_show_cursor_position: status_bar.show_cursor_position,
+                status_bar_show_sidebar_toggle: status_bar.show_sidebar_toggle,
+                status_bar_show_mode_switch: status_bar.show_mode_switch,
+            }
+        });
     }
 
     /// Whether table top rows are styled as headers. Defaults to `true` when
@@ -156,7 +183,18 @@ impl EditorSettings {
     }
 
     pub fn set_show_table_headers(cx: &mut App, show_table_headers: bool) {
-        cx.set_global(Self { show_table_headers });
+        let status_bar = cx
+            .try_global::<Self>()
+            .map(|s| StatusBarPreferences {
+                enabled: s.status_bar_settings.status_bar_enabled,
+                show_word_count: s.status_bar_settings.status_bar_show_word_count,
+                show_cursor_position: s.status_bar_settings.status_bar_show_cursor_position,
+                show_sidebar_toggle: s.status_bar_settings.status_bar_show_sidebar_toggle,
+                show_mode_switch: s.status_bar_settings.status_bar_show_mode_switch,
+                custom_buttons: Vec::new(),
+            })
+            .unwrap_or_default();
+        Self::set_global(cx, show_table_headers, &status_bar);
         match read_app_preferences() {
             Ok(mut preferences) => {
                 preferences.show_table_headers = show_table_headers;
@@ -166,6 +204,19 @@ impl EditorSettings {
             }
             Err(err) => eprintln!("failed to read table header preference: {err}"),
         }
+    }
+
+    pub fn status_bar_preferences(cx: &App) -> StatusBarPreferences {
+        cx.try_global::<Self>()
+            .map(|s| StatusBarPreferences {
+                enabled: s.status_bar_settings.status_bar_enabled,
+                show_word_count: s.status_bar_settings.status_bar_show_word_count,
+                show_cursor_position: s.status_bar_settings.status_bar_show_cursor_position,
+                show_sidebar_toggle: s.status_bar_settings.status_bar_show_sidebar_toggle,
+                show_mode_switch: s.status_bar_settings.status_bar_show_mode_switch,
+                custom_buttons: Vec::new(),
+            })
+            .unwrap_or_default()
     }
 }
 
@@ -517,6 +568,7 @@ pub(crate) fn save_preferences_from_window(
     default_theme_id: &str,
     image_paste_behavior: ImagePasteBehavior,
     keybindings: BTreeMap<String, Vec<String>>,
+    status_bar: &StatusBarPreferences,
 ) -> anyhow::Result<AppPreferences> {
     let dirs = VelotypeConfigDirs::from_system()?;
     save_preferences_from_window_with_dirs(
@@ -524,6 +576,7 @@ pub(crate) fn save_preferences_from_window(
         default_theme_id,
         image_paste_behavior,
         keybindings,
+        status_bar,
         &dirs,
     )
 }
@@ -533,6 +586,7 @@ fn save_preferences_from_window_with_dirs(
     default_theme_id: &str,
     image_paste_behavior: ImagePasteBehavior,
     keybindings: BTreeMap<String, Vec<String>>,
+    status_bar: &StatusBarPreferences,
     dirs: &VelotypeConfigDirs,
 ) -> anyhow::Result<AppPreferences> {
     let mut preferences =
@@ -541,6 +595,7 @@ fn save_preferences_from_window_with_dirs(
     preferences.default_theme_id = default_theme_id.into();
     preferences.image_paste_behavior = image_paste_behavior;
     preferences.keybindings = normalize_shortcut_config(&keybindings);
+    preferences.status_bar = status_bar.clone();
     save_app_preferences_with_dirs(&preferences, dirs)?;
     Ok(preferences)
 }
@@ -560,6 +615,7 @@ enum PreferencesNav {
     Theme,
     Image,
     Shortcuts,
+    StatusBar,
 }
 
 /// Independent preferences window view.
@@ -580,6 +636,16 @@ pub(crate) struct PreferencesWindow {
     image_dropdown_open: bool,
     recording_shortcut: Option<ShortcutCommand>,
     shortcut_error: Option<String>,
+    status_bar_enabled: bool,
+    status_bar_show_word_count: bool,
+    status_bar_show_cursor_position: bool,
+    status_bar_show_sidebar_toggle: bool,
+    status_bar_show_mode_switch: bool,
+    saved_status_bar_enabled: bool,
+    saved_status_bar_show_word_count: bool,
+    saved_status_bar_show_cursor_position: bool,
+    saved_status_bar_show_sidebar_toggle: bool,
+    saved_status_bar_show_mode_switch: bool,
 }
 
 impl PreferencesWindow {
@@ -616,6 +682,16 @@ impl PreferencesWindow {
             image_dropdown_open: false,
             recording_shortcut: None,
             shortcut_error: None,
+            status_bar_enabled: preferences.status_bar.enabled,
+            status_bar_show_word_count: preferences.status_bar.show_word_count,
+            status_bar_show_cursor_position: preferences.status_bar.show_cursor_position,
+            status_bar_show_sidebar_toggle: preferences.status_bar.show_sidebar_toggle,
+            status_bar_show_mode_switch: preferences.status_bar.show_mode_switch,
+            saved_status_bar_enabled: preferences.status_bar.enabled,
+            saved_status_bar_show_word_count: preferences.status_bar.show_word_count,
+            saved_status_bar_show_cursor_position: preferences.status_bar.show_cursor_position,
+            saved_status_bar_show_sidebar_toggle: preferences.status_bar.show_sidebar_toggle,
+            saved_status_bar_show_mode_switch: preferences.status_bar.show_mode_switch,
         }
     }
 
@@ -633,6 +709,11 @@ impl PreferencesWindow {
             || self.image_paste_behavior != self.saved_image_paste_behavior
             || normalize_shortcut_config(&self.keybindings)
                 != normalize_shortcut_config(&self.saved_keybindings)
+            || self.status_bar_enabled != self.saved_status_bar_enabled
+            || self.status_bar_show_word_count != self.saved_status_bar_show_word_count
+            || self.status_bar_show_cursor_position != self.saved_status_bar_show_cursor_position
+            || self.status_bar_show_sidebar_toggle != self.saved_status_bar_show_sidebar_toggle
+            || self.status_bar_show_mode_switch != self.saved_status_bar_show_mode_switch
     }
 
     fn set_nav_file(&mut self, _: &ClickEvent, _: &mut Window, cx: &mut Context<Self>) {
@@ -668,6 +749,15 @@ impl PreferencesWindow {
         self.theme_dropdown_open = false;
         self.image_dropdown_open = false;
         self.shortcut_error = None;
+        cx.notify();
+    }
+
+    fn set_nav_status_bar(&mut self, _: &ClickEvent, _: &mut Window, cx: &mut Context<Self>) {
+        self.nav = PreferencesNav::StatusBar;
+        self.startup_dropdown_open = false;
+        self.theme_dropdown_open = false;
+        self.image_dropdown_open = false;
+        self.recording_shortcut = None;
         cx.notify();
     }
 
@@ -717,6 +807,14 @@ impl PreferencesWindow {
             &self.selected_theme_id,
             self.image_paste_behavior,
             self.keybindings.clone(),
+            &StatusBarPreferences {
+                enabled: self.status_bar_enabled,
+                show_word_count: self.status_bar_show_word_count,
+                show_cursor_position: self.status_bar_show_cursor_position,
+                show_sidebar_toggle: self.status_bar_show_sidebar_toggle,
+                show_mode_switch: self.status_bar_show_mode_switch,
+                custom_buttons: Vec::new(),
+            },
         ) {
             Ok(preferences) => preferences,
             Err(err) => {
@@ -754,6 +852,13 @@ impl PreferencesWindow {
         cx.clear_key_bindings();
         install_keybindings(cx, &preferences.keybindings);
         crate::app_menu::install_menus(cx);
+        cx.update_global::<EditorSettings, _>(|settings, _cx| {
+            settings.status_bar_settings.status_bar_enabled = preferences.status_bar.enabled;
+            settings.status_bar_settings.status_bar_show_word_count = preferences.status_bar.show_word_count;
+            settings.status_bar_settings.status_bar_show_cursor_position = preferences.status_bar.show_cursor_position;
+            settings.status_bar_settings.status_bar_show_sidebar_toggle = preferences.status_bar.show_sidebar_toggle;
+            settings.status_bar_settings.status_bar_show_mode_switch = preferences.status_bar.show_mode_switch;
+        });
         cx.refresh_windows();
         window.activate_window();
         self.focus_handle.focus(window);
@@ -761,6 +866,11 @@ impl PreferencesWindow {
         self.saved_theme_id = self.selected_theme_id.clone();
         self.saved_image_paste_behavior = self.image_paste_behavior;
         self.saved_keybindings = normalize_shortcut_config(&self.keybindings);
+        self.saved_status_bar_enabled = self.status_bar_enabled;
+        self.saved_status_bar_show_word_count = self.status_bar_show_word_count;
+        self.saved_status_bar_show_cursor_position = self.status_bar_show_cursor_position;
+        self.saved_status_bar_show_sidebar_toggle = self.status_bar_show_sidebar_toggle;
+        self.saved_status_bar_show_mode_switch = self.status_bar_show_mode_switch;
         cx.notify();
     }
 
@@ -1440,6 +1550,96 @@ impl PreferencesWindow {
         }
         page.child(content)
     }
+
+    fn render_status_bar_page(
+        &self,
+        theme: &Theme,
+        strings: &crate::i18n::I18nStrings,
+        cx: &mut Context<Self>,
+    ) -> Div {
+        let c = &theme.colors;
+        let t = &theme.typography;
+
+        let switch_row = |label: &str, checked: bool, on_click: fn(&mut Self, &ClickEvent, &mut Window, &mut Context<Self>), cx: &mut Context<Self>| {
+            div()
+                .w(px(280.0))
+                .flex()
+                .items_center()
+                .justify_between()
+                .child(
+                    div()
+                        .text_size(px(t.dialog_body_size))
+                        .text_color(c.dialog_body)
+                        .child(SharedString::from(label.to_string())),
+                )
+                .child(
+                    Switch::new(ElementId::Name(
+                        format!("preferences-toggle-{}", label).into(),
+                    ))
+                    .checked(checked)
+                    .on_click(cx.listener(on_click)),
+                )
+        };
+
+        let items = div()
+            .flex()
+            .flex_col()
+            .gap(px(12.0))
+            .child(switch_row(
+                &strings.preferences_status_bar_enabled,
+                self.status_bar_enabled,
+                |this, _, _, cx| {
+                    this.status_bar_enabled = !this.status_bar_enabled;
+                    cx.notify();
+                },
+                cx,
+            ))
+            .child(switch_row(
+                &strings.preferences_status_bar_show_word_count,
+                self.status_bar_show_word_count,
+                |this, _, _, cx| {
+                    this.status_bar_show_word_count = !this.status_bar_show_word_count;
+                    cx.notify();
+                },
+                cx,
+            ))
+            .child(switch_row(
+                &strings.preferences_status_bar_show_cursor_position,
+                self.status_bar_show_cursor_position,
+                |this, _, _, cx| {
+                    this.status_bar_show_cursor_position = !this.status_bar_show_cursor_position;
+                    cx.notify();
+                },
+                cx,
+            ))
+            .child(switch_row(
+                &strings.preferences_status_bar_show_sidebar_toggle,
+                self.status_bar_show_sidebar_toggle,
+                |this, _, _, cx| {
+                    this.status_bar_show_sidebar_toggle = !this.status_bar_show_sidebar_toggle;
+                    cx.notify();
+                },
+                cx,
+            ))
+            .child(switch_row(
+                &strings.preferences_status_bar_show_mode_switch,
+                self.status_bar_show_mode_switch,
+                |this, _, _, cx| {
+                    this.status_bar_show_mode_switch = !this.status_bar_show_mode_switch;
+                    cx.notify();
+                },
+                cx,
+            ));
+
+        div()
+            .w_full()
+            .flex_1()
+            .min_h(px(0.0))
+            .flex()
+            .items_center()
+            .justify_center()
+            .child(items)
+    }
 }
 
 impl Render for PreferencesWindow {
@@ -1510,6 +1710,14 @@ impl Render for PreferencesWindow {
                                 &theme,
                                 Self::set_nav_shortcuts,
                                 cx,
+                            ))
+                            .child(self.nav_button(
+                                "preferences-nav-status-bar",
+                                strings.preferences_nav_status_bar.clone(),
+                                self.nav == PreferencesNav::StatusBar,
+                                &theme,
+                                Self::set_nav_status_bar,
+                                cx,
                             )),
                     ),
             )
@@ -1549,6 +1757,9 @@ impl Render for PreferencesWindow {
                                         PreferencesNav::Shortcuts => {
                                             strings.preferences_nav_shortcuts.clone()
                                         }
+                                        PreferencesNav::StatusBar => {
+                                            strings.preferences_nav_status_bar.clone()
+                                        }
                                     }),
                             )
                             .child(match self.nav {
@@ -1584,6 +1795,15 @@ impl Render for PreferencesWindow {
                                     .flex_1()
                                     .min_h(px(0.0))
                                     .child(self.render_shortcuts_page(&theme, &strings, cx))
+                                    .into_any_element(),
+                                PreferencesNav::StatusBar => div()
+                                    .w_full()
+                                    .flex_1()
+                                    .min_h(px(0.0))
+                                    .flex()
+                                    .items_center()
+                                    .justify_center()
+                                    .child(self.render_status_bar_page(&theme, &strings, cx))
                                     .into_any_element(),
                             }),
                     )
@@ -1719,10 +1939,10 @@ pub(crate) fn open_preferences_window(cx: &mut App) -> WindowHandle<PreferencesW
 #[cfg(test)]
 mod tests {
     use super::{
-        AppPreferences, ImagePasteBehavior, StartupOpenPreference, StatusBarPreferences,
-        load_or_create_app_preferences_with_dirs_and_locales, open_preferences_window_with_state,
-        read_app_preferences_with_dirs, save_app_preferences_with_dirs,
-        save_preferences_from_window_with_dirs,
+        AppPreferences, EditorSettings, ImagePasteBehavior, StartupOpenPreference,
+        StatusBarPreferences, load_or_create_app_preferences_with_dirs_and_locales,
+        open_preferences_window_with_state, read_app_preferences_with_dirs,
+        save_app_preferences_with_dirs, save_preferences_from_window_with_dirs,
     };
     use crate::config::VelotypeConfigDirs;
     use crate::i18n::I18nManager;
@@ -1735,6 +1955,7 @@ mod tests {
             I18nManager::init_with_language_id(cx, "en-US");
             ThemeManager::init_with_theme_id(cx, "velotype");
             crate::components::init(cx);
+            EditorSettings::init(cx, true);
         });
     }
 
@@ -1934,6 +2155,7 @@ mod tests {
             "velotype-light",
             ImagePasteBehavior::CopyToNamedAssetsFolder,
             BTreeMap::from([("save_document".to_string(), vec!["ctrl-alt-s".to_string()])]),
+            &StatusBarPreferences::default(),
             &dirs,
         )
         .expect("window preferences should save");

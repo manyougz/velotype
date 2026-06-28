@@ -309,6 +309,18 @@ pub struct I18nStrings {
     pub status_bar_mode_rendered: String,
     /// Suffix shown after the word count number.
     pub status_bar_word_count_suffix: String,
+    /// Nav label for the status bar preferences tab.
+    pub preferences_nav_status_bar: String,
+    /// Label for the status bar enabled toggle.
+    pub preferences_status_bar_enabled: String,
+    /// Label for the word count toggle.
+    pub preferences_status_bar_show_word_count: String,
+    /// Label for the cursor position toggle.
+    pub preferences_status_bar_show_cursor_position: String,
+    /// Label for the sidebar toggle visibility.
+    pub preferences_status_bar_show_sidebar_toggle: String,
+    /// Label for the mode switch visibility.
+    pub preferences_status_bar_show_mode_switch: String,
 }
 
 /// Partial string set used by JSON language packs.
@@ -490,6 +502,12 @@ struct I18nStringsDe {
     status_bar_mode_source: Option<String>,
     status_bar_mode_rendered: Option<String>,
     status_bar_word_count_suffix: Option<String>,
+    preferences_nav_status_bar: Option<String>,
+    preferences_status_bar_enabled: Option<String>,
+    preferences_status_bar_show_word_count: Option<String>,
+    preferences_status_bar_show_cursor_position: Option<String>,
+    preferences_status_bar_show_sidebar_toggle: Option<String>,
+    preferences_status_bar_show_mode_switch: Option<String>,
 }
 
 const I18N_STRING_KEYS: &[&str] = &[
@@ -669,6 +687,12 @@ const I18N_STRING_KEYS: &[&str] = &[
     "status_bar_mode_source",
     "status_bar_mode_rendered",
     "status_bar_word_count_suffix",
+    "preferences_nav_status_bar",
+    "preferences_status_bar_enabled",
+    "preferences_status_bar_show_word_count",
+    "preferences_status_bar_show_cursor_position",
+    "preferences_status_bar_show_sidebar_toggle",
+    "preferences_status_bar_show_mode_switch",
 ];
 
 impl I18nStringsDe {
@@ -1146,6 +1170,24 @@ impl I18nStringsDe {
             status_bar_word_count_suffix: self
                 .status_bar_word_count_suffix
                 .unwrap_or(defaults.status_bar_word_count_suffix),
+            preferences_nav_status_bar: self
+                .preferences_nav_status_bar
+                .unwrap_or(defaults.preferences_nav_status_bar),
+            preferences_status_bar_enabled: self
+                .preferences_status_bar_enabled
+                .unwrap_or(defaults.preferences_status_bar_enabled),
+            preferences_status_bar_show_word_count: self
+                .preferences_status_bar_show_word_count
+                .unwrap_or(defaults.preferences_status_bar_show_word_count),
+            preferences_status_bar_show_cursor_position: self
+                .preferences_status_bar_show_cursor_position
+                .unwrap_or(defaults.preferences_status_bar_show_cursor_position),
+            preferences_status_bar_show_sidebar_toggle: self
+                .preferences_status_bar_show_sidebar_toggle
+                .unwrap_or(defaults.preferences_status_bar_show_sidebar_toggle),
+            preferences_status_bar_show_mode_switch: self
+                .preferences_status_bar_show_mode_switch
+                .unwrap_or(defaults.preferences_status_bar_show_mode_switch),
         }
     }
 }
@@ -1334,7 +1376,7 @@ impl I18nStrings {
             image_loading_without_alt: "正在加载图片...".into(),
             image_loading_with_alt_template: "正在加载 {alt}".into(),
             code_language_placeholder: "语言".into(),
-            status_bar_files: "文件".into(),
+            status_bar_files: "侧边栏".into(),
             status_bar_mode_source: "源码".into(),
             status_bar_mode_rendered: "渲染".into(),
             status_bar_word_count_suffix: "字".into(),
@@ -1342,6 +1384,12 @@ impl I18nStrings {
         };
         strings.image_paste_failed_title = "图片粘贴失败".into();
         strings.preferences_nav_image = "图像".into();
+        strings.preferences_nav_status_bar = "状态栏".into();
+        strings.preferences_status_bar_enabled = "显示状态栏".into();
+        strings.preferences_status_bar_show_word_count = "字数统计".into();
+        strings.preferences_status_bar_show_cursor_position = "光标位置".into();
+        strings.preferences_status_bar_show_sidebar_toggle = "侧边栏".into();
+        strings.preferences_status_bar_show_mode_switch = "模式切换".into();
         strings.preferences_image_insert_behavior = "插入图片时...".into();
         strings.preferences_image_paste_none = "无特殊操作".into();
         strings.preferences_image_paste_copy_to_document_folder = "复制图片到 ./ 文件夹".into();
@@ -1543,10 +1591,16 @@ impl I18nStrings {
             image_loading_without_alt: "Loading image...".into(),
             image_loading_with_alt_template: "Loading {alt}".into(),
             code_language_placeholder: "language".into(),
-            status_bar_files: "Files".into(),
+            status_bar_files: "Sidebar".into(),
             status_bar_mode_source: "Source".into(),
             status_bar_mode_rendered: "Rendered".into(),
             status_bar_word_count_suffix: "words".into(),
+            preferences_nav_status_bar: "Status Bar".into(),
+            preferences_status_bar_enabled: "Show Status Bar".into(),
+            preferences_status_bar_show_word_count: "Word Count".into(),
+            preferences_status_bar_show_cursor_position: "Cursor Position".into(),
+            preferences_status_bar_show_sidebar_toggle: "Sidebar Toggle".into(),
+            preferences_status_bar_show_mode_switch: "Mode Switch".into(),
         }
     }
 
