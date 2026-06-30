@@ -699,7 +699,7 @@ impl Editor {
         true
     }
 
-    fn cross_block_selected_markdown(&self, cx: &App) -> Option<String> {
+    pub(super) fn cross_block_selected_markdown(&self, cx: &App) -> Option<String> {
         let selection = self.normalized_cross_block_selection(cx)?;
         let source = self.current_document_source(cx);
         let mappings = self.source_mapping_by_entity_id(cx);
@@ -871,6 +871,35 @@ impl Editor {
         self.sync_cross_block_selection_visuals(cx);
         cx.notify();
         true
+    }
+
+    /// Returns the markdown text of the current selection, whether cross-block
+    /// or within a single block. Returns `None` when nothing is selected.
+    pub(super) fn selected_markdown_text(&self, cx: &App) -> Option<String> {
+        // Prefer cross-block selection when present.
+        if let Some(text) = self.cross_block_selected_markdown(cx) {
+            if !text.is_empty() {
+                return Some(text);
+            }
+        }
+
+        // Fall back to a single block with a non-collapsed selection range.
+        for visible in self.document.visible_blocks() {
+            let block = visible.entity.read(cx);
+            if block.selected_range.is_empty() {
+                continue;
+            }
+            let markdown_range =
+                block.current_range_to_markdown_range(block.selected_range.clone());
+            let full_markdown = block.record.title.serialize_markdown();
+            let start = markdown_range.start.min(full_markdown.len());
+            let end = markdown_range.end.min(full_markdown.len());
+            if start < end {
+                return Some(full_markdown[start..end].to_owned());
+            }
+        }
+
+        None
     }
 }
 

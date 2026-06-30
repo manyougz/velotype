@@ -65,7 +65,14 @@ impl Editor {
 
         if prefs.show_word_count {
             let text = self.serialized_document_text(cx);
-            right_items.push(render_word_count(&text, theme, strings));
+            let total_count = count_words(&text);
+            let selection_count = self.selected_markdown_text(cx).as_deref().map(count_words);
+            right_items.push(render_word_count(
+                selection_count,
+                total_count,
+                theme,
+                strings,
+            ));
         }
 
         for button in &prefs.custom_buttons {
@@ -236,12 +243,23 @@ fn render_cursor((line, col): (usize, usize), theme: &Theme) -> AnyElement {
         .into_any_element()
 }
 
-fn render_word_count(text: &str, theme: &Theme, strings: &I18nStrings) -> AnyElement {
+fn render_word_count(
+    selection_count: Option<usize>,
+    total_count: usize,
+    theme: &Theme,
+    strings: &I18nStrings,
+) -> AnyElement {
     let c = &theme.colors;
     let d = &theme.dimensions;
 
-    let count = count_words(text);
-    let label = format!("{} {}", count, strings.status_bar_word_count_suffix);
+    let label = if let Some(sel) = selection_count {
+        format!(
+            "{} / {} {}",
+            sel, total_count, strings.status_bar_word_count_suffix
+        )
+    } else {
+        format!("{} {}", total_count, strings.status_bar_word_count_suffix)
+    };
 
     div()
         .text_size(px(d.status_bar_text_size))
