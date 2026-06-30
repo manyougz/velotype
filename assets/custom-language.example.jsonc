@@ -186,6 +186,16 @@
     "image_placeholder": "",
     "image_loading_without_alt": "",
     "image_loading_with_alt_template": "",
-    "code_language_placeholder": ""
+    "code_language_placeholder": "",
+    "status_bar_files": "",
+    "status_bar_mode_source": "",
+    "status_bar_mode_rendered": "",
+    "status_bar_word_count_suffix": "",
+    "preferences_nav_status_bar": "",
+    "preferences_status_bar_enabled": "",
+    "preferences_status_bar_show_word_count": "",
+    "preferences_status_bar_show_cursor_position": "",
+    "preferences_status_bar_show_sidebar_toggle": "",
+    "preferences_status_bar_show_mode_switch": "",
   }
 }

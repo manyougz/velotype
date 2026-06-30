@@ -194,7 +194,15 @@
       // Hover background of destructive dialog buttons.
       "dialog_danger_button_hover": null,
       // Text color of destructive dialog buttons.
-      "dialog_danger_button_text": null
+      "dialog_danger_button_text": null,
+      // Background of the editor status bar.
+      "status_bar_background": null,
+      // Primary text color in the status bar.
+      "status_bar_text": null,
+      // Secondary text color in the status bar.
+      "status_bar_text_dim": null,
+      // Hover background for clickable status bar item.
+      "status_bar_button_hover": null
     },
     // Dimensions are logical pixels unless a comment explicitly says ratio.
     // Set null to inherit base_theme_id and avoid storing the field after import.
@@ -418,7 +426,15 @@
       // Border width of the view-mode toggle.
       "view_mode_toggle_border_width": null,
       // Text size of the view-mode toggle.
-      "view_mode_toggle_text_size": null
+      "view_mode_toggle_text_size": null,
+      // Height of the status bar.
+      "status_bar_height": null,
+      // Horizontal padding inside the status bar.
+      "status_bar_padding_x": null,
+      // Gap between items in the status bar.
+      "status_bar_item_gap": null,
+      // Font size for status bar text.
+      "status_bar_text_size": null
     },
     // Typography values use logical pixels for sizes and a ratio for line height.
     // Weight values allow thin, light, normal, medium, semibold, bold, extrabold, or black.
