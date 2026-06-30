@@ -35,6 +35,7 @@ mod render;
 mod runtime_context;
 mod selection;
 mod source_mapping;
+mod status_bar;
 mod table_edit;
 #[cfg(test)]
 mod tests;
@@ -42,10 +43,9 @@ mod tree;
 mod update;
 mod window_state;
 mod workspace;
-mod status_bar;
 
-use self::workspace::WorkspaceState;
 use self::status_bar::StatusBarState;
+use self::workspace::WorkspaceState;
 
 /// Link navigation request deferred until a `Window` is available.
 #[derive(Clone, Debug, PartialEq, Eq)]

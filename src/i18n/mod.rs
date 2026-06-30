@@ -1158,9 +1158,7 @@ impl I18nStringsDe {
             code_language_placeholder: self
                 .code_language_placeholder
                 .unwrap_or(defaults.code_language_placeholder),
-            status_bar_files: self
-                .status_bar_files
-                .unwrap_or(defaults.status_bar_files),
+            status_bar_files: self.status_bar_files.unwrap_or(defaults.status_bar_files),
             status_bar_mode_source: self
                 .status_bar_mode_source
                 .unwrap_or(defaults.status_bar_mode_source),

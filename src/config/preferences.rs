@@ -170,7 +170,7 @@ impl EditorSettings {
                 status_bar_show_cursor_position: status_bar.show_cursor_position,
                 status_bar_show_sidebar_toggle: status_bar.show_sidebar_toggle,
                 status_bar_show_mode_switch: status_bar.show_mode_switch,
-            }
+            },
         });
     }
 
@@ -854,10 +854,14 @@ impl PreferencesWindow {
         crate::app_menu::install_menus(cx);
         cx.update_global::<EditorSettings, _>(|settings, _cx| {
             settings.status_bar_settings.status_bar_enabled = preferences.status_bar.enabled;
-            settings.status_bar_settings.status_bar_show_word_count = preferences.status_bar.show_word_count;
-            settings.status_bar_settings.status_bar_show_cursor_position = preferences.status_bar.show_cursor_position;
-            settings.status_bar_settings.status_bar_show_sidebar_toggle = preferences.status_bar.show_sidebar_toggle;
-            settings.status_bar_settings.status_bar_show_mode_switch = preferences.status_bar.show_mode_switch;
+            settings.status_bar_settings.status_bar_show_word_count =
+                preferences.status_bar.show_word_count;
+            settings.status_bar_settings.status_bar_show_cursor_position =
+                preferences.status_bar.show_cursor_position;
+            settings.status_bar_settings.status_bar_show_sidebar_toggle =
+                preferences.status_bar.show_sidebar_toggle;
+            settings.status_bar_settings.status_bar_show_mode_switch =
+                preferences.status_bar.show_mode_switch;
         });
         cx.refresh_windows();
         window.activate_window();
@@ -1560,7 +1564,10 @@ impl PreferencesWindow {
         let c = &theme.colors;
         let t = &theme.typography;
 
-        let switch_row = |label: &str, checked: bool, on_click: fn(&mut Self, &ClickEvent, &mut Window, &mut Context<Self>), cx: &mut Context<Self>| {
+        let switch_row = |label: &str,
+                          checked: bool,
+                          on_click: fn(&mut Self, &ClickEvent, &mut Window, &mut Context<Self>),
+                          cx: &mut Context<Self>| {
             div()
                 .w(px(280.0))
                 .flex()
