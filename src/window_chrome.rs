@@ -48,7 +48,7 @@ pub(crate) fn titlebar_options_for_target_os(
         title: Some(title),
         appears_transparent: matches!(target_os, "macos" | "windows"),
         traffic_light_position: if target_os == "macos" {
-            Some(point(px(14.0), px(16.0)))
+            Some(point(px(14.0), px(10.0)))
         } else {
             None
         },
@@ -133,6 +133,10 @@ pub(crate) fn custom_titlebar_height_for_target_os(
 }
 
 pub(crate) fn custom_titlebar_height(window: &Window, dimensions: &ThemeDimensions) -> f32 {
+    if cfg!(target_os = "macos") && window.is_fullscreen() {
+        return 0.0;
+    }
+
     custom_titlebar_height_for_target_os(
         std::env::consts::OS,
         window.window_decorations(),
@@ -168,6 +172,10 @@ pub(crate) fn render_custom_titlebar<T: 'static>(
     cx: &mut Context<T>,
     on_close: fn(&mut T, &ClickEvent, &mut Window, &mut Context<T>),
 ) -> Option<AnyElement> {
+    if cfg!(target_os = "macos") && window.is_fullscreen() {
+        return None;
+    }
+
     let layout = custom_titlebar_layout_for_target_os(
         std::env::consts::OS,
         window.window_decorations(),
