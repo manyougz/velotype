@@ -170,9 +170,45 @@ impl Editor {
         cx.notify();
     }
 
-    fn select_outline_node(&mut self, id: String, cx: &mut Context<Self>) {
+    fn select_outline_node(&mut self, id: String, line: usize, cx: &mut Context<Self>) {
         self.workspace.selected = Some(WorkspaceSelection::Outline(id));
+        self.reveal_outline_heading(line, cx);
         cx.notify();
+    }
+
+    /// Maps an outline heading's source line to its owning block, then focuses
+    /// and scrolls the editor so the body jumps to that heading.
+    ///
+    /// The outline is parsed from `serialized_document_text`, whose line offsets
+    /// align with the per-block source spans produced by
+    /// `build_source_target_mappings`, so the byte offset of the heading line
+    /// lands exactly on the heading block's source range.
+    fn reveal_outline_heading(&mut self, line: usize, cx: &mut Context<Self>) {
+        let source = self.serialized_document_text(cx);
+        let target = source
+            .lines()
+            .take(line)
+            .map(|line| line.len() + 1)
+            .sum::<usize>();
+
+        let mappings = self.build_source_target_mappings(cx);
+        let entity_id = mappings
+            .iter()
+            .find(|mapping| mapping.full_source_range.contains(&target))
+            .or_else(|| {
+                mappings
+                    .iter()
+                    .min_by_key(|mapping| Self::source_offset_distance(&mapping.full_source_range, target))
+            })
+            .map(|mapping| mapping.entity.entity_id());
+
+        let Some(entity_id) = entity_id else {
+            return;
+        };
+        let Some(block) = self.focusable_entity_by_id(entity_id) else {
+            return;
+        };
+        self.focus_block_range(&block, 0..0, cx);
     }
 
     fn open_workspace_file(&mut self, path: PathBuf, window: &mut Window, cx: &mut Context<Self>) {
@@ -504,7 +540,9 @@ impl Editor {
                     WorkspaceTreeKind::MarkdownFile(path) => {
                         editor.open_workspace_file(path, window, cx);
                     }
-                    WorkspaceTreeKind::Heading { .. } => editor.select_outline_node(node_id, cx),
+                    WorkspaceTreeKind::Heading { line, .. } => {
+                        editor.select_outline_node(node_id, line, cx);
+                    }
                 });
             })
             .into_any_element()
@@ -692,6 +730,9 @@ mod tests {
     };
     use std::fs;
 
+    use crate::components::{BlockKind, Editor};
+    use gpui::{AppContext, TestAppContext};
+
     #[test]
     fn workspace_scan_keeps_dirs_and_md_files_only() {
         let root =
@@ -761,5 +802,37 @@ mod tests {
         assert_eq!(workspace_panel_width_for_viewport(1000.0), 240.0);
         assert_eq!(workspace_panel_width_for_viewport(2000.0), 300.0);
         assert_eq!(workspace_panel_width_for_viewport(4000.0), 360.0);
+    }
+
+    #[gpui::test]
+    async fn outline_node_click_focuses_and_queues_scroll_for_target_heading(
+        cx: &mut TestAppContext,
+    ) {
+        let markdown =
+            "# Alpha\n\nPara under alpha.\n\n## Beta\n\nPara under beta.\n\n# Gamma".to_string();
+        let editor = cx.new(|cx| Editor::from_markdown(cx, markdown, None));
+
+        editor.update(cx, |editor, cx| {
+            let beta = editor
+                .document
+                .visible_blocks()
+                .iter()
+                .find(|visible| {
+                    matches!(
+                        visible.entity.read(cx).kind(),
+                        BlockKind::Heading { level: 2 }
+                    )
+                })
+                .expect("## Beta heading")
+                .entity
+                .clone();
+
+            // The outline is parsed from the same serialized text, where
+            // "## Beta" lands on line index 4.
+            editor.select_outline_node("outline:4".into(), 4, cx);
+
+            assert_eq!(editor.pending_focus, Some(beta.entity_id()));
+            assert!(editor.pending_scroll_active_block_into_view);
+        });
     }
 }
