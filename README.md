@@ -151,3 +151,7 @@ Welcome all users and project contributors to join the Velotype channel for bett
 ## License
 
 Velotype is licensed under the [Apache License 2.0](LICENSE).
+
+## Star History
+
+[![Star History Chart](https://star-history.dera.page/svg?repos=manyougz/velotype&type=date&legend=top-left)](https://star-history.dera.page/#manyougz/velotype&type=date)
