@@ -150,3 +150,7 @@ Velotype 将视觉主题和界面语言包拆分管理。主题文件可以覆�
 ## 许可证
 
 Velotype 使用 [Apache License 2.0](../LICENSE)。
+
+## Star History
+
+[![Star History Chart](https://star-history.dera.page/svg?repos=manyougz/velotype&type=date&legend=top-left)](https://star-history.dera.page/#manyougz/velotype&type=date)
