@@ -5,7 +5,7 @@
 //! are still outside the runtime-safe subset continue to use raw-Markdown
 //! fallback paths.
 
-use gpui::{Entity, FontStyle, FontWeight, Pixels, SharedString, TextRun, Window, px};
+use gpui::{Entity, Font, FontStyle, FontWeight, Pixels, SharedString, TextRun, Window, px};
 
 use crate::components::{Block, InlineTextTree};
 use crate::theme::Theme;
@@ -250,8 +250,9 @@ impl TableColumnLayout {
         table_width: f32,
         window: &mut Window,
         theme: &Theme,
+        code_font: &Font,
     ) -> Self {
-        let preferred_widths = measure_preferred_column_widths(table, window, theme)
+        let preferred_widths = measure_preferred_column_widths(table, window, theme, code_font)
             .into_iter()
             .map(f32::from)
             .collect::<Vec<_>>();
@@ -389,19 +390,22 @@ fn measure_preferred_column_widths(
     table: &TableData,
     window: &mut Window,
     theme: &Theme,
+    code_font: &Font,
 ) -> Vec<Pixels> {
     let column_count = table.header.len().max(1);
     let mut preferred_widths = vec![Pixels::ZERO; column_count];
 
     for (column, cell) in table.header.iter().enumerate() {
-        preferred_widths[column] =
-            preferred_widths[column].max(measure_cell_preferred_width(cell, true, window, theme));
+        preferred_widths[column] = preferred_widths[column].max(measure_cell_preferred_width(
+            cell, true, window, theme, code_font,
+        ));
     }
 
     for row in &table.rows {
         for (column, cell) in row.iter().enumerate().take(column_count) {
-            preferred_widths[column] = preferred_widths[column]
-                .max(measure_cell_preferred_width(cell, false, window, theme));
+            preferred_widths[column] = preferred_widths[column].max(measure_cell_preferred_width(
+                cell, false, window, theme, code_font,
+            ));
         }
     }
 
@@ -413,6 +417,7 @@ fn measure_cell_preferred_width(
     is_header: bool,
     window: &mut Window,
     theme: &Theme,
+    code_font: &Font,
 ) -> Pixels {
     let cache = cell.render_cache();
     let text = cache.visible_text();
@@ -434,7 +439,7 @@ fn measure_cell_preferred_width(
         underline: None,
         strikethrough: None,
     };
-    let runs = measurement_runs(&cache, &base_run);
+    let runs = measurement_runs(&cache, &base_run, code_font);
     let font_size = px(theme.typography.text_size);
 
     let text_width = window
@@ -456,6 +461,7 @@ fn measure_cell_preferred_width(
 fn measurement_runs(
     cache: &crate::components::InlineRenderCache,
     base_run: &TextRun,
+    code_font: &Font,
 ) -> Vec<TextRun> {
     let mut boundaries = vec![0, cache.visible_text().len()];
     for span in cache.spans() {
@@ -474,7 +480,11 @@ fn measurement_runs(
         }
 
         let inline_style = cache.style_at(start);
-        let mut font = base_run.font.clone();
+        let mut font = if inline_style.code {
+            code_font.clone()
+        } else {
+            base_run.font.clone()
+        };
         if inline_style.bold && font.weight < FontWeight::BOLD {
             font.weight = FontWeight::BOLD;
         }

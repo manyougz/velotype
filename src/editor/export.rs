@@ -9,6 +9,7 @@ use gpui::*;
 
 use super::Editor;
 use crate::export::{self as document_export, ExportFormat};
+use crate::fonts::FontSettings;
 use crate::i18n::I18nManager;
 use crate::theme::{Theme, ThemeManager};
 
@@ -49,18 +50,24 @@ impl Editor {
         theme: &Theme,
         title: &str,
         source_base_dir: Option<&Path>,
+        fonts: &FontSettings,
     ) -> anyhow::Result<Vec<u8>> {
         match format {
-            ExportFormat::Html => Ok(document_export::render_html_with_base_dir(
+            ExportFormat::Html => Ok(document_export::render_html_with_base_dir_and_fonts(
                 markdown,
                 theme,
                 title,
                 source_base_dir,
+                fonts,
             )
             .into_bytes()),
-            ExportFormat::Pdf => {
-                document_export::render_pdf(markdown, theme, title, source_base_dir)
-            }
+            ExportFormat::Pdf => document_export::render_pdf_with_fonts(
+                markdown,
+                theme,
+                title,
+                source_base_dir,
+                fonts,
+            ),
         }
     }
 
@@ -71,8 +78,10 @@ impl Editor {
         title: &str,
         path: &Path,
         source_base_dir: Option<&Path>,
+        fonts: &FontSettings,
     ) -> anyhow::Result<()> {
-        let bytes = Self::render_export_bytes(format, markdown, theme, title, source_base_dir)?;
+        let bytes =
+            Self::render_export_bytes(format, markdown, theme, title, source_base_dir, fonts)?;
         std::fs::write(path, bytes).with_context(|| format!("failed to write '{}'", path.display()))
     }
 
@@ -87,7 +96,16 @@ impl Editor {
         let theme = cx.global::<ThemeManager>().current().clone();
         let title = self.export_title();
         let source_base_dir = self.file_path.as_ref().and_then(|path| path.parent());
-        Self::write_export_bytes(format, &markdown, &theme, &title, path, source_base_dir)
+        let fonts = FontSettings::current(cx);
+        Self::write_export_bytes(
+            format,
+            &markdown,
+            &theme,
+            &title,
+            path,
+            source_base_dir,
+            &fonts,
+        )
     }
 
     pub(crate) fn export_document_via_prompt(
@@ -99,6 +117,7 @@ impl Editor {
         let markdown = self.serialized_document_text(cx);
         let theme = cx.global::<ThemeManager>().current().clone();
         let title = self.export_title();
+        let fonts = FontSettings::current(cx);
         let source_base_dir = self
             .file_path
             .as_ref()
@@ -139,6 +158,7 @@ impl Editor {
                         &title,
                         &path,
                         source_base_dir.as_deref(),
+                        &fonts,
                     )
                     .map_err(|err| err.to_string());
                     let _ = sender.send(result);
