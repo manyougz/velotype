@@ -159,6 +159,13 @@ pub struct I18nStrings {
     pub preferences_startup_last_opened_file: String,
     /// Theme preference field label.
     pub preferences_local_theme: String,
+    pub preferences_font_body: String,
+    pub preferences_font_code: String,
+    pub preferences_font_ui: String,
+    pub preferences_font_help: String,
+    pub preferences_font_unavailable_template: String,
+    pub preferences_font_error_empty: String,
+    pub preferences_font_error_unterminated_quote: String,
     /// Image paste behavior field label.
     pub preferences_image_insert_behavior: String,
     pub preferences_image_paste_none: String,
@@ -396,6 +403,13 @@ struct I18nStringsDe {
     preferences_startup_new_file: Option<String>,
     preferences_startup_last_opened_file: Option<String>,
     preferences_local_theme: Option<String>,
+    preferences_font_body: Option<String>,
+    preferences_font_code: Option<String>,
+    preferences_font_ui: Option<String>,
+    preferences_font_help: Option<String>,
+    preferences_font_unavailable_template: Option<String>,
+    preferences_font_error_empty: Option<String>,
+    preferences_font_error_unterminated_quote: Option<String>,
     preferences_image_insert_behavior: Option<String>,
     preferences_image_paste_none: Option<String>,
     preferences_image_paste_copy_to_document_folder: Option<String>,
@@ -581,6 +595,13 @@ const I18N_STRING_KEYS: &[&str] = &[
     "preferences_startup_new_file",
     "preferences_startup_last_opened_file",
     "preferences_local_theme",
+    "preferences_font_body",
+    "preferences_font_code",
+    "preferences_font_ui",
+    "preferences_font_help",
+    "preferences_font_unavailable_template",
+    "preferences_font_error_empty",
+    "preferences_font_error_unterminated_quote",
     "preferences_image_insert_behavior",
     "preferences_image_paste_none",
     "preferences_image_paste_copy_to_document_folder",
@@ -866,6 +887,27 @@ impl I18nStringsDe {
             preferences_local_theme: self
                 .preferences_local_theme
                 .unwrap_or(defaults.preferences_local_theme),
+            preferences_font_body: self
+                .preferences_font_body
+                .unwrap_or(defaults.preferences_font_body),
+            preferences_font_code: self
+                .preferences_font_code
+                .unwrap_or(defaults.preferences_font_code),
+            preferences_font_ui: self
+                .preferences_font_ui
+                .unwrap_or(defaults.preferences_font_ui),
+            preferences_font_help: self
+                .preferences_font_help
+                .unwrap_or(defaults.preferences_font_help),
+            preferences_font_unavailable_template: self
+                .preferences_font_unavailable_template
+                .unwrap_or(defaults.preferences_font_unavailable_template),
+            preferences_font_error_empty: self
+                .preferences_font_error_empty
+                .unwrap_or(defaults.preferences_font_error_empty),
+            preferences_font_error_unterminated_quote: self
+                .preferences_font_error_unterminated_quote
+                .unwrap_or(defaults.preferences_font_error_unterminated_quote),
             preferences_image_insert_behavior: self
                 .preferences_image_insert_behavior
                 .unwrap_or(defaults.preferences_image_insert_behavior),
@@ -1276,6 +1318,13 @@ impl I18nStrings {
             preferences_startup_new_file: "新 md 文件".into(),
             preferences_startup_last_opened_file: "上一次打开的 md 文件".into(),
             preferences_local_theme: "本地主题".into(),
+            preferences_font_body: "正文字体".into(),
+            preferences_font_code: "代码字体".into(),
+            preferences_font_ui: "界面字体".into(),
+            preferences_font_help: "输入以逗号分隔的已安装字体族；支持引号，保存后生效。".into(),
+            preferences_font_unavailable_template: "未找到可用字体，已回退至系统默认字体。".into(),
+            preferences_font_error_empty: "请至少输入一种字体。".into(),
+            preferences_font_error_unterminated_quote: "字体名称中的引号未闭合。".into(),
             preferences_save: "保存".into(),
             preferences_cancel: "取消".into(),
             preferences_save_failed_title: "保存偏好设置失败".into(),
@@ -1481,6 +1530,13 @@ impl I18nStrings {
             preferences_startup_new_file: "New Markdown File".into(),
             preferences_startup_last_opened_file: "Last Opened Markdown File".into(),
             preferences_local_theme: "Local Theme".into(),
+            preferences_font_body: "Body font".into(),
+            preferences_font_code: "Code font".into(),
+            preferences_font_ui: "Interface font".into(),
+            preferences_font_help: "Comma-separated installed font families. Quotes are supported; changes apply when saved.".into(),
+            preferences_font_unavailable_template: "No selected font is available. Falling back to the system default font.".into(),
+            preferences_font_error_empty: "Enter at least one font family.".into(),
+            preferences_font_error_unterminated_quote: "A font family has an unterminated quote.".into(),
             preferences_image_insert_behavior: "When inserting images...".into(),
             preferences_image_paste_none: "No special action".into(),
             preferences_image_paste_copy_to_document_folder:

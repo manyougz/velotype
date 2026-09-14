@@ -14,43 +14,45 @@ use chromiumoxide::cdp::browser_protocol::page::PrintToPdfParams;
 use futures::StreamExt;
 use uuid::Uuid;
 
-use crate::export::html::render_chromium_pdf_html_with_base_dir;
+use crate::export::html::render_chromium_pdf_html_with_base_dir_and_fonts;
+use crate::fonts::FontSettings;
 use crate::theme::Theme;
 
 const CHROMIUM_VIEWPORT_WIDTH: u32 = 1280;
 const CHROMIUM_VIEWPORT_HEIGHT: u32 = 1600;
 const PDF_TIMEOUT: Duration = Duration::from_secs(45);
 
-/// Renders themed PDF bytes from Markdown through the local Chromium print engine.
-pub(crate) fn render_pdf(
+pub(crate) fn render_pdf_with_fonts(
     markdown: &str,
     theme: &Theme,
     title: &str,
     base_path: Option<&Path>,
+    fonts: &FontSettings,
 ) -> anyhow::Result<Vec<u8>> {
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .thread_name("velotype-pdf-export")
         .build()
         .context("failed to create PDF export runtime")?;
-
     runtime.block_on(async move {
         tokio::time::timeout(
             PDF_TIMEOUT,
-            render_pdf_async(markdown, theme, title, base_path),
+            render_pdf_async_with_fonts(markdown, theme, title, base_path, fonts),
         )
         .await
         .map_err(|_| anyhow!("PDF export timed out while waiting for Chromium"))?
     })
 }
 
-pub(crate) async fn render_pdf_async(
+async fn render_pdf_async_with_fonts(
     markdown: &str,
     theme: &Theme,
     title: &str,
     base_path: Option<&Path>,
+    fonts: &FontSettings,
 ) -> anyhow::Result<Vec<u8>> {
-    let html = render_chromium_pdf_html_with_base_dir(markdown, theme, title, base_path);
+    let html =
+        render_chromium_pdf_html_with_base_dir_and_fonts(markdown, theme, title, base_path, fonts);
     let temp = PdfTempFiles::create(&html)?;
     let result = render_pdf_from_html_file_async(temp.html_path.clone()).await;
     temp.cleanup();
@@ -154,17 +156,25 @@ impl Drop for PdfTempFiles {
 
 #[cfg(test)]
 mod tests {
-    use super::{chromium_pdf_params, file_url_from_path, render_pdf};
-    use crate::export::html::render_chromium_pdf_html_with_base_dir;
+    use super::{chromium_pdf_params, file_url_from_path, render_pdf_with_fonts};
+    use crate::export::html::render_chromium_pdf_html_with_base_dir_and_fonts;
+    use crate::fonts::{FontCatalog, FontPreferences, FontSettings, SYSTEM_UI_FONT};
     use crate::theme::Theme;
 
     #[test]
     fn chromium_pdf_html_uses_print_layout_and_preserves_resources() {
-        let html = render_chromium_pdf_html_with_base_dir(
+        let fonts = FontSettings::resolve(
+            FontPreferences::default(),
+            &FontCatalog::from_names(vec![SYSTEM_UI_FONT.into()]),
+            std::env::consts::OS,
+        )
+        .expect("default font stacks are valid");
+        let html = render_chromium_pdf_html_with_base_dir_and_fonts(
             "# Title\n\n```mermaid\nflowchart LR\nA --> B\n```\n\n$$\nx^2\n$$",
             &Theme::default_theme(),
             "Doc",
             None,
+            &fonts,
         );
 
         assert!(html.contains("@page"));
@@ -199,7 +209,19 @@ mod tests {
 
     #[test]
     fn render_pdf_reports_actionable_error_without_chromium() {
-        match render_pdf("# Title\n\nBody", &Theme::default_theme(), "Doc", None) {
+        let fonts = FontSettings::resolve(
+            FontPreferences::default(),
+            &FontCatalog::from_names(vec![SYSTEM_UI_FONT.into()]),
+            std::env::consts::OS,
+        )
+        .expect("default font stacks are valid");
+        match render_pdf_with_fonts(
+            "# Title\n\nBody",
+            &Theme::default_theme(),
+            "Doc",
+            None,
+            &fonts,
+        ) {
             Ok(pdf) => assert!(pdf.starts_with(b"%PDF")),
             Err(err) => {
                 let message = err.to_string();

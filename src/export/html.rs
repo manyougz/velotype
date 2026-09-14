@@ -12,6 +12,7 @@ use crate::components::{
     parse_html_image_block, parse_mermaid_fence_source, parse_mermaid_fence_start,
     render_latex_to_svg, render_mermaid_to_svg, sanitize_html_for_export,
 };
+use crate::fonts::{FontCatalog, FontPreferences, FontSettings};
 use crate::net;
 use crate::theme::{FontWeightDef, Theme};
 
@@ -28,22 +29,32 @@ pub(crate) fn render_html_with_base_dir(
     title: &str,
     base_dir: Option<&Path>,
 ) -> String {
-    render_html_document(markdown, theme, title, base_dir, &theme_css(theme))
+    render_html_with_base_dir_and_fonts(markdown, theme, title, base_dir, &default_font_settings())
 }
 
-/// Builds HTML tailored for Chromium's print-to-PDF pipeline.
-pub(crate) fn render_chromium_pdf_html_with_base_dir(
+pub(crate) fn render_html_with_base_dir_and_fonts(
     markdown: &str,
     theme: &Theme,
     title: &str,
     base_dir: Option<&Path>,
+    fonts: &FontSettings,
+) -> String {
+    render_html_document(markdown, theme, title, base_dir, &theme_css(theme, fonts))
+}
+
+pub(crate) fn render_chromium_pdf_html_with_base_dir_and_fonts(
+    markdown: &str,
+    theme: &Theme,
+    title: &str,
+    base_dir: Option<&Path>,
+    fonts: &FontSettings,
 ) -> String {
     render_html_document(
         markdown,
         theme,
         title,
         base_dir,
-        &chromium_pdf_theme_css(theme),
+        &chromium_pdf_theme_css(theme, fonts),
     )
 }
 
@@ -674,7 +685,7 @@ fn collect_display_math_region(lines: &[&str], start: usize) -> usize {
     lines.len()
 }
 
-fn theme_css(theme: &Theme) -> String {
+fn theme_css(theme: &Theme, fonts: &FontSettings) -> String {
     let c = &theme.colors;
     let d = &theme.dimensions;
     let t = &theme.typography;
@@ -868,7 +879,7 @@ hr {{ border: 0; border-top: 1px solid; border-color: var(--vlt-border); }}
         css_color(c.callout_warning_border),
         css_color(c.callout_caution_bg),
         css_color(c.callout_caution_border),
-        body_font_stack(),
+        fonts.body.css_font_family(),
         t.text_size,
         t.text_line_height,
         document_layout_css(),
@@ -888,7 +899,7 @@ hr {{ border: 0; border-top: 1px solid; border-color: var(--vlt-border); }}
         css_color(c.text_h6),
         t.h6_size,
         d.callout_radius,
-        "\"SFMono-Regular\", Consolas, \"Liberation Mono\", Menlo, monospace",
+        fonts.code.css_font_family(),
         t.code_size,
         pre_overflow,
         d.code_bg_radius,
@@ -897,8 +908,8 @@ hr {{ border: 0; border-top: 1px solid; border-color: var(--vlt-border); }}
     )
 }
 
-fn chromium_pdf_theme_css(theme: &Theme) -> String {
-    let mut css = theme_css(theme);
+fn chromium_pdf_theme_css(theme: &Theme, fonts: &FontSettings) -> String {
+    let mut css = theme_css(theme, fonts);
     css = css.replace(
         document_layout_css(),
         ".vlt-document {\n  width: auto;\n  max-width: none;\n  margin: 0;\n  padding: 0;\n}",
@@ -958,8 +969,13 @@ fn chromium_pdf_theme_css(theme: &Theme) -> String {
     css
 }
 
-fn body_font_stack() -> &'static str {
-    "system-ui, -apple-system, BlinkMacSystemFont, \"Segoe UI\", \"Noto Serif Tibetan\", \"Noto Sans Tibetan\", \"Microsoft Himalaya\", Kailasa, \"BabelStone Tibetan\", sans-serif"
+fn default_font_settings() -> FontSettings {
+    FontSettings::resolve(
+        FontPreferences::default(),
+        &FontCatalog::from_names(vec![".SystemUIFont".into()]),
+        std::env::consts::OS,
+    )
+    .expect("default export font stacks are valid")
 }
 
 fn document_layout_css() -> &'static str {
@@ -1017,9 +1033,10 @@ fn escape_html(input: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        contains_tibetan_text, render_chromium_pdf_html_with_base_dir, render_html,
+        contains_tibetan_text, render_chromium_pdf_html_with_base_dir_and_fonts, render_html,
         render_html_with_base_dir,
     };
+    use crate::fonts::{FontCatalog, FontPreferences, FontSettings, SYSTEM_UI_FONT};
     use crate::theme::Theme;
     use std::fs;
     use uuid::Uuid;
@@ -1036,6 +1053,30 @@ mod tests {
         assert!(html.contains("<main class=\"vlt-document\">"));
         assert!(html.contains("<h1>Title</h1>"));
         assert!(html.contains("<p>text</p>"));
+    }
+
+    #[test]
+    fn exports_distinct_safely_serialized_body_and_code_font_stacks() {
+        let fonts = FontSettings::resolve(
+            FontPreferences {
+                body_stack: "'Body Family', sans-serif".into(),
+                code_stack: "'Code \\\"Family', monospace".into(),
+                ui_stack: ".SystemUIFont".into(),
+            },
+            &FontCatalog::from_names(Vec::new()),
+            "windows",
+        )
+        .unwrap();
+        let html = super::render_html_with_base_dir_and_fonts(
+            "text `code`",
+            &Theme::default_theme(),
+            "Doc",
+            None,
+            &fonts,
+        );
+        assert!(html.contains("font-family: \"Body Family\", sans-serif"));
+        assert!(html.contains("font-family: \"Code \\\"Family\", monospace"));
+        assert!(!html.contains("Code \"Family"));
     }
     #[test]
     fn detects_tibetan_text_for_document_language() {
@@ -1086,11 +1127,18 @@ mod tests {
 
     #[test]
     fn chromium_pdf_light_theme_clears_print_container_frames() {
-        let html = render_chromium_pdf_html_with_base_dir(
+        let fonts = FontSettings::resolve(
+            FontPreferences::default(),
+            &FontCatalog::from_names(vec![SYSTEM_UI_FONT.into()]),
+            std::env::consts::OS,
+        )
+        .expect("default font stacks are valid");
+        let html = render_chromium_pdf_html_with_base_dir_and_fonts(
             "# Title\n\ntext",
             &Theme::light_theme(),
             "Doc",
             None,
+            &fonts,
         );
 
         assert!(html.contains("color-scheme: light;"));

@@ -25,6 +25,7 @@ mod editor;
 mod export;
 #[cfg(any(target_os = "macos", test))]
 mod file_url;
+mod fonts;
 mod i18n;
 mod net;
 mod theme;
@@ -190,6 +191,7 @@ fn main() {
         });
         I18nManager::init_with_language_id(cx, &preferences.default_language_id);
         ThemeManager::init_with_theme_id(cx, &preferences.default_theme_id);
+        fonts::FontSettings::init(cx, preferences.fonts.clone());
         config::EditorSettings::init(cx, preferences.show_table_headers);
         net::install_http_client(cx);
         init_editor(cx, &preferences.keybindings);

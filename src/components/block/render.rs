@@ -18,6 +18,7 @@ use crate::components::{
     render_display_math_svg, render_inline_math_svg, render_mermaid_svg_for_display,
     resolve_image_source, style_for_node,
 };
+use crate::fonts::FontSettings;
 use crate::i18n::{I18nManager, I18nStrings};
 use crate::theme::{Theme, ThemeDimensions, ThemeManager};
 
@@ -894,6 +895,7 @@ impl Block {
         }
         if span.style.code {
             element = element
+                .font(FontSettings::code_font(cx))
                 .rounded(px(theme.dimensions.code_bg_radius))
                 .px(px(theme.dimensions.code_bg_pad_x))
                 .py(px(theme.dimensions.code_bg_pad_y))
@@ -1112,6 +1114,7 @@ impl Block {
                 .px(px(d.block_padding_x))
                 .py(px(d.block_padding_y))
                 .text_size(px(t.code_size))
+                .font(FontSettings::code_font(cx))
                 .text_color(c.text_default)
                 .child(SharedString::from(document.raw_source.clone()))
                 .into_any_element();
@@ -1150,6 +1153,7 @@ impl Block {
                 .px(px(d.block_padding_x * 0.6))
                 .py(px(d.block_padding_y * 0.6))
                 .text_size(px(t.code_size))
+                .font(FontSettings::code_font(cx))
                 .text_color(c.text_default)
                 .child(SharedString::from(node.raw_source.clone()))
                 .into_any_element();
@@ -1180,6 +1184,7 @@ impl Block {
                 let mut element =
                     div()
                         .flex()
+                        .font(FontSettings::code_font(cx))
                         .rounded(px(4.0))
                         .px(px(4.0))
                         .text_size(px(node_style.computed.font_size))
@@ -1239,6 +1244,7 @@ impl Block {
             "pre" => {
                 let mut element = div()
                     .w_full()
+                    .font(FontSettings::code_font(cx))
                     .rounded_sm()
                     .px(px(d.code_block_padding_x))
                     .py(px(d.code_block_padding_y))
@@ -2335,6 +2341,7 @@ impl Render for Block {
                     .line_height(rems(t.text_line_height))
                     .child(
                         div()
+                            .font(FontSettings::code_font(cx))
                             .min_w(px(0.0))
                             .w_full()
                             .child(BlockTextElement::new(cx.entity(), is_placeholder)),
@@ -2395,6 +2402,7 @@ impl Render for Block {
                                 .border(px(d.code_language_input_border_width))
                                 .border_color(c.code_language_input_border)
                                 .bg(c.code_language_input_bg)
+                                .font(FontSettings::code_font(cx))
                                 .text_size(px((t.code_size - 1.0).max(10.0)))
                                 .text_color(c.code_language_input_text)
                                 .cursor(CursorStyle::IBeam)
@@ -2434,7 +2442,15 @@ impl Render for Block {
                     .record
                     .table
                     .as_ref()
-                    .map(|table| TableColumnLayout::measure(table, table_width, window, &theme))
+                    .map(|table| {
+                        TableColumnLayout::measure(
+                            table,
+                            table_width,
+                            window,
+                            &theme,
+                            &FontSettings::code_font(cx),
+                        )
+                    })
                     .unwrap_or_else(|| TableColumnLayout::equal(runtime.header.len()));
                 let preview_marker = self.table_axis_preview;
                 let selected_marker = self.table_axis_selection;

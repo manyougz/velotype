@@ -60,6 +60,7 @@ fn build_text_runs(
     link_color: Hsla,
     code_bg: Hsla,
     show_inline_code_backgrounds: bool,
+    code_font: &Font,
 ) -> Vec<TextRun> {
     let spans = input.inline_spans();
     let mut boundaries = vec![0, display_text.len()];
@@ -101,7 +102,11 @@ fn build_text_runs(
             .map(|range| start < range.end && range.start < end)
             .unwrap_or(false);
 
-        let mut font = base_run.font.clone();
+        let mut font = if inline_style.code {
+            code_font.clone()
+        } else {
+            base_run.font.clone()
+        };
         if inline_style.bold && font.weight < FontWeight::BOLD {
             font.weight = FontWeight::BOLD;
         }
@@ -928,6 +933,7 @@ impl Element for BlockTextElement {
                     theme.colors.text_link,
                     theme.colors.code_bg,
                     show_inline_code_backgrounds,
+                    &crate::fonts::FontSettings::code_font(cx),
                 )
             }
         } else {
@@ -1529,6 +1535,7 @@ mod tests {
                 Hsla::from(rgba(0x0066ccff)),
                 Hsla::from(rgba(0x111111ff)),
                 true,
+                &base_run.font,
             );
             let marked_run = runs.last().expect("styled text should create a final run");
 

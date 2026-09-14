@@ -10,6 +10,7 @@ use super::{Editor, InfoDialogKind, MountedRun, workspace::workspace_panel_width
 use crate::app_menu::dispatch_menu_action_for_editor;
 use crate::components::CalloutVariant;
 use crate::components::{AddLanguageConfig, AddThemeConfig, Block, NoRecentFiles};
+use crate::fonts::FontSettings;
 use crate::i18n::{I18nManager, I18nStrings};
 use crate::theme::{Theme, ThemeDimensions, ThemeManager};
 use crate::window_chrome::{custom_titlebar_height, render_custom_titlebar};
@@ -22,44 +23,6 @@ const RENDER_OVERDRAW_PX: f32 = 800.0;
 
 pub(crate) fn open_about_github_url(cx: &mut App) {
     cx.open_url(ABOUT_GITHUB_URL);
-}
-
-fn editor_text_font() -> Font {
-    // FontFallbacks is internally `Arc<Vec<String>>` — building it once
-    // per process and Arc-cloning per render is the right shape, since
-    // editor_text_font() is called from Editor::render on every frame.
-    static FALLBACKS: std::sync::OnceLock<FontFallbacks> = std::sync::OnceLock::new();
-    let fallbacks = FALLBACKS
-        .get_or_init(|| {
-            FontFallbacks::from_fonts(tibetan_font_fallbacks_for_target_os(std::env::consts::OS))
-        })
-        .clone();
-    let mut font = font(".SystemUIFont");
-    font.fallbacks = Some(fallbacks);
-    font
-}
-
-fn tibetan_font_fallbacks_for_target_os(target_os: &str) -> Vec<String> {
-    let families = match target_os {
-        "windows" => &[
-            "Microsoft Himalaya",
-            "Noto Serif Tibetan",
-            "Noto Sans Tibetan",
-            "BabelStone Tibetan",
-        ][..],
-        "macos" => &["Kailasa", "Noto Serif Tibetan", "Noto Sans Tibetan"][..],
-        _ => &[
-            "Noto Serif Tibetan",
-            "Noto Sans Tibetan",
-            "Microsoft Himalaya",
-            "Kailasa",
-            "BabelStone Tibetan",
-        ][..],
-    };
-    families
-        .iter()
-        .map(|family| (*family).to_string())
-        .collect()
 }
 
 /// Adjacent-row metadata used to collapse spacing inside visual groups.
@@ -1942,6 +1905,7 @@ impl Render for Editor {
             .min_w(px(0.0))
             .bg(theme.colors.editor_background)
             .relative()
+            .font(FontSettings::body_font(cx))
             .child(scroll_content);
 
         let content_area = if show_custom_scrollbar {
@@ -2028,7 +1992,7 @@ impl Render for Editor {
             .flex_col()
             .relative()
             .bg(theme.colors.editor_background)
-            .font(editor_text_font())
+            .font(FontSettings::ui_font(cx))
             .on_modifiers_changed(move |event, window, _| {
                 if event.modifiers.secondary() != follow_modifier_active {
                     window.refresh();
@@ -2155,12 +2119,11 @@ impl Render for Editor {
 #[cfg(test)]
 mod tests {
     use super::{
-        NoRecentFiles, RenderedRowSpacingInfo, callout_row_top_gap, editor_text_font,
-        import_menu_split_index, in_window_menu_bar_height_for_target_os, menu_bar_button_width,
+        NoRecentFiles, RenderedRowSpacingInfo, callout_row_top_gap, import_menu_split_index,
+        in_window_menu_bar_height_for_target_os, menu_bar_button_width,
         menu_items_visual_height_with_gaps, menu_panel_left, menu_panel_width_for_labels,
         owned_menu_item_labels, rendered_row_top_gap, scrollable_import_menu_scroll_height,
         submenu_bridge_geometry, supports_in_window_menu_for_target_os,
-        tibetan_font_fallbacks_for_target_os,
     };
     use crate::components::{AddLanguageConfig, AddThemeConfig};
     use crate::theme::Theme;
@@ -2206,39 +2169,6 @@ mod tests {
             4.0,
         );
         assert_eq!(gap, 0.0);
-    }
-
-    #[test]
-    fn editor_text_font_keeps_system_ui_as_primary_family() {
-        assert_eq!(editor_text_font().family.to_string(), ".SystemUIFont");
-    }
-
-    #[test]
-    fn tibetan_font_fallbacks_prioritize_platform_defaults() {
-        assert_eq!(
-            tibetan_font_fallbacks_for_target_os("windows")
-                .first()
-                .map(String::as_str),
-            Some("Microsoft Himalaya")
-        );
-        assert_eq!(
-            tibetan_font_fallbacks_for_target_os("macos")
-                .first()
-                .map(String::as_str),
-            Some("Kailasa")
-        );
-        assert_eq!(
-            tibetan_font_fallbacks_for_target_os("linux")
-                .first()
-                .map(String::as_str),
-            Some("Noto Serif Tibetan")
-        );
-        assert_eq!(
-            tibetan_font_fallbacks_for_target_os("unknown")
-                .first()
-                .map(String::as_str),
-            Some("Noto Serif Tibetan")
-        );
     }
 
     #[test]

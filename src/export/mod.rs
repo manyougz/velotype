@@ -4,8 +4,7 @@
 //! module owns format-specific rendering so editor code only chooses paths and
 //! supplies the current theme.
 
-use std::path::Path;
-
+use crate::fonts::FontSettings;
 use crate::theme::Theme;
 
 mod html;
@@ -30,14 +29,14 @@ impl ExportFormat {
     }
 }
 
-pub(crate) use html::render_html_with_base_dir;
+pub(crate) use html::render_html_with_base_dir_and_fonts;
 
-/// Renders themed PDF bytes for the current document Markdown.
-pub(crate) fn render_pdf(
+pub(crate) fn render_pdf_with_fonts(
     markdown: &str,
     theme: &Theme,
     title: &str,
-    base_path: Option<&Path>,
+    base_path: Option<&std::path::Path>,
+    fonts: &FontSettings,
 ) -> anyhow::Result<Vec<u8>> {
-    pdf::render_pdf(markdown, theme, title, base_path)
+    pdf::render_pdf_with_fonts(markdown, theme, title, base_path, fonts)
 }
