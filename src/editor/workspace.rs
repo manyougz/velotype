@@ -227,30 +227,42 @@ impl Editor {
     /// lands exactly on the heading block's source range.
     fn reveal_outline_heading(&mut self, line: usize, cx: &mut Context<Self>) {
         let source = self.serialized_document_text(cx);
-        let target = source
-            .lines()
-            .take(line)
-            .map(|line| line.len() + 1)
-            .sum::<usize>();
+        let Some(target) = source_line_start(&source, line) else {
+            return;
+        };
+
+        if self.view_mode == super::ViewMode::Source {
+            let Some(block) = self.document.root_blocks().first().cloned() else {
+                return;
+            };
+            let cursor = target.min(block.read(cx).visible_len());
+            self.focus_block_range(&block, cursor..cursor, cx);
+            self.request_active_block_scroll_into_view(cx);
+            return;
+        }
 
         let mappings = self.build_source_target_mappings(cx);
-        let entity_id = mappings
+        let mapping = mappings
             .iter()
             .find(|mapping| mapping.full_source_range.contains(&target))
             .or_else(|| {
                 mappings.iter().min_by_key(|mapping| {
                     Self::source_offset_distance(&mapping.full_source_range, target)
                 })
-            })
-            .map(|mapping| mapping.entity.entity_id());
+            });
 
-        let Some(entity_id) = entity_id else {
+        let Some(mapping) = mapping else {
             return;
         };
-        let Some(block) = self.focusable_entity_by_id(entity_id) else {
+        let Some(block) = self.focusable_entity_by_id(mapping.entity.entity_id()) else {
             return;
         };
-        self.focus_block_range(&block, 0..0, cx);
+        let source_offset = target
+            .saturating_sub(mapping.full_source_range.start)
+            .min(mapping.source_to_content.len().saturating_sub(1));
+        let cursor = mapping.source_to_content[source_offset].min(block.read(cx).visible_len());
+        self.focus_block_range(&block, cursor..cursor, cx);
+        self.request_active_block_scroll_into_view(cx);
     }
 
     /// Selects a file and routes it through the guarded document replacement flow.
@@ -598,6 +610,19 @@ impl Editor {
     }
 }
 
+/// Returns a line's UTF-8 byte offset while preserving CRLF source positions.
+fn source_line_start(source: &str, line: usize) -> Option<usize> {
+    let mut line_start = 0;
+    for (line_index, segment) in source.split_inclusive('\n').enumerate() {
+        if line_index == line {
+            return Some(line_start);
+        }
+        line_start += segment.len();
+    }
+
+    None
+}
+
 /// Recognizes `.md` files for the workspace tree, ignoring extension case.
 fn is_markdown_file(path: &Path) -> bool {
     path.extension()
@@ -790,7 +815,8 @@ fn is_closing_fence(trimmed: &str, marker: char, len: usize) -> bool {
 mod tests {
     use super::{
         WorkspaceSelection, WorkspaceState, WorkspaceTreeKind, build_outline_tree,
-        prune_outline_state, scan_workspace_dir, workspace_panel_width_for_viewport,
+        prune_outline_state, scan_workspace_dir, source_line_start,
+        workspace_panel_width_for_viewport,
     };
     use std::fs;
 
@@ -836,6 +862,18 @@ mod tests {
         assert_eq!(outline[0].children[0].label, "Child");
         assert_eq!(outline[0].children[0].children[0].label, "Grandchild");
         assert_eq!(outline[1].label, "Next");
+    }
+
+    #[test]
+    fn source_line_start_preserves_crlf_and_utf8_byte_offsets() {
+        let source = "前言\r\n## 标题\r\n正文";
+        assert_eq!(source_line_start(source, 0), Some(0));
+        assert_eq!(source_line_start(source, 1), Some("前言\r\n".len()));
+        assert_eq!(
+            source_line_start(source, 2),
+            Some("前言\r\n## 标题\r\n".len())
+        );
+        assert_eq!(source_line_start(source, 3), None);
     }
 
     #[test]
@@ -897,6 +935,26 @@ mod tests {
 
             assert_eq!(editor.pending_focus, Some(beta.entity_id()));
             assert!(editor.pending_scroll_active_block_into_view);
+            assert!(editor.pending_scroll_recheck_after_layout);
+        });
+    }
+
+    #[gpui::test]
+    async fn source_outline_click_places_caret_at_heading_line(cx: &mut TestAppContext) {
+        let markdown = "前言\n\n# Alpha\n\n## Beta\n正文".to_string();
+        let editor = cx.new(|cx| Editor::from_markdown(cx, markdown, None));
+
+        editor.update(cx, |editor, cx| {
+            editor.toggle_view_mode(cx);
+            let source_block = editor.document.root_blocks()[0].clone();
+            let expected = "前言\n\n# Alpha\n\n".len();
+
+            editor.select_outline_node("outline:4".into(), 4, cx);
+
+            assert_eq!(source_block.read(cx).selected_range, expected..expected);
+            assert_eq!(editor.pending_focus, Some(source_block.entity_id()));
+            assert!(editor.pending_scroll_active_block_into_view);
+            assert!(editor.pending_scroll_recheck_after_layout);
         });
     }
 }
