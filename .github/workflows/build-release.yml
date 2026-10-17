@@ -11,6 +11,10 @@ on:
         description: "Optional release title. Defaults to Velotype <release_tag>."
         required: false
         type: string
+      previous_release_tag:
+        description: "Optional changelog start tag. Defaults to the previous published stable version."
+        required: false
+        type: string
       release_notes:
         description: "Optional Markdown release notes. They are prepended to generated notes."
         required: false
@@ -252,6 +256,111 @@ jobs:
             git push origin "$RELEASE_TAG"
           fi
 
+      - name: Resolve changelog start tag
+        id: changelog
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          PREVIOUS_RELEASE_TAG: ${{ inputs.previous_release_tag }}
+        run: |
+          set -euo pipefail
+
+          releases_file="$(mktemp)"
+          trap 'rm -f "$releases_file"' EXIT
+          gh api --paginate --slurp "repos/$GH_REPO/releases?per_page=100" > "$releases_file"
+          previous_tag="$(node - "$RELEASE_TAG" "$releases_file" "$PREVIOUS_RELEASE_TAG" <<'NODE'
+          const fs = require("node:fs");
+
+          // Release dates and the GitHub "Latest" flag need not follow version order.
+          function parseVersion(tag) {
+            const match = /^v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/.exec(tag);
+            return match && {
+              core: match.slice(1, 4).map(BigInt),
+              prerelease: match[4] ? match[4].split(".") : [],
+            };
+          }
+
+          function compareVersions(left, right) {
+            for (let index = 0; index < left.core.length; index++) {
+              if (left.core[index] < right.core[index]) return -1;
+              if (left.core[index] > right.core[index]) return 1;
+            }
+            if (!left.prerelease.length && right.prerelease.length) return 1;
+            if (left.prerelease.length && !right.prerelease.length) return -1;
+            for (let index = 0; index < Math.min(left.prerelease.length, right.prerelease.length); index++) {
+              const a = left.prerelease[index];
+              const b = right.prerelease[index];
+              if (a === b) continue;
+              const aNumeric = /^\d+$/.test(a);
+              const bNumeric = /^\d+$/.test(b);
+              if (aNumeric && bNumeric) return BigInt(a) < BigInt(b) ? -1 : 1;
+              if (aNumeric !== bNumeric) return aNumeric ? -1 : 1;
+              return a < b ? -1 : 1;
+            }
+            return Math.sign(left.prerelease.length - right.prerelease.length);
+          }
+
+          function previousReleaseTag(releases, releaseTag, override = "") {
+            const current = parseVersion(releaseTag);
+            if (!current) throw new Error(`Invalid release tag: ${releaseTag}`);
+
+            const published = releases.filter(
+              (release) => !release.draft && release.published_at,
+            );
+            if (override) {
+              if (override === releaseTag) {
+                throw new Error("The changelog start tag must not be the current release.");
+              }
+              if (!published.some((release) => release.tag_name === override)) {
+                throw new Error(`Changelog start tag is not a published release: ${override}`);
+              }
+              const version = parseVersion(override);
+              if (version && compareVersions(version, current) >= 0) {
+                throw new Error("The changelog start version must be older than the current release.");
+              }
+              return override;
+            }
+
+            const candidates = published
+              .filter((release) => !release.prerelease && release.tag_name !== releaseTag)
+              .map((release) => ({
+                tag: release.tag_name,
+                version: parseVersion(release.tag_name),
+              }))
+              .filter(({ version }) => version
+                && !version.prerelease.length
+                && compareVersions(version, current) < 0)
+              .sort((left, right) => compareVersions(right.version, left.version));
+
+            if (candidates.length > 0) return candidates[0].tag;
+            if (published.some((release) => release.tag_name !== releaseTag)) {
+              throw new Error(
+                "No previous stable version found. Set previous_release_tag explicitly instead of guessing a changelog range.",
+              );
+            }
+            return "";
+          }
+
+          try {
+            const [releaseTag, releasesFile, override] = process.argv.slice(2);
+            const pages = JSON.parse(fs.readFileSync(releasesFile, "utf8"));
+            console.log(previousReleaseTag(pages.flat(), releaseTag, override));
+          } catch (error) {
+            console.error(error.message);
+            process.exitCode = 1;
+          }
+          NODE
+          )"
+
+          if [[ -n "$previous_tag" ]]; then
+            git rev-parse --verify "refs/tags/$previous_tag^{commit}" >/dev/null
+            echo "Changelog range: $previous_tag...$RELEASE_TAG"
+          else
+            echo "First release: no previous published release."
+          fi
+          printf 'previous_tag=%s\n' "$previous_tag" >> "$GITHUB_OUTPUT"
+
       - name: Download build artifacts
         uses: actions/download-artifact@v7
         with:
@@ -261,9 +370,11 @@ jobs:
       - name: Publish release
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
           RELEASE_TAG: ${{ inputs.release_tag }}
           RELEASE_TITLE: ${{ inputs.release_title }}
           RELEASE_NOTES: ${{ inputs.release_notes }}
+          PREVIOUS_RELEASE_TAG: ${{ steps.changelog.outputs.previous_tag }}
         run: |
           set -euo pipefail
 
@@ -271,17 +382,22 @@ jobs:
             RELEASE_TITLE="Velotype $RELEASE_TAG"
           fi
 
+          release_args=(
+            "$RELEASE_TAG" dist/*
+            --repo "$GH_REPO"
+            --title "$RELEASE_TITLE"
+            --target "$GITHUB_SHA"
+            --generate-notes
+            --verify-tag
+          )
+          if [[ -n "$PREVIOUS_RELEASE_TAG" ]]; then
+            release_args+=(--notes-start-tag "$PREVIOUS_RELEASE_TAG")
+          fi
+
           if [[ -n "$RELEASE_NOTES" ]]; then
             notes_file="$(mktemp)"
+            trap 'rm -f "$notes_file"' EXIT
             printf '%s\n' "$RELEASE_NOTES" > "$notes_file"
-            gh release create "$RELEASE_TAG" dist/* \
-              --title "$RELEASE_TITLE" \
-              --notes-file "$notes_file" \
-              --generate-notes \
-              --verify-tag
-          else
-            gh release create "$RELEASE_TAG" dist/* \
-              --title "$RELEASE_TITLE" \
-              --generate-notes \
-              --verify-tag
+            release_args+=(--notes-file "$notes_file")
           fi
+          gh release create "${release_args[@]}"
