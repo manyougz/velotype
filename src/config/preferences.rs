@@ -1968,6 +1968,12 @@ impl PreferencesWindow {
                 strings.preferences_shortcut_underline_selection.clone()
             }
             ShortcutCommand::CodeSelection => strings.preferences_shortcut_code_selection.clone(),
+            ShortcutCommand::Heading1 => strings.preferences_shortcut_heading_1.clone(),
+            ShortcutCommand::Heading2 => strings.preferences_shortcut_heading_2.clone(),
+            ShortcutCommand::Heading3 => strings.preferences_shortcut_heading_3.clone(),
+            ShortcutCommand::Heading4 => strings.preferences_shortcut_heading_4.clone(),
+            ShortcutCommand::Heading5 => strings.preferences_shortcut_heading_5.clone(),
+            ShortcutCommand::Heading6 => strings.preferences_shortcut_heading_6.clone(),
             ShortcutCommand::IndentBlock => strings.preferences_shortcut_indent_block.clone(),
             ShortcutCommand::OutdentBlock => strings.preferences_shortcut_outdent_block.clone(),
             ShortcutCommand::ExitCodeBlock => strings.preferences_shortcut_exit_code_block.clone(),

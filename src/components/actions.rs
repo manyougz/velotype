@@ -49,6 +49,12 @@ actions!(
         ItalicSelection,
         UnderlineSelection,
         CodeSelection,
+        Heading1,
+        Heading2,
+        Heading3,
+        Heading4,
+        Heading5,
+        Heading6,
         IndentBlock,
         OutdentBlock,
         ExitCodeBlock,
@@ -192,6 +198,18 @@ pub(crate) enum ShortcutCommand {
     UnderlineSelection,
     /// Toggle inline code formatting on the selection.
     CodeSelection,
+    /// Convert the current block to a first-level heading.
+    Heading1,
+    /// Convert the current block to a second-level heading.
+    Heading2,
+    /// Convert the current block to a third-level heading.
+    Heading3,
+    /// Convert the current block to a fourth-level heading.
+    Heading4,
+    /// Convert the current block to a fifth-level heading.
+    Heading5,
+    /// Convert the current block to a sixth-level heading.
+    Heading6,
     /// Increase block indentation.
     IndentBlock,
     /// Decrease block indentation.
@@ -510,6 +528,48 @@ const SHORTCUT_DEFINITIONS: &[ShortcutDefinition] = &[
         context: BLOCK_CONTEXT,
     },
     ShortcutDefinition {
+        command: ShortcutCommand::Heading1,
+        id: "heading_1",
+        category: ShortcutCategory::Block,
+        default_keys: &["ctrl-1", "cmd-1"],
+        context: BLOCK_CONTEXT,
+    },
+    ShortcutDefinition {
+        command: ShortcutCommand::Heading2,
+        id: "heading_2",
+        category: ShortcutCategory::Block,
+        default_keys: &["ctrl-2", "cmd-2"],
+        context: BLOCK_CONTEXT,
+    },
+    ShortcutDefinition {
+        command: ShortcutCommand::Heading3,
+        id: "heading_3",
+        category: ShortcutCategory::Block,
+        default_keys: &["ctrl-3", "cmd-3"],
+        context: BLOCK_CONTEXT,
+    },
+    ShortcutDefinition {
+        command: ShortcutCommand::Heading4,
+        id: "heading_4",
+        category: ShortcutCategory::Block,
+        default_keys: &["ctrl-4", "cmd-4"],
+        context: BLOCK_CONTEXT,
+    },
+    ShortcutDefinition {
+        command: ShortcutCommand::Heading5,
+        id: "heading_5",
+        category: ShortcutCategory::Block,
+        default_keys: &["ctrl-5", "cmd-5"],
+        context: BLOCK_CONTEXT,
+    },
+    ShortcutDefinition {
+        command: ShortcutCommand::Heading6,
+        id: "heading_6",
+        category: ShortcutCategory::Block,
+        default_keys: &["ctrl-6", "cmd-6"],
+        context: BLOCK_CONTEXT,
+    },
+    ShortcutDefinition {
         command: ShortcutCommand::IndentBlock,
         id: "indent_block",
         category: ShortcutCategory::Block,
@@ -801,6 +861,12 @@ fn key_binding_for(
         ShortcutCommand::ItalicSelection => KeyBinding::new(key, ItalicSelection, context),
         ShortcutCommand::UnderlineSelection => KeyBinding::new(key, UnderlineSelection, context),
         ShortcutCommand::CodeSelection => KeyBinding::new(key, CodeSelection, context),
+        ShortcutCommand::Heading1 => KeyBinding::new(key, Heading1, context),
+        ShortcutCommand::Heading2 => KeyBinding::new(key, Heading2, context),
+        ShortcutCommand::Heading3 => KeyBinding::new(key, Heading3, context),
+        ShortcutCommand::Heading4 => KeyBinding::new(key, Heading4, context),
+        ShortcutCommand::Heading5 => KeyBinding::new(key, Heading5, context),
+        ShortcutCommand::Heading6 => KeyBinding::new(key, Heading6, context),
         ShortcutCommand::IndentBlock => KeyBinding::new(key, IndentBlock, context),
         ShortcutCommand::OutdentBlock => KeyBinding::new(key, OutdentBlock, context),
         ShortcutCommand::ExitCodeBlock => KeyBinding::new(key, ExitCodeBlock, context),
@@ -999,6 +1065,24 @@ mod tests {
                 "alt-shift-right".to_string()
             ]
         );
+    }
+
+    #[test]
+    fn heading_shortcuts_have_defaults() {
+        let commands = [
+            (ShortcutCommand::Heading1, 1),
+            (ShortcutCommand::Heading2, 2),
+            (ShortcutCommand::Heading3, 3),
+            (ShortcutCommand::Heading4, 4),
+            (ShortcutCommand::Heading5, 5),
+            (ShortcutCommand::Heading6, 6),
+        ];
+
+        for (command, level) in commands {
+            let keys = vec![format!("ctrl-{level}"), format!("cmd-{level}")];
+            assert_eq!(resolved_shortcut_keys(&BTreeMap::new(), command), keys);
+            assert!(shortcut_conflict_for(command, &keys, &BTreeMap::new()).is_none());
+        }
     }
 
     #[test]
