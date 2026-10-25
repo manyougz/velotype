@@ -1942,6 +1942,20 @@ impl Block {
         true
     }
 
+    /// Converts an editable heading back to a paragraph. Returns whether the
+    /// kind changed.
+    pub(crate) fn remove_heading(&mut self, cx: &mut Context<Self>) -> bool {
+        if self.uses_raw_text_editing()
+            || !self.children.is_empty()
+            || !matches!(self.kind(), BlockKind::Heading { .. })
+        {
+            return false;
+        }
+
+        self.convert_to_paragraph(cx);
+        true
+    }
+
     /// Converts this block to a paragraph with an undo boundary.
     pub(crate) fn convert_to_paragraph(&mut self, cx: &mut Context<Self>) {
         self.prepare_undo_capture(UndoCaptureKind::NonCoalescible, cx);

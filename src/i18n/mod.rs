@@ -331,6 +331,8 @@ pub struct I18nStrings {
     pub preferences_shortcut_heading_5: String,
     /// Command label for converting the current block to a sixth-level heading.
     pub preferences_shortcut_heading_6: String,
+    /// Command label for removing a heading and returning to a paragraph.
+    pub preferences_shortcut_remove_heading: String,
     /// Command label for indenting a block.
     pub preferences_shortcut_indent_block: String,
     /// Command label for outdenting a block.
@@ -750,6 +752,8 @@ struct I18nStringsDe {
     preferences_shortcut_heading_5: Option<String>,
     /// Optional sixth-level heading command label.
     preferences_shortcut_heading_6: Option<String>,
+    /// Optional remove-heading command label.
+    preferences_shortcut_remove_heading: Option<String>,
     /// Optional block indentation command label.
     preferences_shortcut_indent_block: Option<String>,
     /// Optional block outdent command label.
@@ -1030,6 +1034,7 @@ const I18N_STRING_KEYS: &[&str] = &[
     "preferences_shortcut_heading_4",
     "preferences_shortcut_heading_5",
     "preferences_shortcut_heading_6",
+    "preferences_shortcut_remove_heading",
     "preferences_shortcut_indent_block",
     "preferences_shortcut_outdent_block",
     "preferences_shortcut_exit_code_block",
@@ -1528,6 +1533,9 @@ impl I18nStringsDe {
             preferences_shortcut_heading_6: self
                 .preferences_shortcut_heading_6
                 .unwrap_or(defaults.preferences_shortcut_heading_6),
+            preferences_shortcut_remove_heading: self
+                .preferences_shortcut_remove_heading
+                .unwrap_or(defaults.preferences_shortcut_remove_heading),
             preferences_shortcut_indent_block: self
                 .preferences_shortcut_indent_block
                 .unwrap_or(defaults.preferences_shortcut_indent_block),
@@ -1841,6 +1849,7 @@ impl I18nStrings {
             preferences_shortcut_heading_4: "标题 4".into(),
             preferences_shortcut_heading_5: "标题 5".into(),
             preferences_shortcut_heading_6: "标题 6".into(),
+            preferences_shortcut_remove_heading: "移除标题".into(),
             preferences_shortcut_indent_block: "缩进块".into(),
             preferences_shortcut_outdent_block: "取消缩进块".into(),
             preferences_shortcut_exit_code_block: "退出代码块".into(),
@@ -2117,6 +2126,7 @@ impl I18nStrings {
             preferences_shortcut_heading_4: "Heading 4".into(),
             preferences_shortcut_heading_5: "Heading 5".into(),
             preferences_shortcut_heading_6: "Heading 6".into(),
+            preferences_shortcut_remove_heading: "Remove Heading".into(),
             preferences_shortcut_indent_block: "Indent Block".into(),
             preferences_shortcut_outdent_block: "Outdent Block".into(),
             preferences_shortcut_exit_code_block: "Exit Code Block".into(),

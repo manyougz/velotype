@@ -1931,6 +1931,7 @@ impl Block {
                 .on_action(cx.listener(Self::on_heading_4))
                 .on_action(cx.listener(Self::on_heading_5))
                 .on_action(cx.listener(Self::on_heading_6))
+                .on_action(cx.listener(Self::on_remove_heading))
         }
     }
 }

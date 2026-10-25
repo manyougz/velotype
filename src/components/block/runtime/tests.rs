@@ -12,7 +12,7 @@ use crate::components::markdown::inline::{
 use crate::components::markdown::link::parse_link_reference_definitions;
 use crate::components::{
     Block, BlockKind, BlockRecord, DeleteBack, Heading1, Heading3, IndentBlock, Newline,
-    TableCellPosition,
+    RemoveHeading, TableCellPosition,
 };
 use crate::i18n::I18nManager;
 use crate::theme::ThemeManager;
@@ -172,6 +172,29 @@ async fn heading_shortcuts_convert_paragraphs_and_preserve_text(cx: &mut TestApp
     block.read_with(cx, |block, _cx| {
         assert_eq!(block.display_text(), "Title");
         assert_eq!(block.record.markdown_line(0, None), "### Title");
+    });
+}
+
+#[gpui::test]
+async fn remove_heading_shortcut_returns_heading_to_paragraph(cx: &mut TestAppContext) {
+    let cx = cx.add_empty_window();
+    let block = cx.new(|cx| {
+        Block::with_record(
+            cx,
+            BlockRecord::with_plain_text(BlockKind::Heading { level: 2 }, "Title"),
+        )
+    });
+
+    cx.update(|window, cx| {
+        block.update(cx, |block, block_cx| {
+            block.on_remove_heading(&RemoveHeading, window, block_cx);
+        });
+    });
+
+    block.read_with(cx, |block, _cx| {
+        assert_eq!(block.kind(), BlockKind::Paragraph);
+        assert_eq!(block.display_text(), "Title");
+        assert_eq!(block.record.markdown_line(0, None), "Title");
     });
 }
 

@@ -2896,6 +2896,16 @@ async fn ctrl_number_shortcuts_apply_heading_levels(cx: &mut TestAppContext) {
     editor.read_with(cx, |editor, cx| {
         assert_eq!(editor.document.markdown_text(cx), "###### Title");
     });
+
+    cx.simulate_keystrokes("ctrl-0");
+    redraw(cx);
+
+    editor.read_with(cx, |editor, cx| {
+        let block = editor.document.visible_blocks()[0].entity.read(cx);
+        assert_eq!(block.kind(), BlockKind::Paragraph);
+        assert_eq!(block.display_text(), "Title");
+        assert_eq!(editor.document.markdown_text(cx), "Title");
+    });
 }
 
 #[gpui::test]

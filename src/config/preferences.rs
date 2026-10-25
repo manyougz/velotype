@@ -1974,6 +1974,7 @@ impl PreferencesWindow {
             ShortcutCommand::Heading4 => strings.preferences_shortcut_heading_4.clone(),
             ShortcutCommand::Heading5 => strings.preferences_shortcut_heading_5.clone(),
             ShortcutCommand::Heading6 => strings.preferences_shortcut_heading_6.clone(),
+            ShortcutCommand::RemoveHeading => strings.preferences_shortcut_remove_heading.clone(),
             ShortcutCommand::IndentBlock => strings.preferences_shortcut_indent_block.clone(),
             ShortcutCommand::OutdentBlock => strings.preferences_shortcut_outdent_block.clone(),
             ShortcutCommand::ExitCodeBlock => strings.preferences_shortcut_exit_code_block.clone(),

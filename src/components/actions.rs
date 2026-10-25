@@ -55,6 +55,7 @@ actions!(
         Heading4,
         Heading5,
         Heading6,
+        RemoveHeading,
         IndentBlock,
         OutdentBlock,
         ExitCodeBlock,
@@ -210,6 +211,8 @@ pub(crate) enum ShortcutCommand {
     Heading5,
     /// Convert the current block to a sixth-level heading.
     Heading6,
+    /// Remove a heading and convert the block back to a paragraph.
+    RemoveHeading,
     /// Increase block indentation.
     IndentBlock,
     /// Decrease block indentation.
@@ -570,6 +573,13 @@ const SHORTCUT_DEFINITIONS: &[ShortcutDefinition] = &[
         context: BLOCK_CONTEXT,
     },
     ShortcutDefinition {
+        command: ShortcutCommand::RemoveHeading,
+        id: "remove_heading",
+        category: ShortcutCategory::Block,
+        default_keys: &["ctrl-0", "cmd-0"],
+        context: BLOCK_CONTEXT,
+    },
+    ShortcutDefinition {
         command: ShortcutCommand::IndentBlock,
         id: "indent_block",
         category: ShortcutCategory::Block,
@@ -867,6 +877,7 @@ fn key_binding_for(
         ShortcutCommand::Heading4 => KeyBinding::new(key, Heading4, context),
         ShortcutCommand::Heading5 => KeyBinding::new(key, Heading5, context),
         ShortcutCommand::Heading6 => KeyBinding::new(key, Heading6, context),
+        ShortcutCommand::RemoveHeading => KeyBinding::new(key, RemoveHeading, context),
         ShortcutCommand::IndentBlock => KeyBinding::new(key, IndentBlock, context),
         ShortcutCommand::OutdentBlock => KeyBinding::new(key, OutdentBlock, context),
         ShortcutCommand::ExitCodeBlock => KeyBinding::new(key, ExitCodeBlock, context),
@@ -1083,6 +1094,19 @@ mod tests {
             assert_eq!(resolved_shortcut_keys(&BTreeMap::new(), command), keys);
             assert!(shortcut_conflict_for(command, &keys, &BTreeMap::new()).is_none());
         }
+
+        assert_eq!(
+            resolved_shortcut_keys(&BTreeMap::new(), ShortcutCommand::RemoveHeading),
+            vec!["ctrl-0".to_string(), "cmd-0".to_string()]
+        );
+        assert!(
+            shortcut_conflict_for(
+                ShortcutCommand::RemoveHeading,
+                &["ctrl-0".to_string(), "cmd-0".to_string()],
+                &BTreeMap::new()
+            )
+            .is_none()
+        );
     }
 
     #[test]

@@ -17,7 +17,7 @@ use crate::components::{
     BlockDown, BlockUp, BoldSelection, CodeSelection, Copy, Cut, Delete, DeleteBack,
     DismissTransientUi, End, ExitCodeBlock, FocusNext, FocusPrev, Heading1, Heading2, Heading3,
     Heading4, Heading5, Heading6, Home, IndentBlock, ItalicSelection, MoveLeft, MoveRight, Newline,
-    OutdentBlock, Paste, SelectAll, SelectEnd, SelectHome, SelectLeft, SelectRight,
+    OutdentBlock, Paste, RemoveHeading, SelectAll, SelectEnd, SelectHome, SelectLeft, SelectRight,
     UnderlineSelection, WordDeleteBack, WordDeleteForward, WordMoveLeft, WordMoveRight,
     WordSelectLeft, WordSelectRight,
 };
@@ -1861,6 +1861,16 @@ impl Block {
         cx: &mut Context<Self>,
     ) {
         self.set_heading_level(6, cx);
+    }
+
+    /// Removes heading formatting from the current block.
+    pub(crate) fn on_remove_heading(
+        &mut self,
+        _: &RemoveHeading,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.remove_heading(cx);
     }
 
     /// Requests a following block or a quote/callout break when applicable.
