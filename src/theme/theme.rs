@@ -8,7 +8,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use anyhow::{Context as _, bail};
-use gpui::{App, FontWeight, Global, Hsla, hsla, rgba};
+use gpui::{App, BorrowAppContext as _, FontWeight, Global, Hsla, WindowAppearance, hsla, rgba};
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::{Map, Value};
 
@@ -1678,17 +1678,21 @@ pub struct ThemeCatalogEntry {
 }
 
 /// Persisted identifier of the built-in dark theme.
-const BUILTIN_THEME_VELOTYPE_ID: &str = "velotype";
+pub const BUILTIN_THEME_VELOTYPE_ID: &str = "velotype";
 /// Display name used to recognize a directly loaded dark theme.
-const BUILTIN_THEME_VELOTYPE_NAME: &str = "Velotype";
+pub const BUILTIN_THEME_VELOTYPE_NAME: &str = "Velotype";
 /// Persisted identifier of the built-in light theme.
-const BUILTIN_THEME_VELOTYPE_LIGHT_ID: &str = "velotype-light";
+pub const BUILTIN_THEME_VELOTYPE_LIGHT_ID: &str = "velotype-light";
 /// Display name used to recognize a directly loaded light theme.
-const BUILTIN_THEME_VELOTYPE_LIGHT_NAME: &str = "Velotype Light";
+pub const BUILTIN_THEME_VELOTYPE_LIGHT_NAME: &str = "Velotype Light";
+/// Persisted identifier of the adaptive system theme.
+pub const THEME_SYSTEM_ID: &str = "system";
+/// Display name used in the catalog for the adaptive system theme.
+pub const THEME_SYSTEM_NAME: &str = "System";
 /// Transient identifier for directly loaded themes with a non-built-in name.
-const CUSTOM_THEME_ID: &str = "custom";
+pub const CUSTOM_THEME_ID: &str = "custom";
 
-/// Lists built-in themes in menu order, dark before light.
+/// Lists built-in themes in menu order, dark before light, followed by adaptive system.
 fn builtin_theme_catalog() -> Vec<ThemeCatalogEntry> {
     vec![
         ThemeCatalogEntry {
@@ -1698,6 +1702,10 @@ fn builtin_theme_catalog() -> Vec<ThemeCatalogEntry> {
         ThemeCatalogEntry {
             id: BUILTIN_THEME_VELOTYPE_LIGHT_ID.into(),
             name: BUILTIN_THEME_VELOTYPE_LIGHT_NAME.into(),
+        },
+        ThemeCatalogEntry {
+            id: THEME_SYSTEM_ID.into(),
+            name: THEME_SYSTEM_NAME.into(),
         },
     ]
 }
@@ -1726,6 +1734,8 @@ pub struct ThemeManager {
     current: Arc<Theme>,
     /// Active built-in, imported, or transient theme identifier.
     current_theme_id: String,
+    /// Last detected operating system window appearance.
+    system_appearance: WindowAppearance,
     /// Imported packs available for identifier-based selection.
     custom_themes: Vec<CustomThemeEntry>,
     /// Built-in entries followed by imported theme labels.
@@ -1740,6 +1750,7 @@ impl Default for ThemeManager {
         Self {
             current: Arc::new(Theme::default_theme()),
             current_theme_id: BUILTIN_THEME_VELOTYPE_ID.into(),
+            system_appearance: WindowAppearance::Dark,
             custom_themes: Vec::new(),
             theme_catalog: builtin_theme_catalog(),
         }
@@ -1760,6 +1771,7 @@ impl ThemeManager {
     /// Unknown IDs leave the dark default selected; pack-loading errors are logged.
     pub fn init_with_theme_id(cx: &mut App, theme_id: &str) {
         let mut manager = Self::default();
+        manager.set_system_appearance(cx.window_appearance());
         if let Ok(dirs) = VelotypeConfigDirs::from_system()
             && let Err(err) = manager.load_custom_themes_from_dirs(&dirs)
         {
@@ -1767,6 +1779,43 @@ impl ThemeManager {
         }
         let _ = manager.set_theme_by_id(theme_id);
         cx.set_global(manager);
+    }
+
+    /// Returns whether the operating system appearance indicates a dark theme.
+    pub fn is_dark_appearance(appearance: WindowAppearance) -> bool {
+        matches!(
+            appearance,
+            WindowAppearance::Dark | WindowAppearance::VibrantDark
+        )
+    }
+
+    /// Sets the known system appearance without immediately updating the theme.
+    pub fn set_system_appearance(&mut self, appearance: WindowAppearance) {
+        self.system_appearance = appearance;
+    }
+
+    /// Returns the last known operating system appearance.
+    pub fn system_appearance(&self) -> WindowAppearance {
+        self.system_appearance
+    }
+
+    /// Updates the system appearance and refreshes the active theme if currently in system-adaptive mode.
+    /// Returns `true` if the active theme tokens actually changed.
+    pub fn update_system_appearance(&mut self, appearance: WindowAppearance) -> bool {
+        self.system_appearance = appearance;
+        if self.current_theme_id == THEME_SYSTEM_ID {
+            let target_is_dark = Self::is_dark_appearance(appearance);
+            let current_is_dark = self.current.name == BUILTIN_THEME_VELOTYPE_NAME;
+            if target_is_dark != current_is_dark {
+                self.current = if target_is_dark {
+                    Arc::new(Theme::default_theme())
+                } else {
+                    Arc::new(Theme::light_theme())
+                };
+                return true;
+            }
+        }
+        false
     }
 
     /// Returns the currently active theme.
@@ -1821,6 +1870,15 @@ impl ThemeManager {
     /// Unknown IDs return `false` and leave the active theme unchanged.
     pub fn set_theme_by_id(&mut self, theme_id: &str) -> bool {
         match theme_id {
+            id if id == THEME_SYSTEM_ID => {
+                if Self::is_dark_appearance(self.system_appearance) {
+                    self.current = Arc::new(Theme::default_theme());
+                } else {
+                    self.current = Arc::new(Theme::light_theme());
+                }
+                self.current_theme_id = THEME_SYSTEM_ID.into();
+                true
+            }
             id if id == BUILTIN_THEME_VELOTYPE_ID => {
                 self.current = Arc::new(Theme::default_theme());
                 self.current_theme_id = BUILTIN_THEME_VELOTYPE_ID.into();
@@ -1948,6 +2006,13 @@ impl ThemeManager {
         match self.current_theme_id.as_str() {
             BUILTIN_THEME_VELOTYPE_LIGHT_ID => BUILTIN_THEME_VELOTYPE_LIGHT_ID.into(),
             BUILTIN_THEME_VELOTYPE_ID => BUILTIN_THEME_VELOTYPE_ID.into(),
+            THEME_SYSTEM_ID => {
+                if Self::is_dark_appearance(self.system_appearance) {
+                    BUILTIN_THEME_VELOTYPE_ID.into()
+                } else {
+                    BUILTIN_THEME_VELOTYPE_LIGHT_ID.into()
+                }
+            }
             id => self
                 .custom_themes
                 .iter()
@@ -1956,6 +2021,35 @@ impl ThemeManager {
                 .unwrap_or_else(|| BUILTIN_THEME_VELOTYPE_ID.into()),
         }
     }
+}
+
+/// Registers an observer on the given window to track OS light/dark appearance changes.
+///
+/// When the system appearance changes, if the application is currently using
+/// the adaptive system theme (`"system"`), the global [`ThemeManager`] updates
+/// its active theme and refreshes all windows and menus.
+pub fn install_window_appearance_observer(window: &gpui::Window, cx: &mut App) {
+    let initial_appearance = window.appearance();
+    let changed = cx.update_global::<ThemeManager, _>(|theme_manager, _cx| {
+        theme_manager.update_system_appearance(initial_appearance)
+    });
+    if changed {
+        crate::app_menu::install_menus(cx);
+        cx.refresh_windows();
+    }
+
+    window
+        .observe_window_appearance(|window, cx| {
+            let appearance = window.appearance();
+            let changed = cx.update_global::<ThemeManager, _>(|theme_manager, _cx| {
+                theme_manager.update_system_appearance(appearance)
+            });
+            if changed {
+                crate::app_menu::install_menus(cx);
+                cx.refresh_windows();
+            }
+        })
+        .detach();
 }
 
 /// Resolves a pack and normalized JSON using dark as the fallback base.
@@ -2101,7 +2195,7 @@ fn required_string(object: &Map<String, Value>, key: &str) -> anyhow::Result<Str
 }
 #[cfg(test)]
 mod tests {
-    use super::{Theme, ThemeManager};
+    use super::*;
     use crate::config::VelotypeConfigDirs;
     use gpui::rgba;
 
@@ -2599,7 +2693,7 @@ mod tests {
                 .iter()
                 .map(|entry| entry.name.as_str())
                 .collect::<Vec<_>>(),
-            vec!["Velotype", "Velotype Light"]
+            vec!["Velotype", "Velotype Light", "System"]
         );
 
         assert!(manager.set_theme_by_id("velotype-light"));
@@ -2614,5 +2708,62 @@ mod tests {
         assert_eq!(manager.current_theme_id(), "velotype");
         assert_eq!(manager.current().name, "Velotype");
         assert!(!manager.set_theme_by_id("missing"));
+    }
+
+    #[test]
+    fn theme_manager_switches_to_system_theme_with_light_appearance() {
+        let mut manager = ThemeManager::default();
+        manager.set_system_appearance(WindowAppearance::Light);
+        assert!(manager.set_theme_by_id(THEME_SYSTEM_ID));
+        assert_eq!(manager.current_theme_id(), THEME_SYSTEM_ID);
+        assert_eq!(manager.current().name, BUILTIN_THEME_VELOTYPE_LIGHT_NAME);
+    }
+
+    #[test]
+    fn theme_manager_switches_to_system_theme_with_dark_appearance() {
+        let mut manager = ThemeManager::default();
+        manager.set_system_appearance(WindowAppearance::Dark);
+        assert!(manager.set_theme_by_id(THEME_SYSTEM_ID));
+        assert_eq!(manager.current_theme_id(), THEME_SYSTEM_ID);
+        assert_eq!(manager.current().name, BUILTIN_THEME_VELOTYPE_NAME);
+    }
+
+    #[test]
+    fn theme_manager_system_theme_updates_on_appearance_change() {
+        let mut manager = ThemeManager::default();
+        manager.set_system_appearance(WindowAppearance::Light);
+        assert!(manager.set_theme_by_id(THEME_SYSTEM_ID));
+        assert_eq!(manager.current().name, BUILTIN_THEME_VELOTYPE_LIGHT_NAME);
+
+        // System switches to Dark: theme tokens should change to dark
+        assert!(manager.update_system_appearance(WindowAppearance::Dark));
+        assert_eq!(manager.current().name, BUILTIN_THEME_VELOTYPE_NAME);
+
+        // System reports Dark again: no change
+        assert!(!manager.update_system_appearance(WindowAppearance::Dark));
+        assert_eq!(manager.current().name, BUILTIN_THEME_VELOTYPE_NAME);
+
+        // System switches back to Light: theme tokens change to light
+        assert!(manager.update_system_appearance(WindowAppearance::Light));
+        assert_eq!(manager.current().name, BUILTIN_THEME_VELOTYPE_LIGHT_NAME);
+    }
+
+    #[test]
+    fn theme_manager_fixed_theme_ignores_appearance_change() {
+        let mut manager = ThemeManager::default();
+        assert!(manager.set_theme_by_id(BUILTIN_THEME_VELOTYPE_ID));
+        assert_eq!(manager.current().name, BUILTIN_THEME_VELOTYPE_NAME);
+
+        // Changing system appearance when on fixed dark theme does not change active tokens
+        assert!(!manager.update_system_appearance(WindowAppearance::Light));
+        assert_eq!(manager.current().name, BUILTIN_THEME_VELOTYPE_NAME);
+        assert_eq!(manager.current_theme_id(), BUILTIN_THEME_VELOTYPE_ID);
+
+        // Fixed light theme also ignores changes
+        assert!(manager.set_theme_by_id(BUILTIN_THEME_VELOTYPE_LIGHT_ID));
+        assert_eq!(manager.current().name, BUILTIN_THEME_VELOTYPE_LIGHT_NAME);
+        assert!(!manager.update_system_appearance(WindowAppearance::Dark));
+        assert_eq!(manager.current().name, BUILTIN_THEME_VELOTYPE_LIGHT_NAME);
+        assert_eq!(manager.current_theme_id(), BUILTIN_THEME_VELOTYPE_LIGHT_ID);
     }
 }

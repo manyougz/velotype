@@ -720,7 +720,8 @@ pub(crate) fn apply_configured_language(cx: &mut App, language_id: &str) -> anyh
 /// Persistence errors occur after runtime selection; unknown IDs return `false`.
 pub(crate) fn apply_configured_theme(cx: &mut App, theme_id: &str) -> anyhow::Result<bool> {
     let mut applied = false;
-    let changed = cx.update_global::<ThemeManager, _>(|theme_manager, _cx| {
+    let changed = cx.update_global::<ThemeManager, _>(|theme_manager, cx| {
+        theme_manager.set_system_appearance(cx.window_appearance());
         let changed = theme_manager.set_theme_by_id(theme_id);
         applied = changed || theme_manager.current_theme_id() == theme_id;
         changed
@@ -1135,8 +1136,11 @@ impl PreferencesWindow {
         .unwrap_or(false);
     }
 
-    /// Looks up the draft theme's display name, falling back to `Velotype`.
-    fn selected_theme_name(&self) -> String {
+    /// Looks up the draft theme's display name, falling back to localized system or `Velotype`.
+    fn selected_theme_name(&self, strings: &crate::i18n::I18nStrings) -> String {
+        if self.selected_theme_id == crate::theme::THEME_SYSTEM_ID {
+            return strings.theme_system.clone();
+        }
         self.theme_options
             .iter()
             .find(|entry| entry.id == self.selected_theme_id)
@@ -1437,7 +1441,8 @@ impl PreferencesWindow {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let theme_changed = cx.update_global::<ThemeManager, _>(|theme_manager, _cx| {
+        let theme_changed = cx.update_global::<ThemeManager, _>(|theme_manager, cx| {
+            theme_manager.set_system_appearance(cx.window_appearance());
             theme_manager.set_theme_by_id(&preferences.default_theme_id)
         });
         if !theme_changed {
@@ -1689,7 +1694,7 @@ impl PreferencesWindow {
             .gap(px(4.0))
             .child(Self::dropdown_button(
                 "preferences-theme-dropdown",
-                self.selected_theme_name(),
+                self.selected_theme_name(strings),
                 theme,
                 Self::toggle_theme_dropdown,
                 cx,
@@ -1705,9 +1710,14 @@ impl PreferencesWindow {
 
             for (index, entry) in self.theme_options.clone().into_iter().enumerate() {
                 let selected = entry.id == self.selected_theme_id;
+                let display_name = if entry.id == crate::theme::THEME_SYSTEM_ID {
+                    strings.theme_system.clone()
+                } else {
+                    entry.name
+                };
                 list = list.child(Self::dropdown_item(
                     ("preferences-theme-option", index),
-                    entry.name,
+                    display_name,
                     selected,
                     theme,
                     move |this, _, _, cx| {
@@ -2808,6 +2818,7 @@ fn open_preferences_window_with_state(
             crate::ime::install_window_input_filter(window);
             window.activate_window();
             preferences.focus_handle.focus(window, cx);
+            crate::theme::install_window_appearance_observer(window, cx);
             cx.observe_window_activation(window, |preferences, window, cx| {
                 if window.is_window_active() {
                     preferences.update_file_associations(false, window, cx);
@@ -3187,6 +3198,40 @@ mod tests {
             saved.keybindings.get("save_document"),
             Some(&vec!["ctrl-alt-s".to_string()])
         );
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn preferences_saves_and_loads_adaptive_system_theme() {
+        let root = std::env::temp_dir().join(format!(
+            "velotype-preferences-system-theme-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(&root).expect("temp root should exist");
+        let dirs = VelotypeConfigDirs::from_root(&root);
+
+        let saved = save_preferences_from_window_with_dirs(
+            StartupOpenPreference::NewFile,
+            crate::theme::THEME_SYSTEM_ID,
+            ImagePasteBehavior::None,
+            ImagePasteBehavior::None,
+            DEFAULT_PICGO_SERVER_URL,
+            true,
+            BTreeMap::new(),
+            &StatusBarPreferences::default(),
+            &FontPreferences::default(),
+            &dirs,
+        )
+        .expect("window preferences should save");
+        assert_eq!(saved.default_theme_id, crate::theme::THEME_SYSTEM_ID);
+
+        let loaded = read_app_preferences_with_dirs(&dirs).expect("preferences should load");
+        assert_eq!(loaded.default_theme_id, crate::theme::THEME_SYSTEM_ID);
+
+        let toml_text =
+            std::fs::read_to_string(dirs.app_config_file()).expect("config file exists");
+        assert!(toml_text.contains("default_theme_id = \"system\""));
+
         let _ = std::fs::remove_dir_all(root);
     }
 

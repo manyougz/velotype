@@ -104,6 +104,8 @@ pub struct I18nStrings {
     pub menu_language: String,
     /// Top-level Theme menu label.
     pub menu_theme: String,
+    /// Adaptive system theme label.
+    pub theme_system: String,
     /// Top-level Workspace menu label.
     pub menu_workspace: String,
     /// Top-level Help menu label.
@@ -517,6 +519,8 @@ struct I18nStringsDe {
     menu_language: Option<String>,
     /// Optional Theme menu title.
     menu_theme: Option<String>,
+    /// Optional adaptive system theme label.
+    theme_system: Option<String>,
     /// Optional Workspace menu title.
     menu_workspace: Option<String>,
     /// Optional Help menu title.
@@ -891,6 +895,7 @@ const I18N_STRING_KEYS: &[&str] = &[
     "menu_export",
     "menu_language",
     "menu_theme",
+    "theme_system",
     "menu_workspace",
     "menu_help",
     "menu_add_language_config",
@@ -1183,6 +1188,7 @@ impl I18nStringsDe {
             menu_export: self.menu_export.unwrap_or(defaults.menu_export),
             menu_language: self.menu_language.unwrap_or(defaults.menu_language),
             menu_theme: self.menu_theme.unwrap_or(defaults.menu_theme),
+            theme_system: self.theme_system.unwrap_or(defaults.theme_system),
             menu_workspace: self.menu_workspace.unwrap_or(defaults.menu_workspace),
             menu_help: self.menu_help.unwrap_or(defaults.menu_help),
             menu_add_language_config: self
@@ -1693,6 +1699,7 @@ impl I18nStrings {
             menu_export: "导出".into(),
             menu_language: "语言".into(),
             menu_theme: "主题".into(),
+            theme_system: "自适应系统".into(),
             menu_workspace: "工作区".into(),
             menu_help: "帮助".into(),
             menu_add_language_config: "添加语言配置".into(),
@@ -1943,6 +1950,7 @@ impl I18nStrings {
             menu_export: "Export".into(),
             menu_language: "Language".into(),
             menu_theme: "Theme".into(),
+            theme_system: "System".into(),
             menu_workspace: "Workspace".into(),
             menu_help: "Help".into(),
             menu_add_language_config: "Add Language Config".into(),
