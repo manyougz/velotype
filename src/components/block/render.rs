@@ -1925,6 +1925,7 @@ impl Block {
                 .on_action(cx.listener(Self::on_italic_selection))
                 .on_action(cx.listener(Self::on_underline_selection))
                 .on_action(cx.listener(Self::on_code_selection))
+                .on_action(cx.listener(Self::on_clear_formatting))
         }
     }
 }

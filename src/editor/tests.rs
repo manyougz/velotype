@@ -2864,6 +2864,30 @@ async fn toggle_view_mode_ends_stale_code_block_pointer_selection(cx: &mut TestA
 }
 
 #[gpui::test]
+async fn ctrl_backslash_clears_inline_formatting(cx: &mut TestAppContext) {
+    init_editor_test_app(cx);
+    let (editor, cx) = cx.add_window_view(|_window, cx| {
+        Editor::from_markdown(cx, "**bold** and *italic*".to_string(), None)
+    });
+
+    editor.update(cx, |editor, cx| {
+        let block = editor.document.visible_blocks()[0].entity.clone();
+        editor.focus_block(block.entity_id());
+        block.update(cx, |block, _cx| {
+            block.selected_range = 0..block.visible_len();
+        });
+    });
+    redraw(cx);
+
+    cx.simulate_keystrokes("ctrl-\\");
+    redraw(cx);
+
+    editor.read_with(cx, |editor, cx| {
+        assert_eq!(editor.document.markdown_text(cx), "bold and italic");
+    });
+}
+
+#[gpui::test]
 async fn ctrl_tab_toggles_view_mode(cx: &mut TestAppContext) {
     init_editor_test_app(cx);
     let (editor, cx) =

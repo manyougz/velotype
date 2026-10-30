@@ -1996,6 +1996,31 @@ impl Block {
         cx.notify();
     }
 
+    /// Removes character styles from the current selection without changing
+    /// links, footnotes, math, or the block kind.
+    pub(crate) fn clear_inline_formatting(&mut self, cx: &mut Context<Self>) {
+        if self.selected_range.is_empty() || self.uses_raw_text_editing() {
+            return;
+        }
+
+        let mut next_title = self.record.title.clone();
+        let selection = self.selection_clean_range();
+        if !next_title.clear_formatting(selection.clone()) {
+            return;
+        }
+
+        self.prepare_undo_capture(UndoCaptureKind::NonCoalescible, cx);
+        self.apply_title_edit(
+            next_title,
+            selection.end,
+            None,
+            Some(selection),
+            Some(self.selection_reversed),
+            false,
+            cx,
+        );
+    }
+
     /// Toggle a style flag directly on the fragment tree without ever
     /// manipulating raw marker characters.  The selection range determines
     /// which fragments have their [`InlineStyle`] flag flipped.

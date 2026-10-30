@@ -49,6 +49,7 @@ actions!(
         ItalicSelection,
         UnderlineSelection,
         CodeSelection,
+        ClearFormatting,
         IndentBlock,
         OutdentBlock,
         ExitCodeBlock,
@@ -192,6 +193,8 @@ pub(crate) enum ShortcutCommand {
     UnderlineSelection,
     /// Toggle inline code formatting on the selection.
     CodeSelection,
+    /// Remove inline character formatting from the selection.
+    ClearFormatting,
     /// Increase block indentation.
     IndentBlock,
     /// Decrease block indentation.
@@ -510,6 +513,13 @@ const SHORTCUT_DEFINITIONS: &[ShortcutDefinition] = &[
         context: BLOCK_CONTEXT,
     },
     ShortcutDefinition {
+        command: ShortcutCommand::ClearFormatting,
+        id: "clear_formatting",
+        category: ShortcutCategory::Formatting,
+        default_keys: &["ctrl-\\", "cmd-\\"],
+        context: BLOCK_CONTEXT,
+    },
+    ShortcutDefinition {
         command: ShortcutCommand::IndentBlock,
         id: "indent_block",
         category: ShortcutCategory::Block,
@@ -801,6 +811,7 @@ fn key_binding_for(
         ShortcutCommand::ItalicSelection => KeyBinding::new(key, ItalicSelection, context),
         ShortcutCommand::UnderlineSelection => KeyBinding::new(key, UnderlineSelection, context),
         ShortcutCommand::CodeSelection => KeyBinding::new(key, CodeSelection, context),
+        ShortcutCommand::ClearFormatting => KeyBinding::new(key, ClearFormatting, context),
         ShortcutCommand::IndentBlock => KeyBinding::new(key, IndentBlock, context),
         ShortcutCommand::OutdentBlock => KeyBinding::new(key, OutdentBlock, context),
         ShortcutCommand::ExitCodeBlock => KeyBinding::new(key, ExitCodeBlock, context),
@@ -998,6 +1009,19 @@ mod tests {
                 "ctrl-shift-right".to_string(),
                 "alt-shift-right".to_string()
             ]
+        );
+    }
+
+    #[test]
+    fn clear_formatting_has_default_shortcuts() {
+        let keys = vec!["ctrl-\\".to_string(), "cmd-\\".to_string()];
+        assert_eq!(
+            resolved_shortcut_keys(&BTreeMap::new(), ShortcutCommand::ClearFormatting),
+            keys
+        );
+        assert!(
+            shortcut_conflict_for(ShortcutCommand::ClearFormatting, &keys, &BTreeMap::new())
+                .is_none()
         );
     }
 

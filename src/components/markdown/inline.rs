@@ -1145,6 +1145,42 @@ impl InlineTextTree {
         self.toggle_style(range, StyleFlag::Code)
     }
 
+    /// Remove character styles across a nonempty visible byte range.
+    ///
+    /// Links, footnotes, math, HTML-derived styles, and the block kind are
+    /// preserved. Returns whether any character style changed.
+    pub fn clear_formatting(&mut self, range: Range<usize>) -> bool {
+        if range.is_empty() {
+            return false;
+        }
+
+        let clamped_start = range.start.min(self.visible_len());
+        let clamped_end = range.end.min(self.visible_len());
+        if clamped_start >= clamped_end {
+            return false;
+        }
+
+        let (before, tail) = self.split_at(clamped_start);
+        let (mut middle, after) = tail.split_at(clamped_end - clamped_start);
+        let mut changed = false;
+        for fragment in &mut middle.fragments {
+            if fragment.style != InlineStyle::default() {
+                fragment.style = InlineStyle::default();
+                changed = true;
+            }
+        }
+        if !changed {
+            return false;
+        }
+
+        middle.normalize_fragments();
+        let mut next = before;
+        next.append_tree(middle);
+        next.append_tree(after);
+        *self = next;
+        true
+    }
+
     /// Clear the given style flags on indexed fragments, then normalize.
     pub fn unwrap_styles_on_fragments(&mut self, targets: &[(usize, StyleFlag)]) {
         if targets.is_empty() {
@@ -3611,6 +3647,44 @@ mod tests {
 
         assert!(tree.toggle_bold(2..3));
         assert_eq!(tree.serialize_markdown(), "1**2**3");
+    }
+
+    #[test]
+    fn clear_formatting_removes_character_styles_and_keeps_links() {
+        let mut tree = InlineTextTree::from_markdown(
+            "**bold** *italic* `code` ~~strike~~ x^2^ [link](https://example.com)",
+        );
+
+        assert!(tree.clear_formatting(0..tree.visible_len()));
+        assert_eq!(tree.visible_text(), "bold italic code strike x2 link");
+        assert_eq!(
+            tree.serialize_markdown(),
+            "bold italic code strike x2 [link](https://example.com)"
+        );
+
+        let cache = tree.render_cache();
+        assert_eq!(cache.style_at(0), InlineStyle::default());
+        assert_eq!(cache.style_at(5), InlineStyle::default());
+        assert_eq!(cache.style_at(12), InlineStyle::default());
+        assert_eq!(cache.style_at(17), InlineStyle::default());
+        assert_eq!(cache.style_at(21), InlineStyle::default());
+    }
+
+    #[test]
+    fn clear_formatting_only_affects_selected_slice() {
+        let mut tree = InlineTextTree::from_markdown("**bold**");
+
+        assert!(tree.clear_formatting(0..2));
+        assert_eq!(tree.visible_text(), "bold");
+        assert_eq!(tree.serialize_markdown(), "bo**ld**");
+    }
+
+    #[test]
+    fn clear_formatting_is_a_noop_for_plain_text() {
+        let mut tree = InlineTextTree::plain("plain");
+
+        assert!(!tree.clear_formatting(0..tree.visible_len()));
+        assert_eq!(tree.serialize_markdown(), "plain");
     }
 
     #[test]
