@@ -319,6 +319,8 @@ pub struct I18nStrings {
     pub preferences_shortcut_underline_selection: String,
     /// Command label for applying inline code to the selection.
     pub preferences_shortcut_code_selection: String,
+    /// Command label for clearing inline character formatting.
+    pub preferences_shortcut_clear_formatting: String,
     /// Command label for indenting a block.
     pub preferences_shortcut_indent_block: String,
     /// Command label for outdenting a block.
@@ -726,6 +728,8 @@ struct I18nStringsDe {
     preferences_shortcut_underline_selection: Option<String>,
     /// Optional inline-code-selection command label.
     preferences_shortcut_code_selection: Option<String>,
+    /// Optional clear-formatting command label.
+    preferences_shortcut_clear_formatting: Option<String>,
     /// Optional block indentation command label.
     preferences_shortcut_indent_block: Option<String>,
     /// Optional block outdent command label.
@@ -1000,6 +1004,7 @@ const I18N_STRING_KEYS: &[&str] = &[
     "preferences_shortcut_italic_selection",
     "preferences_shortcut_underline_selection",
     "preferences_shortcut_code_selection",
+    "preferences_shortcut_clear_formatting",
     "preferences_shortcut_indent_block",
     "preferences_shortcut_outdent_block",
     "preferences_shortcut_exit_code_block",
@@ -1480,6 +1485,9 @@ impl I18nStringsDe {
             preferences_shortcut_code_selection: self
                 .preferences_shortcut_code_selection
                 .unwrap_or(defaults.preferences_shortcut_code_selection),
+            preferences_shortcut_clear_formatting: self
+                .preferences_shortcut_clear_formatting
+                .unwrap_or(defaults.preferences_shortcut_clear_formatting),
             preferences_shortcut_indent_block: self
                 .preferences_shortcut_indent_block
                 .unwrap_or(defaults.preferences_shortcut_indent_block),
@@ -1787,6 +1795,7 @@ impl I18nStrings {
             preferences_shortcut_italic_selection: "斜体".into(),
             preferences_shortcut_underline_selection: "下划线".into(),
             preferences_shortcut_code_selection: "行内代码".into(),
+            preferences_shortcut_clear_formatting: "清除格式".into(),
             preferences_shortcut_indent_block: "缩进块".into(),
             preferences_shortcut_outdent_block: "取消缩进块".into(),
             preferences_shortcut_exit_code_block: "退出代码块".into(),
@@ -2057,6 +2066,7 @@ impl I18nStrings {
             preferences_shortcut_italic_selection: "Italic".into(),
             preferences_shortcut_underline_selection: "Underline".into(),
             preferences_shortcut_code_selection: "Inline Code".into(),
+            preferences_shortcut_clear_formatting: "Clear Formatting".into(),
             preferences_shortcut_indent_block: "Indent Block".into(),
             preferences_shortcut_outdent_block: "Outdent Block".into(),
             preferences_shortcut_exit_code_block: "Exit Code Block".into(),

@@ -14,8 +14,8 @@ use super::{
 };
 use crate::components::markdown::paste::should_split_plain_multiline_paste;
 use crate::components::{
-    BlockDown, BlockUp, BoldSelection, CodeSelection, Copy, Cut, Delete, DeleteBack,
-    DismissTransientUi, End, ExitCodeBlock, FocusNext, FocusPrev, Home, IndentBlock,
+    BlockDown, BlockUp, BoldSelection, ClearFormatting, CodeSelection, Copy, Cut, Delete,
+    DeleteBack, DismissTransientUi, End, ExitCodeBlock, FocusNext, FocusPrev, Home, IndentBlock,
     ItalicSelection, MoveLeft, MoveRight, Newline, OutdentBlock, Paste, SelectAll, SelectEnd,
     SelectHome, SelectLeft, SelectRight, UnderlineSelection, WordDeleteBack, WordDeleteForward,
     WordMoveLeft, WordMoveRight, WordSelectLeft, WordSelectRight,
@@ -1800,6 +1800,16 @@ impl Block {
         cx: &mut Context<Self>,
     ) {
         self.toggle_inline_format(InlineFormat::Code, cx);
+    }
+
+    /// Removes inline character formatting from the current selection.
+    pub(crate) fn on_clear_formatting(
+        &mut self,
+        _: &ClearFormatting,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.clear_inline_formatting(cx);
     }
 
     /// Requests a following block or a quote/callout break when applicable.

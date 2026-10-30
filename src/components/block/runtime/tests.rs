@@ -11,7 +11,8 @@ use crate::components::markdown::inline::{
 };
 use crate::components::markdown::link::parse_link_reference_definitions;
 use crate::components::{
-    Block, BlockKind, BlockRecord, DeleteBack, IndentBlock, Newline, TableCellPosition,
+    Block, BlockKind, BlockRecord, ClearFormatting, DeleteBack, IndentBlock, Newline,
+    TableCellPosition,
 };
 use crate::i18n::I18nManager;
 use crate::theme::ThemeManager;
@@ -132,6 +133,32 @@ async fn projected_unicode_footnote_maps_only_to_source_boundaries(cx: &mut Test
                 assert!(markdown.get(source_range).is_some());
             }
         });
+    });
+}
+
+#[gpui::test]
+async fn clear_formatting_removes_styles_from_selection(cx: &mut TestAppContext) {
+    let cx = cx.add_empty_window();
+    let block = cx.new(|cx| {
+        Block::with_record(
+            cx,
+            BlockRecord::new(
+                BlockKind::Paragraph,
+                InlineTextTree::from_markdown("**bold** and *italic*"),
+            ),
+        )
+    });
+
+    cx.update(|window, cx| {
+        block.update(cx, |block, block_cx| {
+            block.selected_range = 0..block.visible_len();
+            block.on_clear_formatting(&ClearFormatting, window, block_cx);
+        });
+    });
+
+    block.read_with(cx, |block, _cx| {
+        assert_eq!(block.display_text(), "bold and italic");
+        assert_eq!(block.record.markdown_line(0, None), "bold and italic");
     });
 }
 
