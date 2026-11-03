@@ -40,19 +40,17 @@ fn bulleted_list_marker(depth: usize) -> &'static str {
     }
 }
 
-/// Returns whether column preview or selection requires the top axis gutter.
-fn column_axis_gutter_visible(
-    preview_marker: Option<TableAxisMarker>,
-    selected_marker: Option<TableAxisMarker>,
-) -> bool {
+/// Returns whether a column hover preview should show the floating handle row.
+///
+/// Only the pointer preview shows the row. The row floats above the table, so
+/// keeping it for a committed selection would leave it sitting on top of the
+/// preceding block (and swallowing clicks there) for as long as the column
+/// stays selected; the cell highlight already shows the selection. The same
+/// predicate extends the per-column hover strip over the row, which gives the
+/// pointer one continuous hover region instead of two adjacent ones.
+fn column_axis_row_visible(preview_marker: Option<TableAxisMarker>) -> bool {
     matches!(
         preview_marker,
-        Some(TableAxisMarker {
-            kind: TableAxisKind::Column,
-            ..
-        })
-    ) || matches!(
-        selected_marker,
         Some(TableAxisMarker {
             kind: TableAxisKind::Column,
             ..
@@ -2758,12 +2756,23 @@ impl Render for Block {
                 let append_extent = px(d.table_append_button_extent);
                 let append_inset = px(d.table_append_button_inset);
                 let activation_band = px(d.table_append_activation_band);
-                let top_gutter = if column_axis_gutter_visible(preview_marker, selected_marker) {
+                let column_handle_visible = column_axis_row_visible(preview_marker);
+                // The handle row floats above the table and never takes part in
+                // the flow, so toggling it cannot move the header.
+                let handle_strip_extension = if column_handle_visible {
                     activation_band
                 } else {
                     px(0.0)
                 };
-                let column_append_top = top_gutter + activation_band;
+                // While the row is shown, the header hover strip grows upward
+                // to cover it. The two surfaces then form one continuous hover
+                // region, so crossing between them no longer produces a leave
+                // that would clear the preview that just brought the row back.
+                let handle_strip_top = -handle_strip_extension;
+                let handle_strip_height = handle_strip_extension + activation_band;
+                // The append controls hang below the header's top edge; the
+                // floating row is out of flow, so it must not shift them.
+                let column_append_top = activation_band;
                 let column_control_visible = self.table_append_column_hovered;
                 let row_control_visible = self.table_append_row_hovered;
                 let right_gutter = if column_control_visible {
@@ -2779,10 +2788,19 @@ impl Render for Block {
                 let weak_table_block = cx.entity().downgrade();
 
                 let header_cells = runtime.header;
-                let column_axis_row = (top_gutter > px(0.0)).then(|| {
-                    div().w_full().h(top_gutter).flex().gap(px(0.0)).children(
-                        header_cells.iter().enumerate().map(|(column, _cell)| {
-                            let hover_block = weak_table_block.clone();
+                let column_axis_row = column_handle_visible.then(|| {
+                    div()
+                        .id(ElementId::Name(
+                            format!("table-column-axis-row-{}", self.record.id).into(),
+                        ))
+                        .absolute()
+                        .top(-activation_band)
+                        .left_0()
+                        .right(right_gutter)
+                        .h(activation_band)
+                        .flex()
+                        .gap(px(0.0))
+                        .children(header_cells.iter().enumerate().map(|(column, _cell)| {
                             let select_block = weak_table_block.clone();
                             let menu_block = weak_table_block.clone();
                             let marker = crate::components::TableAxisMarker {
@@ -2796,6 +2814,12 @@ impl Render for Block {
                             } else {
                                 hsla(0.0, 0.0, 0.0, 0.0)
                             };
+                            // Hover is owned by the header strip, which extends
+                            // over this row while it is shown. The band itself
+                            // only handles clicks and must not block the mouse:
+                            // a blocking hitbox in front would stop the strip
+                            // from being hovered, clearing the preview and
+                            // removing this row again.
                             div()
                                 .relative()
                                 .flex_none()
@@ -2817,15 +2841,6 @@ impl Render for Block {
                                         .rounded(px(6.0))
                                         .bg(band_bg)
                                         .cursor_pointer()
-                                        .on_hover(move |hovered, _window, cx| {
-                                            let _ = hover_block.update(cx, |_block, cx| {
-                                                cx.emit(BlockEvent::RequestTableAxisPreview {
-                                                    kind: TableAxisKind::Column,
-                                                    index: column,
-                                                    hovered: *hovered,
-                                                });
-                                            });
-                                        })
                                         .on_mouse_down(
                                             MouseButton::Left,
                                             move |_event, _window, cx| {
@@ -2850,11 +2865,9 @@ impl Render for Block {
                                                     });
                                                 });
                                             },
-                                        )
-                                        .block_mouse_except_scroll(),
+                                        ),
                                 )
-                        }),
-                    )
+                        }))
                 });
 
                 let header_hover_block = weak_table_block.clone();
@@ -2945,10 +2958,10 @@ impl Render for Block {
                                         .into(),
                                     ))
                                     .absolute()
-                                    .top_0()
+                                    .top(handle_strip_top)
                                     .left_0()
                                     .right_0()
-                                    .h(activation_band)
+                                    .h(handle_strip_height)
                                     .cursor_pointer()
                                     .on_hover(move |hovered, _window, cx| {
                                         let _ = hover_block.update(cx, |_block, cx| {
@@ -3076,10 +3089,7 @@ impl Render for Block {
                         });
 
                 {
-                    let mut rows = Vec::with_capacity(2 + body_row_count);
-                    if let Some(column_axis_row) = column_axis_row {
-                        rows.push(column_axis_row.into_any_element());
-                    }
+                    let mut rows = Vec::with_capacity(1 + body_row_count);
                     rows.push(header_row.into_any_element());
                     rows.extend(body_rows.map(|row| row.into_any_element()));
 
@@ -3193,7 +3203,7 @@ impl Render for Block {
                         }
                     };
 
-                    div()
+                    let mut container = div()
                         .id(block_id)
                         .w_full()
                         .relative()
@@ -3206,8 +3216,15 @@ impl Render for Block {
                         .child(column_edge_band)
                         .child(row_edge_band)
                         .child(column_control)
-                        .child(row_control)
-                        .into_any_element()
+                        .child(row_control);
+
+                    // Paint the floating handle row last so it sits above the
+                    // header it belongs to.
+                    if let Some(column_axis_row) = column_axis_row {
+                        container = container.child(column_axis_row);
+                    }
+
+                    container.into_any_element()
                 }
             }
             BlockKind::HtmlBlock => {
@@ -3373,7 +3390,7 @@ fn inline_word_chunks(text: &str, code: bool, has_background: bool) -> Vec<&str>
 #[cfg(test)]
 mod tests {
     use super::{
-        HtmlComputedStyle, column_axis_gutter_visible, html_badge_run_end, html_node_visual_style,
+        HtmlComputedStyle, column_axis_row_visible, html_badge_run_end, html_node_visual_style,
         inline_word_chunks,
     };
     use crate::components::{Block, BlockKind, BlockRecord, InlineTextTree, parse_html_document};
@@ -3419,29 +3436,16 @@ mod tests {
     }
 
     #[test]
-    fn top_gutter_only_appears_for_column_axis_state() {
-        assert!(!column_axis_gutter_visible(None, None));
-        assert!(!column_axis_gutter_visible(
-            Some(TableAxisMarker {
-                kind: TableAxisKind::Row,
-                index: 0,
-            }),
-            None,
-        ));
-        assert!(column_axis_gutter_visible(
-            Some(TableAxisMarker {
-                kind: TableAxisKind::Column,
-                index: 0,
-            }),
-            None,
-        ));
-        assert!(column_axis_gutter_visible(
-            None,
-            Some(TableAxisMarker {
-                kind: TableAxisKind::Column,
-                index: 0,
-            }),
-        ));
+    fn column_handle_row_only_appears_for_column_preview() {
+        assert!(!column_axis_row_visible(None));
+        assert!(!column_axis_row_visible(Some(TableAxisMarker {
+            kind: TableAxisKind::Row,
+            index: 0,
+        })));
+        assert!(column_axis_row_visible(Some(TableAxisMarker {
+            kind: TableAxisKind::Column,
+            index: 0,
+        })));
     }
 
     fn assert_color_near(color: Hsla, red: u8, green: u8, blue: u8, alpha: u8) {

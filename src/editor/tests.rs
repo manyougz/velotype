@@ -1567,6 +1567,53 @@ async fn body_row_preview_survives_stale_header_leave(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
+async fn column_handle_preview_does_not_move_following_blocks(cx: &mut TestAppContext) {
+    use crate::components::TableAxisKind;
+
+    init_editor_test_app(cx);
+    let markdown = ["| A | B |", "| --- | --- |", "| 1 | 2 |", "", "after"].join("\n");
+    let (editor, cx) = cx.add_window_view(|_, cx| Editor::from_markdown(cx, markdown, None));
+    // Let fonts, the scroll position, and the initial layout settle.
+    redraw(cx);
+    redraw(cx);
+
+    let (table, after) = editor.read_with(cx, |editor, _| {
+        let roots = editor.document.root_blocks();
+        assert_eq!(roots.len(), 2, "expected the table and one paragraph");
+        (roots[0].clone(), roots[1].clone())
+    });
+    let before = after.read_with(cx, |block, _| {
+        block
+            .last_bounds
+            .expect("trailing paragraph should have measured text")
+            .top()
+    });
+
+    editor.update(cx, |editor, cx| {
+        // Hovering the header's top strip shows the floating column row. The
+        // row used to be inserted into the table's flex flow, which pushed the
+        // header (and every following block) down by one activation band.
+        editor.preview_table_axis(table.entity_id(), TableAxisKind::Column, 0, true, cx);
+        assert!(
+            editor.table_axis_preview.is_some(),
+            "the column preview should be set by the hover"
+        );
+    });
+    redraw(cx);
+
+    let after_hover = after.read_with(cx, |block, _| {
+        block
+            .last_bounds
+            .expect("trailing paragraph should have measured text")
+            .top()
+    });
+    assert_eq!(
+        after_hover, before,
+        "showing a column handle must not move the table or the blocks below it"
+    );
+}
+
+#[gpui::test]
 async fn deleting_table_column_moves_selection_to_nearest_survivor(cx: &mut TestAppContext) {
     let markdown = ["| A | B | C |", "| --- | --- | --- |", "| 1 | 2 | 3 |"].join("\n");
     let editor = cx.new(|cx| Editor::from_markdown(cx, markdown, None));
