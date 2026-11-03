@@ -117,6 +117,39 @@ impl Editor {
         self.toggle_workspace_drawer(window, cx);
     }
 
+    /// Zooms into the Mermaid preview under the pointer.
+    pub(crate) fn on_mermaid_zoom_in_action(
+        &mut self,
+        _: &crate::components::MermaidZoomIn,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.zoom_hovered_mermaid(crate::components::MERMAID_KEYBOARD_ZOOM_STEP, cx);
+    }
+
+    /// Zooms out of the Mermaid preview under the pointer.
+    pub(crate) fn on_mermaid_zoom_out_action(
+        &mut self,
+        _: &crate::components::MermaidZoomOut,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.zoom_hovered_mermaid(1.0 / crate::components::MERMAID_KEYBOARD_ZOOM_STEP, cx);
+    }
+
+    /// Applies a keyboard zoom step to the hovered Mermaid preview, letting the
+    /// keystroke propagate when no preview is under the pointer.
+    fn zoom_hovered_mermaid(&mut self, factor: f32, cx: &mut Context<Self>) {
+        let hovered = self.document.visible_blocks().iter().find(|visible| {
+            let block = visible.entity.read(cx);
+            block.kind() == BlockKind::MermaidBlock && block.mermaid_hovered
+        });
+        match hovered.map(|visible| visible.entity.clone()) {
+            Some(block) => block.update(cx, |block, cx| block.zoom_mermaid_preview(factor, cx)),
+            None => cx.propagate(),
+        }
+    }
+
     /// Invalidates workspace caches after the current document path changes.
     pub(super) fn sync_workspace_after_document_path_change(&mut self, cx: &mut Context<Self>) {
         self.workspace.root = None;

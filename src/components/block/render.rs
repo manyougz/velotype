@@ -5,6 +5,15 @@
 
 use gpui::*;
 
+/// Largest share of the window height a fitted Mermaid preview may take.
+const MERMAID_FIT_VIEWPORT_HEIGHT_RATIO: f32 = 0.8;
+/// Platform zoom modifier shown in the Mermaid scroll hint.
+#[cfg(target_os = "macos")]
+const MERMAID_ZOOM_MODIFIER_LABEL: &str = "⌘";
+/// Platform zoom modifier shown in the Mermaid scroll hint.
+#[cfg(not(target_os = "macos"))]
+const MERMAID_ZOOM_MODIFIER_LABEL: &str = "Ctrl";
+
 /// Key context used by a focused block's action handlers.
 const BLOCK_EDITOR_CONTEXT: &str = "BlockEditor";
 
@@ -12,11 +21,13 @@ use super::element::{BlockTextElement, CodeLanguageInputElement};
 use super::{Block, BlockEvent, BlockKind, ImageResolvedSource, ImageRuntime, InlineLinkHit};
 use crate::components::{
     Editor, HtmlContainerImage, HtmlCssColor, HtmlDocument, HtmlNode, HtmlNodeKind, InlineScript,
-    TableAxisHighlight, TableAxisKind, TableAxisMarker, TableCellInlineImageSegment,
-    TableColumnLayout, attr_value, display_math_font_size, inline_math_font_size,
+    MERMAID_MIN_ZOOM, MermaidFrame, MermaidView, TableAxisHighlight, TableAxisKind,
+    TableAxisMarker, TableCellInlineImageSegment, TableColumnLayout, attr_value,
+    display_math_font_size, inline_math_font_size, mermaid_fit_scale, mermaid_raster_multiplier,
     parse_display_math_source, parse_html_image_block, parse_mermaid_fence_source,
     parse_table_cell_inline_images, render_display_math_svg, render_inline_math_svg,
-    render_mermaid_svg_for_display, resolve_image_source, style_for_node,
+    render_mermaid_svg_at_scale, render_mermaid_svg_for_display, resolve_image_source,
+    style_for_node,
 };
 use crate::fonts::FontSettings;
 use crate::i18n::{I18nManager, I18nStrings};
@@ -648,8 +659,17 @@ impl Block {
         }
     }
 
-    /// Renders Mermaid as SVG, scrolling wide output and showing source on error.
-    fn render_mermaid_content(&self, theme: &Theme, window: &Window) -> AnyElement {
+    /// Renders Mermaid as an interactive SVG preview, showing source on error.
+    ///
+    /// The diagram starts fitted inside the editor column and window height;
+    /// the wheel zooms around the pointer, dragging pans, a plain click opens
+    /// the source, and the zoom badge resets the view.
+    fn render_mermaid_content(
+        &mut self,
+        theme: &Theme,
+        window: &Window,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
         let c = &theme.colors;
         let d = &theme.dimensions;
         let t = &theme.typography;
@@ -669,42 +689,153 @@ impl Block {
                 .into_any_element();
         };
 
-        let viewport_width = f32::from(window.viewport_size().width.max(px(1.0)));
+        let viewport_size = window.viewport_size();
+        let viewport_width = f32::from(viewport_size.width.max(px(1.0)));
+        let viewport_height = f32::from(viewport_size.height.max(px(1.0)));
         let available_width = effective_image_width(self, viewport_width, d);
 
         match render_mermaid_svg_for_display(&source, available_width, viewport_width) {
             Ok(rendered) => {
                 let display_width = rendered.display_width.max(1.0);
                 let display_height = rendered.display_height.max(1.0);
-                let image_path = rendered.path.clone();
-                let image = move || {
-                    img(image_path.clone())
-                        .w(px(display_width))
-                        .h(px(display_height))
+                let max_height = (viewport_height * MERMAID_FIT_VIEWPORT_HEIGHT_RATIO).max(160.0);
+                let fit =
+                    mermaid_fit_scale(display_width, display_height, available_width, max_height);
+                let fitted_width = display_width * fit;
+                let fitted_height = display_height * fit;
+
+                let frame_width = self
+                    .mermaid_viewport_bounds
+                    .get()
+                    .map(|bounds| f32::from(bounds.size.width))
+                    .filter(|width| *width > 1.0)
+                    .unwrap_or(available_width);
+                let frame = MermaidFrame {
+                    width: frame_width,
+                    fitted_width,
+                    fitted_height,
+                    max_height,
                 };
-                let content = if display_width <= available_width + 0.5 {
-                    div()
-                        .w_full()
-                        .flex()
-                        .justify_center()
-                        .child(image())
-                        .into_any_element()
-                } else {
+                self.mermaid_frame = Some(frame);
+                let frame_height = frame.height(self.mermaid_view.zoom);
+                self.mermaid_view
+                    .clamp(fitted_width, fitted_height, frame_width, frame_height);
+                let view = self.mermaid_view;
+
+                let image_width = fitted_width * view.zoom;
+                let image_height = fitted_height * view.zoom;
+                let left = (frame_width - image_width) / 2.0 + view.offset_x;
+                let top = (frame_height - image_height) / 2.0 + view.offset_y;
+                let place = |path: std::path::PathBuf| {
+                    img(path)
+                        .absolute()
+                        .left(px(left))
+                        .top(px(top))
+                        .w(px(image_width))
+                        .h(px(image_height))
+                };
+
+                // Draw a sharper raster on top while zoomed in; the base image
+                // underneath stays visible until the larger SVG has loaded.
+                let sharp_image =
+                    mermaid_raster_multiplier(fit * view.zoom, display_width, display_height)
+                        .and_then(|multiplier| {
+                            render_mermaid_svg_at_scale(
+                                &source,
+                                rendered.display_scale * multiplier,
+                            )
+                            .ok()
+                        })
+                        .map(|sharp| place(sharp.path));
+
+                let zoom_badge = (!view.is_default()).then(|| {
                     div()
                         .id(ElementId::Name(
-                            format!("mermaid-scroll-{}", self.record.id).into(),
+                            format!("mermaid-reset-{}", self.record.id).into(),
                         ))
-                        .w_full()
-                        .overflow_x_scroll()
-                        .scrollbar_width(px(0.0))
-                        .child(div().w(px(display_width)).child(image()))
-                        .into_any_element()
+                        .px(px(6.0))
+                        .py(px(2.0))
+                        .rounded_sm()
+                        .bg(c.source_mode_block_bg)
+                        .cursor(CursorStyle::PointingHand)
+                        .child(SharedString::from(format!(
+                            "{:.0}%",
+                            fit * view.zoom * rendered.display_scale * 100.0
+                        )))
+                        .on_mouse_down(
+                            MouseButton::Left,
+                            cx.listener(|this, _: &MouseDownEvent, _, cx| {
+                                this.mermaid_view = MermaidView::default();
+                                this.mermaid_drag = None;
+                                cx.stop_propagation();
+                                cx.notify();
+                            }),
+                        )
+                });
+                let zoom_hint = self.mermaid_zoom_hint_visible.then(|| {
+                    let template = cx
+                        .global::<I18nManager>()
+                        .strings()
+                        .mermaid_zoom_hint_template
+                        .clone();
+                    div()
+                        .px(px(6.0))
+                        .py(px(2.0))
+                        .rounded_sm()
+                        .bg(c.source_mode_block_bg)
+                        .child(SharedString::from(
+                            template.replace("{modifier}", MERMAID_ZOOM_MODIFIER_LABEL),
+                        ))
+                });
+                let overlay = (zoom_hint.is_some() || zoom_badge.is_some()).then(|| {
+                    div()
+                        .absolute()
+                        .top(px(6.0))
+                        .right(px(6.0))
+                        .flex()
+                        .gap(px(6.0))
+                        .text_size(px(t.code_size * 0.9))
+                        .text_color(c.dialog_muted)
+                        .children(zoom_hint)
+                        .children(zoom_badge)
+                });
+
+                let bounds_cell = self.mermaid_viewport_bounds.clone();
+                let cursor = if self.mermaid_drag.is_some_and(|drag| drag.moved) {
+                    CursorStyle::ClosedHand
+                } else if view.zoom > MERMAID_MIN_ZOOM {
+                    CursorStyle::OpenHand
+                } else {
+                    CursorStyle::PointingHand
                 };
+
+                let frame = div()
+                    .id(ElementId::Name(
+                        format!("mermaid-view-{}", self.record.id).into(),
+                    ))
+                    .relative()
+                    .w_full()
+                    .h(px(frame_height))
+                    .overflow_hidden()
+                    .cursor(cursor)
+                    .child(place(rendered.path.clone()))
+                    .children(sharp_image)
+                    .children(overlay)
+                    .on_hover(cx.listener(Self::on_mermaid_hover))
+                    .on_scroll_wheel(cx.listener(Self::on_mermaid_scroll_wheel))
+                    .on_pinch(cx.listener(Self::on_mermaid_pinch))
+                    .on_mouse_down(MouseButton::Left, cx.listener(Self::on_mermaid_mouse_down))
+                    .on_mouse_move(cx.listener(Self::on_mermaid_mouse_move))
+                    .on_mouse_up(MouseButton::Left, cx.listener(Self::on_mermaid_mouse_up))
+                    .on_mouse_up_out(MouseButton::Left, cx.listener(Self::on_mermaid_mouse_up));
 
                 div()
                     .w_full()
                     .py(px(d.block_padding_y.max(6.0)))
-                    .child(content)
+                    .on_children_prepainted(move |bounds, _, _| {
+                        bounds_cell.set(bounds.first().copied());
+                    })
+                    .child(frame)
                     .into_any_element()
             }
             Err(err) => div()
@@ -3239,14 +3370,19 @@ impl Render for Block {
                 focused_base.w_full().child(child).into_any_element()
             }
             BlockKind::MermaidBlock => {
-                if !focused {
+                if focused {
+                    // Editing may change the diagram, so start over from the overview.
+                    self.mermaid_view = MermaidView::default();
+                    self.mermaid_drag = None;
+                    self.mermaid_hovered = false;
+                } else {
                     self.last_layout = None;
                     self.last_bounds = None;
                 }
                 let child = if focused {
                     BlockTextElement::new(cx.entity(), is_placeholder).into_any_element()
                 } else {
-                    self.render_mermaid_content(&theme, window)
+                    self.render_mermaid_content(&theme, window, cx)
                 };
                 focused_base.w_full().child(child).into_any_element()
             }

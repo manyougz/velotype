@@ -16,10 +16,14 @@ use crate::components::markdown::paste::should_split_plain_multiline_paste;
 use crate::components::{
     BlockDown, BlockUp, BoldSelection, CodeSelection, Copy, Cut, Delete, DeleteBack,
     DismissTransientUi, End, ExitCodeBlock, FocusNext, FocusPrev, Home, IndentBlock,
-    ItalicSelection, MoveLeft, MoveRight, Newline, OutdentBlock, Paste, SelectAll, SelectEnd,
-    SelectHome, SelectLeft, SelectRight, UnderlineSelection, WordDeleteBack, WordDeleteForward,
-    WordMoveLeft, WordMoveRight, WordSelectLeft, WordSelectRight,
+    ItalicSelection, MERMAID_DRAG_THRESHOLD, MermaidDrag, MermaidView, MoveLeft, MoveRight,
+    Newline, OutdentBlock, Paste, SelectAll, SelectEnd, SelectHome, SelectLeft, SelectRight,
+    UnderlineSelection, WordDeleteBack, WordDeleteForward, WordMoveLeft, WordMoveRight,
+    WordSelectLeft, WordSelectRight, mermaid_wheel_zoom_factor,
 };
+
+/// How long the Mermaid modifier-zoom hint stays visible after scrolling.
+const MERMAID_ZOOM_HINT_DURATION: Duration = Duration::from_millis(1500);
 
 impl Block {
     /// Extracts a complete image batch without mixing duplicate clipboard formats.
@@ -1441,6 +1445,175 @@ impl Block {
                 self.code_language_index_for_mouse_position(event.position),
                 cx,
             );
+        }
+    }
+
+    /// Zooms the Mermaid preview while the platform zoom modifier is held;
+    /// plain scrolling keeps moving the document and shows a short hint.
+    pub(crate) fn on_mermaid_scroll_wheel(
+        &mut self,
+        event: &ScrollWheelEvent,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if !event.modifiers.secondary() {
+            self.show_mermaid_zoom_hint(cx);
+            return;
+        }
+        cx.stop_propagation();
+        let delta_y = f32::from(event.delta.pixel_delta(px(20.0)).y);
+        if delta_y.abs() < f32::EPSILON {
+            return;
+        }
+        self.zoom_mermaid_preview_at(mermaid_wheel_zoom_factor(delta_y), Some(event.position), cx);
+    }
+
+    /// Zooms the Mermaid preview with a trackpad pinch around its center.
+    pub(crate) fn on_mermaid_pinch(
+        &mut self,
+        event: &PinchEvent,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        cx.stop_propagation();
+        self.zoom_mermaid_preview_at(1.0 + event.delta, Some(event.position), cx);
+    }
+
+    /// Zooms the Mermaid preview by `factor` around the viewport center, for
+    /// keyboard shortcuts.
+    pub(crate) fn zoom_mermaid_preview(&mut self, factor: f32, cx: &mut Context<Self>) {
+        self.zoom_mermaid_preview_at(factor, None, cx);
+    }
+
+    /// Applies a zoom step anchored at a window position, or the viewport
+    /// center when no position is given.
+    fn zoom_mermaid_preview_at(
+        &mut self,
+        factor: f32,
+        position: Option<Point<Pixels>>,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(frame) = self.mermaid_frame else {
+            return;
+        };
+        let before = self.mermaid_view;
+        let (anchor_x, anchor_y) = self
+            .mermaid_viewport_bounds
+            .get()
+            .zip(position)
+            .map(|(bounds, position)| {
+                (
+                    f32::from(position.x - bounds.origin.x),
+                    f32::from(position.y - bounds.origin.y),
+                )
+            })
+            .unwrap_or((frame.width / 2.0, frame.height(before.zoom) / 2.0));
+        self.mermaid_view
+            .zoom_in_frame(factor, anchor_x, anchor_y, frame);
+        if self.mermaid_view != before {
+            self.mermaid_zoom_hint_visible = false;
+            self.mermaid_zoom_hint_task = None;
+            cx.notify();
+        }
+    }
+
+    /// Shows the modifier-zoom hint and restarts its hide timer.
+    fn show_mermaid_zoom_hint(&mut self, cx: &mut Context<Self>) {
+        if !self.mermaid_zoom_hint_visible {
+            self.mermaid_zoom_hint_visible = true;
+            cx.notify();
+        }
+        self.mermaid_zoom_hint_task = Some(cx.spawn(
+            async |this: WeakEntity<Block>, cx: &mut AsyncApp| {
+                cx.background_executor()
+                    .timer(MERMAID_ZOOM_HINT_DURATION)
+                    .await;
+                let _ = this.update(cx, |block, cx| {
+                    block.mermaid_zoom_hint_task = None;
+                    block.mermaid_zoom_hint_visible = false;
+                    cx.notify();
+                });
+            },
+        ));
+    }
+
+    /// Tracks pointer hover so keyboard zoom targets the preview under it.
+    pub(crate) fn on_mermaid_hover(
+        &mut self,
+        hovered: &bool,
+        _window: &mut Window,
+        _cx: &mut Context<Self>,
+    ) {
+        self.mermaid_hovered = *hovered;
+    }
+
+    /// Starts a potential pan drag over the Mermaid preview.
+    pub(crate) fn on_mermaid_mouse_down(
+        &mut self,
+        event: &MouseDownEvent,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.mermaid_drag = Some(MermaidDrag {
+            start_x: f32::from(event.position.x),
+            start_y: f32::from(event.position.y),
+            start_view: self.mermaid_view,
+            moved: false,
+        });
+        cx.stop_propagation();
+    }
+
+    /// Pans the Mermaid preview while the left button is held.
+    pub(crate) fn on_mermaid_mouse_move(
+        &mut self,
+        event: &MouseMoveEvent,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(drag) = self.mermaid_drag.as_mut() else {
+            return;
+        };
+        if event.pressed_button != Some(MouseButton::Left) {
+            self.mermaid_drag = None;
+            cx.notify();
+            return;
+        }
+        let dx = f32::from(event.position.x) - drag.start_x;
+        let dy = f32::from(event.position.y) - drag.start_y;
+        if !drag.moved && dx.hypot(dy) < MERMAID_DRAG_THRESHOLD {
+            return;
+        }
+        drag.moved = true;
+        self.mermaid_view = MermaidView {
+            offset_x: drag.start_view.offset_x + dx,
+            offset_y: drag.start_view.offset_y + dy,
+            ..drag.start_view
+        };
+        cx.stop_propagation();
+        cx.notify();
+    }
+
+    /// Ends a Mermaid pan; a press without travel opens the source editor.
+    pub(crate) fn on_mermaid_mouse_up(
+        &mut self,
+        event: &MouseUpEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(drag) = self.mermaid_drag.take() else {
+            return;
+        };
+        cx.stop_propagation();
+        if drag.moved {
+            cx.notify();
+            return;
+        }
+        let inside = self
+            .mermaid_viewport_bounds
+            .get()
+            .is_none_or(|bounds| bounds.contains(&event.position));
+        if inside && !self.focus_handle.is_focused(window) {
+            cx.emit(BlockEvent::RequestFocus);
         }
     }
 

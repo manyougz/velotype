@@ -71,6 +71,8 @@ actions!(
         DismissTransientUi,
         ToggleViewMode,
         ToggleWorkspace,
+        MermaidZoomIn,
+        MermaidZoomOut,
     ]
 );
 
@@ -216,6 +218,10 @@ pub(crate) enum ShortcutCommand {
     ToggleViewMode,
     /// Toggle workspace visibility.
     ToggleWorkspace,
+    /// Zoom into the Mermaid preview under the pointer.
+    MermaidZoomIn,
+    /// Zoom out of the Mermaid preview under the pointer.
+    MermaidZoomOut,
 }
 
 /// Shortcut metadata used for defaults, preference labels, and binding context.
@@ -593,6 +599,20 @@ const SHORTCUT_DEFINITIONS: &[ShortcutDefinition] = &[
         default_keys: &["ctrl-w"],
         context: None,
     },
+    ShortcutDefinition {
+        command: ShortcutCommand::MermaidZoomIn,
+        id: "mermaid_zoom_in",
+        category: ShortcutCategory::Navigation,
+        default_keys: &["cmd-=", "ctrl-="],
+        context: None,
+    },
+    ShortcutDefinition {
+        command: ShortcutCommand::MermaidZoomOut,
+        id: "mermaid_zoom_out",
+        category: ShortcutCategory::Navigation,
+        default_keys: &["cmd--", "ctrl--"],
+        context: None,
+    },
 ];
 
 /// Returns the canonical, ordered shortcut catalog.
@@ -813,6 +833,8 @@ fn key_binding_for(
         ShortcutCommand::DismissTransientUi => KeyBinding::new(key, DismissTransientUi, context),
         ShortcutCommand::ToggleViewMode => KeyBinding::new(key, ToggleViewMode, context),
         ShortcutCommand::ToggleWorkspace => KeyBinding::new(key, ToggleWorkspace, context),
+        ShortcutCommand::MermaidZoomIn => KeyBinding::new(key, MermaidZoomIn, context),
+        ShortcutCommand::MermaidZoomOut => KeyBinding::new(key, MermaidZoomOut, context),
     }
 }
 
@@ -881,6 +903,31 @@ mod tests {
             resolved_shortcut_keys(&BTreeMap::new(), ShortcutCommand::ToggleWorkspace),
             vec!["ctrl-w".to_string()]
         );
+    }
+
+    #[test]
+    fn mermaid_zoom_has_default_shortcuts_without_conflicts() {
+        assert_eq!(
+            resolved_shortcut_keys(&BTreeMap::new(), ShortcutCommand::MermaidZoomIn),
+            vec!["cmd-=".to_string(), "ctrl-=".to_string()]
+        );
+        assert_eq!(
+            resolved_shortcut_keys(&BTreeMap::new(), ShortcutCommand::MermaidZoomOut),
+            vec!["cmd--".to_string(), "ctrl--".to_string()]
+        );
+        for command in [
+            ShortcutCommand::MermaidZoomIn,
+            ShortcutCommand::MermaidZoomOut,
+        ] {
+            assert!(
+                shortcut_conflict_for(
+                    command,
+                    &resolved_shortcut_keys(&BTreeMap::new(), command),
+                    &BTreeMap::new()
+                )
+                .is_none()
+            );
+        }
     }
 
     #[test]

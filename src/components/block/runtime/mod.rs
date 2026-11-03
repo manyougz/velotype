@@ -1,7 +1,9 @@
 //! Editable block runtime and block-local state transitions.
 
+use std::cell::Cell;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -31,7 +33,8 @@ use crate::components::markdown::inline::{
     InlineStyle, InlineTextTree, StyleFlag,
 };
 use crate::components::{
-    TableAxisHighlight, TableAxisMarker, TableCellPosition, TableColumnAlignment, TableRuntime,
+    MermaidDrag, MermaidFrame, MermaidView, TableAxisHighlight, TableAxisMarker, TableCellPosition,
+    TableColumnAlignment, TableRuntime,
 };
 
 /// Inline formatting command issued by editor actions.
@@ -238,6 +241,20 @@ pub struct Block {
     numbered_list_restart_requested: bool,
     /// Pending editor request to reparse quote structure.
     quote_reparse_requested: bool,
+    /// Zoom and pan state of the rendered Mermaid preview.
+    pub(crate) mermaid_view: MermaidView,
+    /// Active pointer press over the Mermaid preview.
+    pub(crate) mermaid_drag: Option<MermaidDrag>,
+    /// Last prepainted bounds of the Mermaid preview viewport.
+    pub(crate) mermaid_viewport_bounds: Rc<Cell<Option<Bounds<Pixels>>>>,
+    /// Geometry of the last rendered Mermaid preview frame.
+    pub(crate) mermaid_frame: Option<MermaidFrame>,
+    /// Whether the pointer is over the Mermaid preview.
+    pub(crate) mermaid_hovered: bool,
+    /// Whether the modifier-zoom hint is showing on the Mermaid preview.
+    pub(crate) mermaid_zoom_hint_visible: bool,
+    /// Deferred task that hides the Mermaid zoom hint.
+    pub(crate) mermaid_zoom_hint_task: Option<Task<()>>,
 }
 
 /// Cached standalone image presentation state for a block.
@@ -338,6 +355,13 @@ impl Block {
             list_group_separator_candidate: false,
             numbered_list_restart_requested: false,
             quote_reparse_requested: false,
+            mermaid_view: MermaidView::default(),
+            mermaid_drag: None,
+            mermaid_viewport_bounds: Rc::default(),
+            mermaid_frame: None,
+            mermaid_hovered: false,
+            mermaid_zoom_hint_visible: false,
+            mermaid_zoom_hint_task: None,
         };
         block.sync_code_highlight();
         block.refresh_cached_display_text();

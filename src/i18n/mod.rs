@@ -343,6 +343,13 @@ pub struct I18nStrings {
     pub preferences_shortcut_toggle_view_mode: String,
     /// Command label for toggling the workspace drawer.
     pub preferences_shortcut_toggle_workspace: String,
+    /// Command label for zooming into the hovered Mermaid preview.
+    pub preferences_shortcut_mermaid_zoom_in: String,
+    /// Command label for zooming out of the hovered Mermaid preview.
+    pub preferences_shortcut_mermaid_zoom_out: String,
+    /// Hint shown when scrolling over a Mermaid preview without the zoom
+    /// modifier. Supports `{modifier}`.
+    pub mermaid_zoom_hint_template: String,
     /// Workspace drawer Files tab.
     pub workspace_tab_files: String,
     /// Workspace drawer Outline tab.
@@ -750,6 +757,12 @@ struct I18nStringsDe {
     preferences_shortcut_toggle_view_mode: Option<String>,
     /// Optional workspace toggle command label.
     preferences_shortcut_toggle_workspace: Option<String>,
+    /// Optional Mermaid zoom-in command label.
+    preferences_shortcut_mermaid_zoom_in: Option<String>,
+    /// Optional Mermaid zoom-out command label.
+    preferences_shortcut_mermaid_zoom_out: Option<String>,
+    /// Optional Mermaid zoom hint with a `{modifier}` placeholder.
+    mermaid_zoom_hint_template: Option<String>,
     /// Optional workspace Files tab label.
     workspace_tab_files: Option<String>,
     /// Optional workspace Outline tab label.
@@ -1012,6 +1025,9 @@ const I18N_STRING_KEYS: &[&str] = &[
     "preferences_shortcut_dismiss_transient_ui",
     "preferences_shortcut_toggle_view_mode",
     "preferences_shortcut_toggle_workspace",
+    "preferences_shortcut_mermaid_zoom_in",
+    "preferences_shortcut_mermaid_zoom_out",
+    "mermaid_zoom_hint_template",
     "workspace_tab_files",
     "workspace_tab_outline",
     "workspace_no_file_title",
@@ -1516,6 +1532,15 @@ impl I18nStringsDe {
             preferences_shortcut_toggle_workspace: self
                 .preferences_shortcut_toggle_workspace
                 .unwrap_or(defaults.preferences_shortcut_toggle_workspace),
+            preferences_shortcut_mermaid_zoom_in: self
+                .preferences_shortcut_mermaid_zoom_in
+                .unwrap_or(defaults.preferences_shortcut_mermaid_zoom_in),
+            preferences_shortcut_mermaid_zoom_out: self
+                .preferences_shortcut_mermaid_zoom_out
+                .unwrap_or(defaults.preferences_shortcut_mermaid_zoom_out),
+            mermaid_zoom_hint_template: self
+                .mermaid_zoom_hint_template
+                .unwrap_or(defaults.mermaid_zoom_hint_template),
             workspace_tab_files: self
                 .workspace_tab_files
                 .unwrap_or(defaults.workspace_tab_files),
@@ -1799,6 +1824,9 @@ impl I18nStrings {
             preferences_shortcut_dismiss_transient_ui: "关闭临时界面".into(),
             preferences_shortcut_toggle_view_mode: "切换视图模式".into(),
             preferences_shortcut_toggle_workspace: "切换工作区".into(),
+            preferences_shortcut_mermaid_zoom_in: "放大 Mermaid 图".into(),
+            preferences_shortcut_mermaid_zoom_out: "缩小 Mermaid 图".into(),
+            mermaid_zoom_hint_template: "按住 {modifier} 并滚动以缩放".into(),
             workspace_tab_files: "文件".into(),
             workspace_tab_outline: "大纲".into(),
             workspace_no_file_title: "未打开 Markdown 文件".into(),
@@ -2069,6 +2097,9 @@ impl I18nStrings {
             preferences_shortcut_dismiss_transient_ui: "Dismiss Temporary UI".into(),
             preferences_shortcut_toggle_view_mode: "Toggle View Mode".into(),
             preferences_shortcut_toggle_workspace: "Toggle Workspace".into(),
+            preferences_shortcut_mermaid_zoom_in: "Zoom In Mermaid Diagram".into(),
+            preferences_shortcut_mermaid_zoom_out: "Zoom Out Mermaid Diagram".into(),
+            mermaid_zoom_hint_template: "Hold {modifier} and scroll to zoom".into(),
             workspace_tab_files: "Files".into(),
             workspace_tab_outline: "Outline".into(),
             workspace_no_file_title: "No Markdown File Open".into(),
