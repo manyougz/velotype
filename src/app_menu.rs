@@ -78,6 +78,7 @@ pub(crate) fn open_editor_window(
             crate::ime::install_window_input_filter(window);
             window.activate_window();
             editor.force_install_close_guard(cx, window);
+            crate::theme::install_window_appearance_observer(window, cx);
         })
         .expect("newly opened editor window should be updateable");
 
@@ -708,10 +709,15 @@ fn build_menus(
         .available_themes()
         .iter()
         .map(|entry| {
-            let label = if entry.id.as_str() == current_theme_id {
-                format!("\u{2713} {}", entry.name)
+            let display_name = if entry.id == crate::theme::THEME_SYSTEM_ID {
+                &strings.theme_system
             } else {
-                entry.name.to_string()
+                &entry.name
+            };
+            let label = if entry.id.as_str() == current_theme_id {
+                format!("\u{2713} {display_name}")
+            } else {
+                display_name.to_string()
             };
             MenuItem::action(
                 label,
@@ -1527,6 +1533,41 @@ mod tests {
             }
             _ => panic!("expected light theme action item"),
         }
+    }
+
+    #[test]
+    fn theme_menu_marks_selected_system_theme() {
+        let mut theme_manager = ThemeManager::default();
+        assert!(theme_manager.set_theme_by_id(crate::theme::THEME_SYSTEM_ID));
+        let i18n_manager = I18nManager::default();
+        let menus = build_menus(&theme_manager, &i18n_manager, &[]);
+        let theme_items = &menus[THEME_IDX].items;
+
+        assert_eq!(action_name(&theme_items[0]), "Velotype");
+        assert_eq!(action_name(&theme_items[1]), "Velotype Light");
+        assert_eq!(action_name(&theme_items[2]), "\u{2713} System");
+        match &theme_items[2] {
+            MenuItem::Action { action, .. } => {
+                let action = action
+                    .as_any()
+                    .downcast_ref::<SelectTheme>()
+                    .expect("system theme item should dispatch SelectTheme");
+                assert_eq!(action.theme_id, crate::theme::THEME_SYSTEM_ID);
+            }
+            _ => panic!("expected system theme action item"),
+        }
+    }
+
+    #[test]
+    fn theme_menu_displays_chinese_system_theme_label() {
+        let theme_manager = ThemeManager::default();
+        let i18n_manager = I18nManager::new_with_language_id("zh-CN");
+        let menus = build_menus(&theme_manager, &i18n_manager, &[]);
+        let theme_items = &menus[THEME_IDX].items;
+
+        assert_eq!(action_name(&theme_items[0]), "\u{2713} Velotype");
+        assert_eq!(action_name(&theme_items[1]), "Velotype Light");
+        assert_eq!(action_name(&theme_items[2]), "自适应系统");
     }
 
     #[test]
