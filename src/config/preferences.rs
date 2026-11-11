@@ -2007,6 +2007,10 @@ impl PreferencesWindow {
             ShortcutCommand::ToggleWorkspace => {
                 strings.preferences_shortcut_toggle_workspace.clone()
             }
+            ShortcutCommand::MermaidZoomIn => strings.preferences_shortcut_mermaid_zoom_in.clone(),
+            ShortcutCommand::MermaidZoomOut => {
+                strings.preferences_shortcut_mermaid_zoom_out.clone()
+            }
         }
     }
 

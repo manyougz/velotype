@@ -18,6 +18,18 @@ const MERMAID_MAX_VIEWPORT_WIDTH_RATIO: f32 = 1.15;
 const MERMAID_SCALE_PER_EXTRA_LINE: f32 = 0.035;
 /// Upper bound on editor display scale.
 const MERMAID_MAX_SCALE: f32 = 1.75;
+/// Smallest preview zoom, relative to the fitted overview.
+pub(crate) const MERMAID_MIN_ZOOM: f32 = 1.0;
+/// Largest preview zoom, relative to the fitted overview.
+pub(crate) const MERMAID_MAX_ZOOM: f32 = 10.0;
+/// Zoom multiplier applied by one keyboard zoom step.
+pub(crate) const MERMAID_KEYBOARD_ZOOM_STEP: f32 = 1.25;
+/// Exponential zoom change per pixel of vertical wheel delta.
+const MERMAID_WHEEL_ZOOM_SENSITIVITY: f32 = 0.0025;
+/// Pointer travel, in pixels, after which a press becomes a pan drag.
+pub(crate) const MERMAID_DRAG_THRESHOLD: f32 = 3.0;
+/// Largest SVG edge, in logical pixels, rendered for a sharper zoomed preview.
+const MERMAID_MAX_RASTER_EDGE: f32 = 4096.0;
 
 /// Opening fence metadata for a Mermaid fenced code block.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -61,6 +73,168 @@ pub(crate) struct MermaidSvgSize {
     pub(crate) width: f32,
     /// Intrinsic SVG height.
     pub(crate) height: f32,
+}
+
+/// Zoom and pan state of an interactive Mermaid preview.
+///
+/// `zoom` is relative to the fitted overview, so `1.0` always shows the whole
+/// diagram. Offsets move the diagram center away from the viewport center.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct MermaidView {
+    /// Zoom factor relative to the fitted overview.
+    pub(crate) zoom: f32,
+    /// Horizontal pan offset in logical pixels.
+    pub(crate) offset_x: f32,
+    /// Vertical pan offset in logical pixels.
+    pub(crate) offset_y: f32,
+}
+
+impl Default for MermaidView {
+    /// Starts at the fitted overview with no pan.
+    fn default() -> Self {
+        Self {
+            zoom: 1.0,
+            offset_x: 0.0,
+            offset_y: 0.0,
+        }
+    }
+}
+
+impl MermaidView {
+    /// Whether the view still shows the untouched fitted overview.
+    pub(crate) fn is_default(&self) -> bool {
+        (self.zoom - 1.0).abs() < 1e-3 && self.offset_x.abs() < 0.5 && self.offset_y.abs() < 0.5
+    }
+
+    /// Zooms by `factor`, keeping the point at `anchor` (relative to the
+    /// viewport center) fixed on screen.
+    pub(crate) fn zoom_at(&mut self, factor: f32, anchor_x: f32, anchor_y: f32) {
+        if !factor.is_finite() || factor <= 0.0 {
+            return;
+        }
+        let zoom = (self.zoom * factor).clamp(MERMAID_MIN_ZOOM, MERMAID_MAX_ZOOM);
+        let ratio = zoom / self.zoom;
+        self.offset_x = anchor_x - (anchor_x - self.offset_x) * ratio;
+        self.offset_y = anchor_y - (anchor_y - self.offset_y) * ratio;
+        self.zoom = zoom;
+    }
+
+    /// Zooms inside a frame whose height follows the zoom level, keeping the
+    /// point at `anchor` (relative to the frame's top-left) fixed on screen.
+    pub(crate) fn zoom_in_frame(
+        &mut self,
+        factor: f32,
+        anchor_x: f32,
+        anchor_y: f32,
+        frame: MermaidFrame,
+    ) {
+        let old_height = frame.height(self.zoom);
+        self.zoom_at(
+            factor,
+            anchor_x - frame.width / 2.0,
+            anchor_y - old_height / 2.0,
+        );
+        // The frame keeps its top edge while it grows, so its center moves
+        // down by half the growth; compensate to keep the anchor in place.
+        let new_height = frame.height(self.zoom);
+        self.offset_y -= (new_height - old_height) / 2.0;
+        self.clamp(
+            frame.fitted_width,
+            frame.fitted_height,
+            frame.width,
+            new_height,
+        );
+    }
+
+    /// Keeps the diagram covering the viewport so it cannot be panned away.
+    ///
+    /// `fitted_*` is the diagram size at zoom `1.0`.
+    pub(crate) fn clamp(
+        &mut self,
+        fitted_width: f32,
+        fitted_height: f32,
+        viewport_width: f32,
+        viewport_height: f32,
+    ) {
+        self.zoom = self.zoom.clamp(MERMAID_MIN_ZOOM, MERMAID_MAX_ZOOM);
+        let max_x = ((fitted_width * self.zoom - viewport_width) / 2.0).max(0.0);
+        let max_y = ((fitted_height * self.zoom - viewport_height) / 2.0).max(0.0);
+        self.offset_x = self.offset_x.clamp(-max_x, max_x);
+        self.offset_y = self.offset_y.clamp(-max_y, max_y);
+    }
+}
+
+/// Laid-out geometry of a Mermaid preview frame.
+///
+/// The frame starts at the fitted diagram height and grows with zoom until
+/// `max_height`, so short, wide diagrams gain room instead of being cropped
+/// into a thin strip.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct MermaidFrame {
+    /// Frame width in logical pixels.
+    pub(crate) width: f32,
+    /// Diagram width at zoom `1.0`.
+    pub(crate) fitted_width: f32,
+    /// Diagram height at zoom `1.0`.
+    pub(crate) fitted_height: f32,
+    /// Largest height the frame may grow to while zooming.
+    pub(crate) max_height: f32,
+}
+
+impl MermaidFrame {
+    /// Frame height for a zoom level.
+    pub(crate) fn height(&self, zoom: f32) -> f32 {
+        (self.fitted_height * zoom).min(self.max_height.max(self.fitted_height))
+    }
+}
+
+/// In-progress pointer drag over a Mermaid preview.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct MermaidDrag {
+    /// Window-space pointer x where the press started.
+    pub(crate) start_x: f32,
+    /// Window-space pointer y where the press started.
+    pub(crate) start_y: f32,
+    /// View state captured when the press started.
+    pub(crate) start_view: MermaidView,
+    /// Whether the pointer traveled far enough to count as a pan.
+    pub(crate) moved: bool,
+}
+
+/// Scale that fits a diagram inside the given box without upscaling.
+pub(crate) fn mermaid_fit_scale(width: f32, height: f32, max_width: f32, max_height: f32) -> f32 {
+    let width = width.max(1.0);
+    let height = height.max(1.0);
+    (max_width.max(1.0) / width)
+        .min(max_height.max(1.0) / height)
+        .min(1.0)
+}
+
+/// Zoom factor produced by a vertical wheel delta; scrolling up zooms in.
+pub(crate) fn mermaid_wheel_zoom_factor(delta_y: f32) -> f32 {
+    (delta_y * MERMAID_WHEEL_ZOOM_SENSITIVITY).exp()
+}
+
+/// Extra rasterization multiplier for a preview drawn at `effective_scale`
+/// times the display SVG size, or `None` when the base raster is sharp enough.
+///
+/// Multipliers are bucketed so zooming does not render a new SVG per frame,
+/// and capped so oversized diagrams do not allocate huge textures.
+pub(crate) fn mermaid_raster_multiplier(
+    effective_scale: f32,
+    display_width: f32,
+    display_height: f32,
+) -> Option<f32> {
+    let bucket: f32 = if effective_scale > 2.5 {
+        4.0
+    } else if effective_scale > 1.25 {
+        2.0
+    } else {
+        return None;
+    };
+    let edge_cap = MERMAID_MAX_RASTER_EDGE / display_width.max(display_height).max(1.0);
+    let multiplier = bucket.min(edge_cap);
+    (multiplier > 1.2).then_some(multiplier)
 }
 
 /// Returns true when a fenced code info string declares Mermaid content.
@@ -155,6 +329,27 @@ fn render_mermaid_svg_for_display_with(
         viewport_width,
     );
 
+    render_mermaid_display_svg(source, &base_svg, scale)
+}
+
+/// Render Mermaid source at an explicit display scale, e.g. for a sharper
+/// zoomed preview.
+pub(crate) fn render_mermaid_svg_at_scale(
+    source: &MermaidSource,
+    scale: f32,
+) -> anyhow::Result<MermaidSvgRender> {
+    let base_key = mermaid_cache_key(&source.body);
+    let base_path = mermaid_base_cache_path(&base_key)?;
+    let base_svg = render_mermaid_to_svg_cached_with(&source.body, &base_path, render_mermaid_raw)?;
+    render_mermaid_display_svg(source, &base_svg, scale)
+}
+
+/// Reads or writes the display SVG cache entry for a base SVG and scale.
+fn render_mermaid_display_svg(
+    source: &MermaidSource,
+    base_svg: &str,
+    scale: f32,
+) -> anyhow::Result<MermaidSvgRender> {
     let display_key = mermaid_display_cache_key(&source.body, scale);
     let display_path = mermaid_display_cache_path(&display_key)?;
     if display_path.exists() {
@@ -174,7 +369,7 @@ fn render_mermaid_svg_for_display_with(
         });
     }
 
-    let (svg, size) = scale_mermaid_svg_for_display(&base_svg, scale)?;
+    let (svg, size) = scale_mermaid_svg_for_display(base_svg, scale)?;
     fs::write(&display_path, &svg).with_context(|| {
         format!(
             "failed to write Mermaid display SVG cache '{}'",
@@ -770,6 +965,98 @@ mod tests {
         assert!(!root.contains("100%"));
         assert!(!root.contains("max-width"));
         assert!(!root.contains("style="));
+    }
+
+    #[test]
+    fn fit_scale_shrinks_oversized_diagrams_without_upscaling() {
+        assert_eq!(mermaid_fit_scale(400.0, 200.0, 800.0, 600.0), 1.0);
+        assert_eq!(mermaid_fit_scale(1600.0, 200.0, 800.0, 600.0), 0.5);
+        assert_eq!(mermaid_fit_scale(400.0, 1200.0, 800.0, 600.0), 0.5);
+    }
+
+    #[test]
+    fn view_zoom_keeps_anchor_fixed_and_respects_limits() {
+        let mut view = MermaidView::default();
+        view.zoom_at(2.0, 100.0, -50.0);
+        assert_eq!(view.zoom, 2.0);
+        // The diagram point under the anchor was at (100, -50) and stays there.
+        assert_eq!((view.offset_x, view.offset_y), (-100.0, 50.0));
+
+        view.zoom_at(1000.0, 0.0, 0.0);
+        assert_eq!(view.zoom, MERMAID_MAX_ZOOM);
+        view.zoom_at(0.0001, 0.0, 0.0);
+        assert_eq!(view.zoom, MERMAID_MIN_ZOOM);
+    }
+
+    #[test]
+    fn view_clamp_keeps_diagram_covering_viewport() {
+        let mut view = MermaidView {
+            zoom: 2.0,
+            offset_x: 999.0,
+            offset_y: -999.0,
+        };
+        view.clamp(400.0, 200.0, 400.0, 200.0);
+        assert_eq!((view.offset_x, view.offset_y), (200.0, -100.0));
+
+        let mut overview = MermaidView {
+            zoom: 1.0,
+            offset_x: 30.0,
+            offset_y: 30.0,
+        };
+        overview.clamp(400.0, 200.0, 400.0, 200.0);
+        assert!(overview.is_default());
+    }
+
+    #[test]
+    fn frame_grows_with_zoom_up_to_max_height() {
+        let frame = MermaidFrame {
+            width: 800.0,
+            fitted_width: 800.0,
+            fitted_height: 60.0,
+            max_height: 400.0,
+        };
+        assert_eq!(frame.height(1.0), 60.0);
+        assert_eq!(frame.height(3.0), 180.0);
+        assert_eq!(frame.height(10.0), 400.0);
+
+        // A frame shorter than max never shrinks below the fitted height.
+        let tall = MermaidFrame {
+            max_height: 40.0,
+            ..frame
+        };
+        assert_eq!(tall.height(5.0), 60.0);
+    }
+
+    #[test]
+    fn zoom_in_growing_frame_keeps_anchor_fixed() {
+        let frame = MermaidFrame {
+            width: 800.0,
+            fitted_width: 800.0,
+            fitted_height: 100.0,
+            max_height: 1000.0,
+        };
+        let mut view = MermaidView::default();
+        // Anchor at frame-local (200, 50): diagram fraction (0.25, 0.5).
+        view.zoom_in_frame(2.0, 200.0, 50.0, frame);
+        let height = frame.height(view.zoom);
+        let left = (frame.width - frame.fitted_width * view.zoom) / 2.0 + view.offset_x;
+        let top = (height - frame.fitted_height * view.zoom) / 2.0 + view.offset_y;
+        assert_eq!(left + 0.25 * frame.fitted_width * view.zoom, 200.0);
+        // The frame grew to fit the whole height, so the diagram stays top-aligned.
+        assert_eq!(height, 200.0);
+        assert_eq!(top, 0.0);
+    }
+
+    #[test]
+    fn wheel_up_zooms_in_and_raster_multiplier_is_bucketed() {
+        assert!(mermaid_wheel_zoom_factor(40.0) > 1.0);
+        assert!(mermaid_wheel_zoom_factor(-40.0) < 1.0);
+
+        assert_eq!(mermaid_raster_multiplier(1.0, 800.0, 400.0), None);
+        assert_eq!(mermaid_raster_multiplier(1.8, 800.0, 400.0), Some(2.0));
+        assert_eq!(mermaid_raster_multiplier(5.0, 800.0, 400.0), Some(4.0));
+        assert_eq!(mermaid_raster_multiplier(5.0, 2048.0, 400.0), Some(2.0));
+        assert_eq!(mermaid_raster_multiplier(5.0, 4000.0, 400.0), None);
     }
 
     #[test]
