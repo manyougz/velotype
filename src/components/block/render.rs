@@ -2770,7 +2770,7 @@ impl Render for Block {
                 } else {
                     px(0.0)
                 };
-                let column_append_top = top_gutter + activation_band;
+                let column_append_top = activation_band;
                 let column_control_visible = self.table_append_column_hovered;
                 let row_control_visible = self.table_append_row_hovered;
                 let right_gutter = if column_control_visible {
@@ -2787,8 +2787,18 @@ impl Render for Block {
 
                 let header_cells = runtime.header;
                 let column_axis_row = (top_gutter > px(0.0)).then(|| {
-                    div().w_full().h(top_gutter).flex().gap(px(0.0)).children(
-                        header_cells.iter().enumerate().map(|(column, _cell)| {
+                    div()
+                        .id(ElementId::Name(
+                            format!("table-column-axis-row-{}", self.record.id).into(),
+                        ))
+                        .absolute()
+                        .top(-activation_band)
+                        .left_0()
+                        .right(right_gutter)
+                        .h(activation_band)
+                        .flex()
+                        .gap(px(0.0))
+                        .children(header_cells.iter().enumerate().map(|(column, _cell)| {
                             let hover_block = weak_table_block.clone();
                             let select_block = weak_table_block.clone();
                             let menu_block = weak_table_block.clone();
@@ -2860,8 +2870,7 @@ impl Render for Block {
                                         )
                                         .block_mouse_except_scroll(),
                                 )
-                        }),
-                    )
+                        }))
                 });
 
                 let header_hover_block = weak_table_block.clone();
@@ -3083,10 +3092,7 @@ impl Render for Block {
                         });
 
                 {
-                    let mut rows = Vec::with_capacity(2 + body_row_count);
-                    if let Some(column_axis_row) = column_axis_row {
-                        rows.push(column_axis_row.into_any_element());
-                    }
+                    let mut rows = Vec::with_capacity(1 + body_row_count);
                     rows.push(header_row.into_any_element());
                     rows.extend(body_rows.map(|row| row.into_any_element()));
 
@@ -3200,7 +3206,7 @@ impl Render for Block {
                         }
                     };
 
-                    div()
+                    let mut container = div()
                         .id(block_id)
                         .w_full()
                         .relative()
@@ -3213,8 +3219,13 @@ impl Render for Block {
                         .child(column_edge_band)
                         .child(row_edge_band)
                         .child(column_control)
-                        .child(row_control)
-                        .into_any_element()
+                        .child(row_control);
+
+                    if let Some(column_axis_row) = column_axis_row {
+                        container = container.child(column_axis_row);
+                    }
+
+                    container.into_any_element()
                 }
             }
             BlockKind::HtmlBlock => {

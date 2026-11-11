@@ -1567,6 +1567,48 @@ async fn body_row_preview_survives_stale_header_leave(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
+async fn previewing_table_column_updates_table_axis_preview_and_visual_state(
+    cx: &mut TestAppContext,
+) {
+    use crate::components::TableAxisKind;
+    let markdown = [
+        "| Category | Configuration |",
+        "| :---: | :---: |",
+        "| Optimization | `same md snippet` |",
+    ]
+    .join("\n");
+    let editor = cx.new(|cx| Editor::from_markdown(cx, markdown, None));
+
+    editor.update(cx, |editor, cx| {
+        let table = editor.document.first_root().expect("table root").clone();
+        let id = table.entity_id();
+
+        // Hovering a column sets preview on both editor and table block.
+        editor.preview_table_axis(id, TableAxisKind::Column, 0, true, cx);
+        assert_eq!(
+            editor.table_axis_preview,
+            Some(super::TableAxisSelection {
+                table_block_id: id,
+                kind: TableAxisKind::Column,
+                index: 0,
+            })
+        );
+        assert_eq!(
+            table.read(cx).table_axis_preview,
+            Some(crate::components::TableAxisMarker {
+                kind: TableAxisKind::Column,
+                index: 0,
+            })
+        );
+
+        // Leaving the column clears the preview without leaving residual state.
+        editor.preview_table_axis(id, TableAxisKind::Column, 0, false, cx);
+        assert_eq!(editor.table_axis_preview, None);
+        assert_eq!(table.read(cx).table_axis_preview, None);
+    });
+}
+
+#[gpui::test]
 async fn deleting_table_column_moves_selection_to_nearest_survivor(cx: &mut TestAppContext) {
     let markdown = ["| A | B | C |", "| --- | --- | --- |", "| 1 | 2 | 3 |"].join("\n");
     let editor = cx.new(|cx| Editor::from_markdown(cx, markdown, None));
