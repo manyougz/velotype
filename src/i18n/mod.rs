@@ -319,6 +319,20 @@ pub struct I18nStrings {
     pub preferences_shortcut_underline_selection: String,
     /// Command label for applying inline code to the selection.
     pub preferences_shortcut_code_selection: String,
+    /// Command label for converting the current block to a first-level heading.
+    pub preferences_shortcut_heading_1: String,
+    /// Command label for converting the current block to a second-level heading.
+    pub preferences_shortcut_heading_2: String,
+    /// Command label for converting the current block to a third-level heading.
+    pub preferences_shortcut_heading_3: String,
+    /// Command label for converting the current block to a fourth-level heading.
+    pub preferences_shortcut_heading_4: String,
+    /// Command label for converting the current block to a fifth-level heading.
+    pub preferences_shortcut_heading_5: String,
+    /// Command label for converting the current block to a sixth-level heading.
+    pub preferences_shortcut_heading_6: String,
+    /// Command label for removing a heading and returning to a paragraph.
+    pub preferences_shortcut_remove_heading: String,
     /// Command label for indenting a block.
     pub preferences_shortcut_indent_block: String,
     /// Command label for outdenting a block.
@@ -726,6 +740,20 @@ struct I18nStringsDe {
     preferences_shortcut_underline_selection: Option<String>,
     /// Optional inline-code-selection command label.
     preferences_shortcut_code_selection: Option<String>,
+    /// Optional first-level heading command label.
+    preferences_shortcut_heading_1: Option<String>,
+    /// Optional second-level heading command label.
+    preferences_shortcut_heading_2: Option<String>,
+    /// Optional third-level heading command label.
+    preferences_shortcut_heading_3: Option<String>,
+    /// Optional fourth-level heading command label.
+    preferences_shortcut_heading_4: Option<String>,
+    /// Optional fifth-level heading command label.
+    preferences_shortcut_heading_5: Option<String>,
+    /// Optional sixth-level heading command label.
+    preferences_shortcut_heading_6: Option<String>,
+    /// Optional remove-heading command label.
+    preferences_shortcut_remove_heading: Option<String>,
     /// Optional block indentation command label.
     preferences_shortcut_indent_block: Option<String>,
     /// Optional block outdent command label.
@@ -1000,6 +1028,13 @@ const I18N_STRING_KEYS: &[&str] = &[
     "preferences_shortcut_italic_selection",
     "preferences_shortcut_underline_selection",
     "preferences_shortcut_code_selection",
+    "preferences_shortcut_heading_1",
+    "preferences_shortcut_heading_2",
+    "preferences_shortcut_heading_3",
+    "preferences_shortcut_heading_4",
+    "preferences_shortcut_heading_5",
+    "preferences_shortcut_heading_6",
+    "preferences_shortcut_remove_heading",
     "preferences_shortcut_indent_block",
     "preferences_shortcut_outdent_block",
     "preferences_shortcut_exit_code_block",
@@ -1480,6 +1515,27 @@ impl I18nStringsDe {
             preferences_shortcut_code_selection: self
                 .preferences_shortcut_code_selection
                 .unwrap_or(defaults.preferences_shortcut_code_selection),
+            preferences_shortcut_heading_1: self
+                .preferences_shortcut_heading_1
+                .unwrap_or(defaults.preferences_shortcut_heading_1),
+            preferences_shortcut_heading_2: self
+                .preferences_shortcut_heading_2
+                .unwrap_or(defaults.preferences_shortcut_heading_2),
+            preferences_shortcut_heading_3: self
+                .preferences_shortcut_heading_3
+                .unwrap_or(defaults.preferences_shortcut_heading_3),
+            preferences_shortcut_heading_4: self
+                .preferences_shortcut_heading_4
+                .unwrap_or(defaults.preferences_shortcut_heading_4),
+            preferences_shortcut_heading_5: self
+                .preferences_shortcut_heading_5
+                .unwrap_or(defaults.preferences_shortcut_heading_5),
+            preferences_shortcut_heading_6: self
+                .preferences_shortcut_heading_6
+                .unwrap_or(defaults.preferences_shortcut_heading_6),
+            preferences_shortcut_remove_heading: self
+                .preferences_shortcut_remove_heading
+                .unwrap_or(defaults.preferences_shortcut_remove_heading),
             preferences_shortcut_indent_block: self
                 .preferences_shortcut_indent_block
                 .unwrap_or(defaults.preferences_shortcut_indent_block),
@@ -1787,6 +1843,13 @@ impl I18nStrings {
             preferences_shortcut_italic_selection: "斜体".into(),
             preferences_shortcut_underline_selection: "下划线".into(),
             preferences_shortcut_code_selection: "行内代码".into(),
+            preferences_shortcut_heading_1: "标题 1".into(),
+            preferences_shortcut_heading_2: "标题 2".into(),
+            preferences_shortcut_heading_3: "标题 3".into(),
+            preferences_shortcut_heading_4: "标题 4".into(),
+            preferences_shortcut_heading_5: "标题 5".into(),
+            preferences_shortcut_heading_6: "标题 6".into(),
+            preferences_shortcut_remove_heading: "移除标题".into(),
             preferences_shortcut_indent_block: "缩进块".into(),
             preferences_shortcut_outdent_block: "取消缩进块".into(),
             preferences_shortcut_exit_code_block: "退出代码块".into(),
@@ -2057,6 +2120,13 @@ impl I18nStrings {
             preferences_shortcut_italic_selection: "Italic".into(),
             preferences_shortcut_underline_selection: "Underline".into(),
             preferences_shortcut_code_selection: "Inline Code".into(),
+            preferences_shortcut_heading_1: "Heading 1".into(),
+            preferences_shortcut_heading_2: "Heading 2".into(),
+            preferences_shortcut_heading_3: "Heading 3".into(),
+            preferences_shortcut_heading_4: "Heading 4".into(),
+            preferences_shortcut_heading_5: "Heading 5".into(),
+            preferences_shortcut_heading_6: "Heading 6".into(),
+            preferences_shortcut_remove_heading: "Remove Heading".into(),
             preferences_shortcut_indent_block: "Indent Block".into(),
             preferences_shortcut_outdent_block: "Outdent Block".into(),
             preferences_shortcut_exit_code_block: "Exit Code Block".into(),

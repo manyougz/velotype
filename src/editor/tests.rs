@@ -2864,6 +2864,51 @@ async fn toggle_view_mode_ends_stale_code_block_pointer_selection(cx: &mut TestA
 }
 
 #[gpui::test]
+async fn ctrl_number_shortcuts_apply_heading_levels(cx: &mut TestAppContext) {
+    init_editor_test_app(cx);
+    let (editor, cx) =
+        cx.add_window_view(|_window, cx| Editor::from_markdown(cx, "Title".to_string(), None));
+
+    editor.update(cx, |editor, cx| {
+        let block = editor.document.visible_blocks()[0].entity.clone();
+        editor.focus_block(block.entity_id());
+        block.update(cx, |block, cx| block.move_to(0, cx));
+    });
+    redraw(cx);
+
+    for (key, level) in [
+        ("ctrl-1", 1),
+        ("ctrl-2", 2),
+        ("ctrl-3", 3),
+        ("ctrl-4", 4),
+        ("ctrl-5", 5),
+        ("ctrl-6", 6),
+    ] {
+        cx.simulate_keystrokes(key);
+        redraw(cx);
+        editor.read_with(cx, |editor, cx| {
+            let block = editor.document.visible_blocks()[0].entity.read(cx);
+            assert_eq!(block.kind(), BlockKind::Heading { level });
+            assert_eq!(block.display_text(), "Title");
+        });
+    }
+
+    editor.read_with(cx, |editor, cx| {
+        assert_eq!(editor.document.markdown_text(cx), "###### Title");
+    });
+
+    cx.simulate_keystrokes("ctrl-0");
+    redraw(cx);
+
+    editor.read_with(cx, |editor, cx| {
+        let block = editor.document.visible_blocks()[0].entity.read(cx);
+        assert_eq!(block.kind(), BlockKind::Paragraph);
+        assert_eq!(block.display_text(), "Title");
+        assert_eq!(editor.document.markdown_text(cx), "Title");
+    });
+}
+
+#[gpui::test]
 async fn ctrl_tab_toggles_view_mode(cx: &mut TestAppContext) {
     init_editor_test_app(cx);
     let (editor, cx) =

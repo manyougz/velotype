@@ -11,7 +11,8 @@ use crate::components::markdown::inline::{
 };
 use crate::components::markdown::link::parse_link_reference_definitions;
 use crate::components::{
-    Block, BlockKind, BlockRecord, DeleteBack, IndentBlock, Newline, TableCellPosition,
+    Block, BlockKind, BlockRecord, DeleteBack, Heading1, Heading3, IndentBlock, Newline,
+    RemoveHeading, TableCellPosition,
 };
 use crate::i18n::I18nManager;
 use crate::theme::ThemeManager;
@@ -150,6 +151,72 @@ async fn tab_inserts_character_in_paragraph(cx: &mut TestAppContext) {
     block.read_with(cx, |block, _cx| {
         assert_eq!(block.display_text(), "a    b");
         assert_eq!(block.selected_range, 5..5);
+    });
+}
+
+#[gpui::test]
+async fn heading_shortcuts_convert_paragraphs_and_preserve_text(cx: &mut TestAppContext) {
+    let cx = cx.add_empty_window();
+    let block = cx.new(|cx| Block::with_record(cx, BlockRecord::paragraph("Title")));
+
+    cx.update(|window, cx| {
+        block.update(cx, |block, block_cx| {
+            block.on_heading_1(&Heading1, window, block_cx);
+            assert_eq!(block.kind(), BlockKind::Heading { level: 1 });
+
+            block.on_heading_3(&Heading3, window, block_cx);
+            assert_eq!(block.kind(), BlockKind::Heading { level: 3 });
+        });
+    });
+
+    block.read_with(cx, |block, _cx| {
+        assert_eq!(block.display_text(), "Title");
+        assert_eq!(block.record.markdown_line(0, None), "### Title");
+    });
+}
+
+#[gpui::test]
+async fn remove_heading_shortcut_returns_heading_to_paragraph(cx: &mut TestAppContext) {
+    let cx = cx.add_empty_window();
+    let block = cx.new(|cx| {
+        Block::with_record(
+            cx,
+            BlockRecord::with_plain_text(BlockKind::Heading { level: 2 }, "Title"),
+        )
+    });
+
+    cx.update(|window, cx| {
+        block.update(cx, |block, block_cx| {
+            block.on_remove_heading(&RemoveHeading, window, block_cx);
+        });
+    });
+
+    block.read_with(cx, |block, _cx| {
+        assert_eq!(block.kind(), BlockKind::Paragraph);
+        assert_eq!(block.display_text(), "Title");
+        assert_eq!(block.record.markdown_line(0, None), "Title");
+    });
+}
+
+#[gpui::test]
+async fn heading_shortcuts_ignore_non_text_blocks(cx: &mut TestAppContext) {
+    let cx = cx.add_empty_window();
+    let block = cx.new(|cx| {
+        Block::with_record(
+            cx,
+            BlockRecord::with_plain_text(BlockKind::BulletedListItem, "item"),
+        )
+    });
+
+    cx.update(|window, cx| {
+        block.update(cx, |block, block_cx| {
+            block.on_heading_1(&Heading1, window, block_cx);
+        });
+    });
+
+    block.read_with(cx, |block, _cx| {
+        assert_eq!(block.kind(), BlockKind::BulletedListItem);
+        assert_eq!(block.display_text(), "item");
     });
 }
 
