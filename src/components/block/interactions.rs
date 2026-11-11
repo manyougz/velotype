@@ -15,11 +15,12 @@ use super::{
 use crate::components::markdown::paste::should_split_plain_multiline_paste;
 use crate::components::{
     BlockDown, BlockUp, BoldSelection, CodeSelection, Copy, Cut, Delete, DeleteBack,
-    DismissTransientUi, End, ExitCodeBlock, FocusNext, FocusPrev, Home, IndentBlock,
-    ItalicSelection, MERMAID_DRAG_THRESHOLD, MermaidDrag, MermaidView, MoveLeft, MoveRight,
-    Newline, OutdentBlock, Paste, SelectAll, SelectEnd, SelectHome, SelectLeft, SelectRight,
-    UnderlineSelection, WordDeleteBack, WordDeleteForward, WordMoveLeft, WordMoveRight,
-    WordSelectLeft, WordSelectRight, mermaid_wheel_zoom_factor,
+    DismissTransientUi, End, ExitCodeBlock, FocusNext, FocusPrev, Heading1, Heading2, Heading3,
+    Heading4, Heading5, Heading6, Home, IndentBlock, ItalicSelection, MERMAID_DRAG_THRESHOLD,
+    MermaidDrag, MermaidView, MoveLeft, MoveRight, Newline, OutdentBlock, Paste, RemoveHeading,
+    SelectAll, SelectEnd, SelectHome, SelectLeft, SelectRight, UnderlineSelection, WordDeleteBack,
+    WordDeleteForward, WordMoveLeft, WordMoveRight, WordSelectLeft, WordSelectRight,
+    mermaid_wheel_zoom_factor,
 };
 
 /// How long the Mermaid modifier-zoom hint stays visible after scrolling.
@@ -1973,6 +1974,76 @@ impl Block {
         cx: &mut Context<Self>,
     ) {
         self.toggle_inline_format(InlineFormat::Code, cx);
+    }
+
+    /// Converts the current block to a first-level heading.
+    pub(crate) fn on_heading_1(
+        &mut self,
+        _: &Heading1,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.set_heading_level(1, cx);
+    }
+
+    /// Converts the current block to a second-level heading.
+    pub(crate) fn on_heading_2(
+        &mut self,
+        _: &Heading2,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.set_heading_level(2, cx);
+    }
+
+    /// Converts the current block to a third-level heading.
+    pub(crate) fn on_heading_3(
+        &mut self,
+        _: &Heading3,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.set_heading_level(3, cx);
+    }
+
+    /// Converts the current block to a fourth-level heading.
+    pub(crate) fn on_heading_4(
+        &mut self,
+        _: &Heading4,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.set_heading_level(4, cx);
+    }
+
+    /// Converts the current block to a fifth-level heading.
+    pub(crate) fn on_heading_5(
+        &mut self,
+        _: &Heading5,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.set_heading_level(5, cx);
+    }
+
+    /// Converts the current block to a sixth-level heading.
+    pub(crate) fn on_heading_6(
+        &mut self,
+        _: &Heading6,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.set_heading_level(6, cx);
+    }
+
+    /// Removes heading formatting from the current block.
+    pub(crate) fn on_remove_heading(
+        &mut self,
+        _: &RemoveHeading,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.remove_heading(cx);
     }
 
     /// Requests a following block or a quote/callout break when applicable.

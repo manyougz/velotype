@@ -1567,6 +1567,48 @@ async fn body_row_preview_survives_stale_header_leave(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
+async fn previewing_table_column_updates_table_axis_preview_and_visual_state(
+    cx: &mut TestAppContext,
+) {
+    use crate::components::TableAxisKind;
+    let markdown = [
+        "| Category | Configuration |",
+        "| :---: | :---: |",
+        "| Optimization | `same md snippet` |",
+    ]
+    .join("\n");
+    let editor = cx.new(|cx| Editor::from_markdown(cx, markdown, None));
+
+    editor.update(cx, |editor, cx| {
+        let table = editor.document.first_root().expect("table root").clone();
+        let id = table.entity_id();
+
+        // Hovering a column sets preview on both editor and table block.
+        editor.preview_table_axis(id, TableAxisKind::Column, 0, true, cx);
+        assert_eq!(
+            editor.table_axis_preview,
+            Some(super::TableAxisSelection {
+                table_block_id: id,
+                kind: TableAxisKind::Column,
+                index: 0,
+            })
+        );
+        assert_eq!(
+            table.read(cx).table_axis_preview,
+            Some(crate::components::TableAxisMarker {
+                kind: TableAxisKind::Column,
+                index: 0,
+            })
+        );
+
+        // Leaving the column clears the preview without leaving residual state.
+        editor.preview_table_axis(id, TableAxisKind::Column, 0, false, cx);
+        assert_eq!(editor.table_axis_preview, None);
+        assert_eq!(table.read(cx).table_axis_preview, None);
+    });
+}
+
+#[gpui::test]
 async fn deleting_table_column_moves_selection_to_nearest_survivor(cx: &mut TestAppContext) {
     let markdown = ["| A | B | C |", "| --- | --- | --- |", "| 1 | 2 | 3 |"].join("\n");
     let editor = cx.new(|cx| Editor::from_markdown(cx, markdown, None));
@@ -2860,6 +2902,51 @@ async fn toggle_view_mode_ends_stale_code_block_pointer_selection(cx: &mut TestA
             assert!(!block.code_language_is_selecting);
             assert_eq!(block.selected_range, 3..7);
         });
+    });
+}
+
+#[gpui::test]
+async fn ctrl_number_shortcuts_apply_heading_levels(cx: &mut TestAppContext) {
+    init_editor_test_app(cx);
+    let (editor, cx) =
+        cx.add_window_view(|_window, cx| Editor::from_markdown(cx, "Title".to_string(), None));
+
+    editor.update(cx, |editor, cx| {
+        let block = editor.document.visible_blocks()[0].entity.clone();
+        editor.focus_block(block.entity_id());
+        block.update(cx, |block, cx| block.move_to(0, cx));
+    });
+    redraw(cx);
+
+    for (key, level) in [
+        ("ctrl-1", 1),
+        ("ctrl-2", 2),
+        ("ctrl-3", 3),
+        ("ctrl-4", 4),
+        ("ctrl-5", 5),
+        ("ctrl-6", 6),
+    ] {
+        cx.simulate_keystrokes(key);
+        redraw(cx);
+        editor.read_with(cx, |editor, cx| {
+            let block = editor.document.visible_blocks()[0].entity.read(cx);
+            assert_eq!(block.kind(), BlockKind::Heading { level });
+            assert_eq!(block.display_text(), "Title");
+        });
+    }
+
+    editor.read_with(cx, |editor, cx| {
+        assert_eq!(editor.document.markdown_text(cx), "###### Title");
+    });
+
+    cx.simulate_keystrokes("ctrl-0");
+    redraw(cx);
+
+    editor.read_with(cx, |editor, cx| {
+        let block = editor.document.visible_blocks()[0].entity.read(cx);
+        assert_eq!(block.kind(), BlockKind::Paragraph);
+        assert_eq!(block.display_text(), "Title");
+        assert_eq!(editor.document.markdown_text(cx), "Title");
     });
 }
 

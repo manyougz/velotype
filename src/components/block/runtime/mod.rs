@@ -1942,6 +1942,44 @@ impl Block {
         cx.notify();
     }
 
+    /// Converts this block to a heading of `level` when it is an editable
+    /// paragraph or heading. Returns whether the kind changed.
+    pub(crate) fn set_heading_level(&mut self, level: u8, cx: &mut Context<Self>) -> bool {
+        let current_kind = self.kind();
+        if self.uses_raw_text_editing()
+            || !(1..=6).contains(&level)
+            || !self.children.is_empty()
+            || !matches!(
+                &current_kind,
+                BlockKind::Paragraph | BlockKind::Heading { .. }
+            )
+            || matches!(current_kind, BlockKind::Heading { level: current } if current == level)
+        {
+            return false;
+        }
+
+        self.prepare_undo_capture(UndoCaptureKind::NonCoalescible, cx);
+        self.record.kind = BlockKind::Heading { level };
+        self.record.raw_fallback = None;
+        self.quote_reparse_requested = false;
+        self.mark_changed(cx);
+        true
+    }
+
+    /// Converts an editable heading back to a paragraph. Returns whether the
+    /// kind changed.
+    pub(crate) fn remove_heading(&mut self, cx: &mut Context<Self>) -> bool {
+        if self.uses_raw_text_editing()
+            || !self.children.is_empty()
+            || !matches!(self.kind(), BlockKind::Heading { .. })
+        {
+            return false;
+        }
+
+        self.convert_to_paragraph(cx);
+        true
+    }
+
     /// Converts this block to a paragraph with an undo boundary.
     pub(crate) fn convert_to_paragraph(&mut self, cx: &mut Context<Self>) {
         self.prepare_undo_capture(UndoCaptureKind::NonCoalescible, cx);
