@@ -3194,3 +3194,82 @@ async fn typing_destination_into_empty_link_parens_keeps_caret_inside(cx: &mut T
         assert_eq!(block.selected_range, close..close);
     });
 }
+
+#[gpui::test]
+async fn markdown_for_current_range_uses_source_text_in_raw_and_code_blocks(
+    cx: &mut TestAppContext,
+) {
+    let cx = cx.add_empty_window();
+    let source = "**fett ä** und `cödé` 😀";
+    let raw = cx.new(|cx| {
+        let mut block = Block::with_record(cx, BlockRecord::paragraph(source));
+        block.set_source_raw_mode();
+        block
+    });
+    let code = cx.new(|cx| {
+        Block::with_record(
+            cx,
+            BlockRecord::new(
+                BlockKind::CodeBlock { language: None },
+                InlineTextTree::plain(source),
+            ),
+        )
+    });
+
+    cx.update(|_, cx| {
+        for block in [&raw, &code] {
+            let block = block.read(cx);
+            // The serialized title escapes `*` and `` ` ``, so its offsets
+            // differ from the display text the selection refers to.
+            assert_ne!(block.record.title.serialize_markdown(), source);
+            for start in 0..=source.len() + 1 {
+                for end in start..=source.len() + 1 {
+                    let expected = crate::text_offsets::normalize_utf8_range(source, start..end);
+                    assert_eq!(
+                        block.markdown_for_current_range(start..end),
+                        source[expected].to_owned(),
+                    );
+                }
+            }
+        }
+    });
+}
+
+#[gpui::test]
+async fn markdown_for_current_range_stays_on_char_boundaries_in_rich_blocks(
+    cx: &mut TestAppContext,
+) {
+    let cx = cx.add_empty_window();
+    let block = cx.new(|cx| {
+        Block::with_record(
+            cx,
+            BlockRecord::new(
+                BlockKind::Paragraph,
+                InlineTextTree::from_markdown("**fett ä** [Läbel](https://ä.de) `cödé` 😀"),
+            ),
+        )
+    });
+
+    cx.update(|_, cx| {
+        block.update(cx, |block, block_cx| {
+            for focused in [false, true] {
+                block.move_to(0, block_cx);
+                block.sync_inline_projection_for_focus(focused);
+                let len = block.display_text().len();
+                for start in 0..=len {
+                    for end in start..=len {
+                        // Panics if a mapped boundary splits a character.
+                        block.markdown_for_current_range(start..end);
+                    }
+                }
+            }
+            block.sync_inline_projection_for_focus(false);
+            let display = block.display_text().to_owned();
+            let start = display.find("fett").unwrap();
+            assert_eq!(
+                block.markdown_for_current_range(start..display.len()),
+                "fett ä** [Läbel](https://ä.de) `cödé` 😀"
+            );
+        });
+    });
+}

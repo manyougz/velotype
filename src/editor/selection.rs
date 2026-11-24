@@ -865,12 +865,7 @@ impl Editor {
             };
         }
 
-        let markdown = block.record.title.serialize_markdown();
-        let markdown_range = block.current_range_to_markdown_range(range);
-        markdown
-            .get(markdown_range)
-            .map(ToOwned::to_owned)
-            .unwrap_or_default()
+        block.markdown_for_current_range(range)
     }
 
     /// Deletes a selected source span and restores a caret at its start.
@@ -927,13 +922,9 @@ impl Editor {
             if block.selected_range.is_empty() {
                 continue;
             }
-            let markdown_range =
-                block.current_range_to_markdown_range(block.selected_range.clone());
-            let full_markdown = block.record.title.serialize_markdown();
-            let start = markdown_range.start.min(full_markdown.len());
-            let end = markdown_range.end.min(full_markdown.len());
-            if start < end {
-                return Some(full_markdown[start..end].to_owned());
+            let text = block.markdown_for_current_range(block.selected_range.clone());
+            if !text.is_empty() {
+                return Some(text);
             }
         }
 
