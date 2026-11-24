@@ -83,6 +83,8 @@ impl Editor {
         let mut content_to_source = vec![0; content.len() + 1];
         let mut source_to_content = vec![0];
 
+        // Fences are indented like the code lines, matching the serializer.
+        full.push_str(indentation);
         full.push_str(&fence);
         if let Some(language) = language {
             full.push_str(language);
@@ -125,6 +127,7 @@ impl Editor {
 
         full.push('\n');
         source_to_content.resize(full.len() + 1, content.len());
+        full.push_str(indentation);
         full.push_str(&fence);
         source_to_content.resize(full.len() + 1, content.len());
         source_to_content[full.len()] = content.len();
@@ -253,6 +256,7 @@ impl Editor {
     pub(super) fn push_code_block_mapping(
         &self,
         block: &Entity<Block>,
+        list_depth: usize,
         quote_depth: usize,
         absolute_start: usize,
         mappings: &mut Vec<SourceTargetMapping>,
@@ -265,7 +269,7 @@ impl Editor {
                     BlockKind::CodeBlock { language } => language.clone(),
                     _ => None,
                 },
-                "  ".repeat(block_ref.render_depth),
+                "  ".repeat(list_depth),
                 block_ref.display_text().to_string(),
             )
         };
@@ -442,9 +446,14 @@ impl Editor {
                 mappings,
                 cx,
             ),
-            BlockKind::CodeBlock { .. } => {
-                self.push_code_block_mapping(block, quote_depth, absolute_start, mappings, cx)
-            }
+            BlockKind::CodeBlock { .. } => self.push_code_block_mapping(
+                block,
+                list_depth,
+                quote_depth,
+                absolute_start,
+                mappings,
+                cx,
+            ),
             BlockKind::RawMarkdown
             | BlockKind::Comment
             | BlockKind::HtmlBlock

@@ -1235,6 +1235,24 @@ impl Block {
             .visible_to_markdown_range(clean_range)
     }
 
+    /// Returns the Markdown source for a current-display range.
+    ///
+    /// Raw and code blocks edit their source directly, so their display text
+    /// already is the source; slicing the serialized title instead would apply
+    /// offsets to an escaped string (`*` -> `\*`) and can split a character.
+    pub(crate) fn markdown_for_current_range(&self, range: Range<usize>) -> String {
+        if self.uses_raw_text_editing() || self.kind().is_code_block() {
+            let text = self.display_text();
+            let range = crate::text_offsets::normalize_utf8_range(text, range);
+            return text.get(range).unwrap_or_default().to_owned();
+        }
+
+        let markdown = self.record.title.serialize_markdown();
+        let range = self.current_range_to_markdown_range(range);
+        let range = crate::text_offsets::normalize_utf8_range(&markdown, range);
+        markdown.get(range).unwrap_or_default().to_owned()
+    }
+
     /// Maps a Markdown byte range into current display coordinates.
     pub(crate) fn markdown_range_to_current_range(&self, range: Range<usize>) -> Range<usize> {
         if self.uses_raw_text_editing() || self.kind().is_code_block() {
